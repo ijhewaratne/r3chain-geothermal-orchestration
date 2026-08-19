@@ -1,0 +1,40 @@
+# Nested independent git repositories (NOT submodules at this stage — ADR-001 D7)
+repos/
+
+# Original reference copies (untracked upstream snapshots, frozen by
+# docs/provenance/manifest-*.sha256)
+PyDoublet/
+pandapipesAI/
+
+# Uploaded source archives
+*.zip
+
+# Virtual environments
+.venv/
+venv/
+env/
+.conda/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Generated simulation results, figures and logs
+results/
+output/
+figures/
+logs/
+*.log
+
+# Secrets and local environment files
+.env
+.env.*
+secrets/
+*.secret
+.claude/settings.local.json
+
+# OS noise
+.DS_Store

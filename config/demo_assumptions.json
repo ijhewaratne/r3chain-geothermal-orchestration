@@ -1,0 +1,174 @@
+{
+  "_meta": {
+    "schema_version": "0.2",
+    "status": "demo_assumption",
+    "created": "2026-08-19",
+    "revised": "2026-08-19",
+    "description": "Provisional configuration for the R3-CHAIN geothermal PoC. Every value here is a labelled demonstration assumption, NOT a claimed engineering standard. Each section carries _status and _question_refs pointing to docs/decisions/phase0-questions.md. Values are replaceable without code changes; changing one is an assumption change requiring approval (CLAUDE.md).",
+    "questions_document": "docs/decisions/phase0-questions.md",
+    "adr": "docs/decisions/ADR-001-geothermal-poc-scope.md",
+    "source_plan_sections": ["8.2", "9.2", "10.1", "10.2", "11", "12.2"],
+    "pressure_convention": "All pressure fields in this project are ABSOLUTE pressures in bar (suffix _bar_abs). pandapipes pressure output is treated as absolute; a Sprint-2 unit test must pin this semantics before any pressure gate is applied. Never compare gauge pressure with pandapipes absolute output.",
+    "questions_without_config_impact": {
+      "Q9": "MCP server topology - governs architecture, recorded in ADR-001 D6/D7, no numeric config value.",
+      "Q10": "Hosting and PyDoublet licence - governs distribution, recorded in ADR-001 D7, no numeric config value."
+    }
+  },
+
+  "coupling_assumptions": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q3", "Q4", "Q5", "Q6"],
+    "dh_supply_temperature_c": 70.0,
+    "dh_return_temperature_c": 40.0,
+    "minimum_hx_approach_k": 5.0,
+    "hx_heat_delivery_factor": 0.98,
+    "curtailment_allowed": true,
+    "auxiliary_policy": "cost_shortfall",
+    "auxiliary_policy_options": ["cost_shortfall", "strict_infeasible"],
+    "velocity_limit_m_s": 1.5,
+    "pump_dp_limit_bar": 6.0,
+    "consumer_supply_drop_limit_k": 5.0,
+    "mass_balance_tolerance_fraction": 0.005,
+    "energy_balance_tolerance_fraction": 0.02
+  },
+
+  "pydoublet": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q1", "Q2", "Q3"],
+    "example_config": "examples/complete_example.json",
+    "energy_consistency_tolerance_fraction": 0.02,
+    "producer_wellhead_temperature_source": {
+      "field": "simulation_results.temperature_profile_c",
+      "index": 2,
+      "node_label": "5&6, Prod_Top/Entry_HE",
+      "note": "Position-based extraction pending Q2 confirmation; Sprint-1 repair adds an explicit named field."
+    },
+    "reinjection_temperature_c": 35.0,
+    "reinjection_temperature_note": "Fixed modelling input in the supplied example (heat_exchanger_params.exit_temp_heat_exchanger); meaning pending Q3."
+  },
+
+  "network": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q4", "Q11"],
+    "consumers": [
+      { "id": "consumer_1", "demand_kw": 650.0 },
+      { "id": "consumer_2", "demand_kw": 750.0 },
+      { "id": "consumer_3", "demand_kw": 850.0 },
+      { "id": "consumer_4", "demand_kw": 950.0 }
+    ],
+    "total_demand_kw": 3200.0,
+    "design_delta_t_k": 30.0,
+    "mirrored_return_network": true,
+    "p_supply_bar_abs": 6.0,
+    "min_pressure_bar_abs": 1.5,
+    "pressure_reference": "absolute",
+    "min_pressure_note": "demo_assumption pending confirmation (Q11). Plan §11 gives 1.0-1.5 bar absolute with 'confirm'; 1.5 adopted provisionally as the stricter bound.",
+    "fluid": "water",
+    "pipe_roughness_mm": 0.1,
+    "ground_temperature_c": 10.0
+  },
+
+  "candidates": {
+    "_status": "demo_assumption",
+    "_question_refs": [],
+    "_note": "Sprint-2 derivation rule: candidate coordinates and valid supply/return junction pairs are defined FIRST; connection-pipe lengths are then derived from (or explicitly constructed together with) that geometry. The map, the pandapipes connection pipes and the economic calculation must all consume the SAME single length value per candidate. The economic configuration and the network geometry may never hold different connection lengths. Lengths are therefore null until the Sprint-2 geometry exists.",
+    "list": [
+      {
+        "id": "C1",
+        "label": "Near network head",
+        "surface_connection_length_m": null,
+        "supply_junction": null,
+        "return_junction": null,
+        "connection_dn": null,
+        "construction_multiplier": 1.0
+      },
+      {
+        "id": "C2",
+        "label": "Near central trunk",
+        "surface_connection_length_m": null,
+        "supply_junction": null,
+        "return_junction": null,
+        "connection_dn": null,
+        "construction_multiplier": 1.0
+      },
+      {
+        "id": "C3",
+        "label": "Near branch intersection",
+        "surface_connection_length_m": null,
+        "supply_junction": null,
+        "return_junction": null,
+        "connection_dn": null,
+        "construction_multiplier": 1.0
+      },
+      {
+        "id": "C4",
+        "label": "Near remote/end section",
+        "surface_connection_length_m": null,
+        "supply_junction": null,
+        "return_junction": null,
+        "connection_dn": null,
+        "construction_multiplier": 1.0
+      }
+    ]
+  },
+
+  "gates": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q4", "Q5", "Q6", "Q11"],
+    "_note": "Hard technical gates, applied in plan §11 order before any economic ranking. All pressure fields use the ABSOLUTE reference (see _meta.pressure_convention); adapter, pandapipes evaluation and feasibility gates must share it. Never compare gauge pressure with pandapipes absolute pressure output.",
+    "max_pipe_velocity_m_s": 1.5,
+    "max_pump_dp_bar": 6.0,
+    "min_pressure_bar_abs": 1.5,
+    "pressure_reference": "absolute",
+    "max_consumer_supply_drop_k": 5.0,
+    "heat_delivery_tolerance_fraction": 0.01,
+    "mass_balance_tolerance_fraction": 0.005,
+    "energy_balance_tolerance_fraction": 0.02,
+    "pydoublet_energy_consistency_tolerance_fraction": 0.02,
+    "require_sequential_thermal_convergence": true
+  },
+
+  "economics": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q7", "Q8"],
+    "_note": "Indicative prototype boundary only. All values are placeholders pending Q7; the workshop report MUST label all absolute cost and LCOH results as ILLUSTRATIVE. Identical doublet CAPEX does not affect the RELATIVE candidate ranking only while all candidates reuse the same PyDoublet scenario and the same cost boundary; if either differs between candidates, this statement no longer holds.",
+    "interest_rate_real": {
+      "value": 0.03,
+      "unit": "fraction/a (real)",
+      "source_status": "demo_assumption_pending_Q7",
+      "source_note": "Generic placeholder; matches pandapipesAI cm.economics.interest_rate default (not a catalog fact)."
+    },
+    "lifetime_years": {
+      "doublet": { "value": 30.0, "unit": "a", "source_status": "demo_assumption_pending_Q7" },
+      "heat_exchanger": { "value": 20.0, "unit": "a", "source_status": "demo_assumption_pending_Q7" },
+      "connection_pipes": { "value": 30.0, "unit": "a", "source_status": "demo_assumption_pending_Q7" }
+    },
+    "capex": {
+      "doublet_capex": { "value": 8000000.0, "unit": "EUR", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7" },
+      "heat_exchanger_capex": { "value": 150000.0, "unit": "EUR", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7" },
+      "connection_pipe_per_m": { "value": 1000.0, "unit": "EUR/m", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7" }
+    },
+    "opex": {
+      "fixed_om_fraction_of_capex_per_a": { "value": 0.02, "unit": "fraction/a", "source_status": "demo_assumption_pending_Q7" },
+      "electricity_price": { "value": 0.25, "unit": "EUR/kWh", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7" },
+      "auxiliary_heat_price": { "value": 0.09, "unit": "EUR/kWh", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7" }
+    },
+    "annual_full_load_hours": {
+      "value": 5000.0,
+      "unit": "h/a",
+      "source_status": "demo_assumption_pending_Q7"
+    },
+    "ranking_rule": {
+      "value": "feasibility_first_then_lowest_annualised_cost",
+      "source_status": "demo_assumption_pending_Q8"
+    },
+    "tie_breakers": {
+      "value": [
+        "lower_dh_pumping_electricity",
+        "shorter_connection_length",
+        "greater_technical_margin"
+      ],
+      "source_status": "demo_assumption_pending_Q8"
+    }
+  }
+}
