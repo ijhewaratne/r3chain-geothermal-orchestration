@@ -1,0 +1,95 @@
+{
+  "fixture_version": "1.0",
+  "status": "golden regression reference (pristine baseline), NOT a universal design point",
+  "provenance": {
+    "pydoublet_commit": "4fb328dc4d7e035dad13ca60c43856072acedb8b",
+    "config_file": "examples/no_figures_config.json",
+    "config_sha256": "d847fa16e2ca17184693cdd5d802d01f39bfb81fab0e8b92ad835c7b1821543b",
+    "python": "3.11.16 (macOS 14.4.1 arm64)",
+    "dependency_delta_for_run": [
+      "pydantic==2.13.4",
+      "pydantic_core==2.46.4",
+      "annotated-types==0.8.0",
+      "typing-inspection==0.4.4"
+    ],
+    "base_dependencies": "see docs/baselines/pydoublet-pip-freeze.txt (numpy 2.4.6, scipy 1.17.1, pandas 3.0.5)",
+    "raw_source": "fixtures/pydoublet/raw_result.json (verbatim run-1 output)",
+    "runs": 3,
+    "runs_bit_identical": true
+  },
+  "values": {
+    "brine_mass_flow_kg_s": {
+      "value": 28.749278488136472,
+      "unit": "kg/s",
+      "source_key": "simulation_results.mass_flow_rate_kg_per_s",
+      "rel_tolerance": 1e-11
+    },
+    "producer_wellhead_temperature_c": {
+      "value": 76.31304410943065,
+      "unit": "degC",
+      "source_key": "simulation_results.temperature_profile_c[2] (node '5&6, Prod_Top/Entry_HE'; provisional pending Q2)",
+      "rel_tolerance": 1e-11
+    },
+    "reinjection_temperature_c": {
+      "value": 35.0,
+      "unit": "degC",
+      "source_key": "surface_installations.heat_exchanger.exit_temperature_c (fixed input; meaning pending Q3)",
+      "rel_tolerance": 1e-11
+    },
+    "geothermal_thermal_power_kw": {
+      "value": 4345.417312073545,
+      "unit": "kW",
+      "source_key": "simulation_results.geothermal_power_mw * 1000 (MW->kW conversion applied here)",
+      "rel_tolerance": 1e-11
+    },
+    "doublet_pump_power_kw": {
+      "value": 177.44982728456736,
+      "unit": "kW",
+      "source_key": "simulation_results.required_pump_power_kw",
+      "rel_tolerance": 1e-11
+    },
+    "cop": {
+      "value": 24.488146190782246,
+      "unit": "dimensionless",
+      "source_key": "simulation_results.cop_kw_per_kw",
+      "rel_tolerance": 1e-11
+    },
+    "brine_heat_capacity_j_kg_k": {
+      "value": 3658.620333651976,
+      "unit": "J/(kg K)",
+      "source_key": "simulation_results.heat_capacity_j_per_kg_k",
+      "rel_tolerance": 1e-11
+    },
+    "delta_t_k": {
+      "value": 41.31304410943065,
+      "unit": "K",
+      "source_key": "simulation_results.temperature_difference_k",
+      "rel_tolerance": 1e-11
+    },
+    "pump_volume_flow_m3_h": {
+      "value": 103.61430534854124,
+      "unit": "m3/h",
+      "source_key": "simulation_results.pump_volume_flow_m3_per_h",
+      "rel_tolerance": 1e-11
+    }
+  },
+  "converged": true,
+  "reproduced_defects": {
+    "actual_runs_completed": {
+      "value_in_all_runs": 1000,
+      "expected_for_one_deterministic_run": 1,
+      "status": "reproduced baseline defect - NOT corrected (T1.4 scope)"
+    }
+  },
+  "tolerance_scope": {
+    "observed_scientific_field_variation_across_3_runs": 0.0,
+    "rel_tolerance_1e-11_meaning": "same-platform, fully pinned-environment regression tolerance (macOS 14.4.1 arm64, Python 3.11.16, dependency set per provenance)",
+    "cross_platform_claim": "NOT claimed - portable tolerance must be confirmed on another clean machine during Sprint 6",
+    "excluded_from_scientific_equality": [
+      "metadata.timestamp",
+      "results filename timestamp suffix",
+      "file paths"
+    ],
+    "raw_fixture_note": "excluded transport metadata remains untouched in raw_result.json"
+  }
+}

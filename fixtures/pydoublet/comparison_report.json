@@ -1,0 +1,196 @@
+{
+  "task": "T1.3",
+  "date_utc": "2026-08-19",
+  "pydoublet_commit": "4fb328dc4d7e035dad13ca60c43856072acedb8b",
+  "config": {
+    "path": "examples/no_figures_config.json",
+    "sha256": "d847fa16e2ca17184693cdd5d802d01f39bfb81fab0e8b92ad835c7b1821543b"
+  },
+  "runs": {
+    "1": {
+      "raw_json_sha256": "ed73b0eba885670d46a5e7871d3d3f4c12b8fedf15a9a9fb5b134586aa5bafbe",
+      "exit_code": 0,
+      "elapsed_s": 1.22,
+      "raw_json_file": "pydoublet_results_20260819_213215.json"
+    },
+    "2": {
+      "raw_json_sha256": "51a1bd5c56c36a308049993b226790f9d6c0f2a1f25a8e4192e65f9e9d088e80",
+      "exit_code": 0,
+      "elapsed_s": 0.67,
+      "raw_json_file": "pydoublet_results_20260819_213216.json"
+    },
+    "3": {
+      "raw_json_sha256": "4fd0d573d84b815847ac8b55b9fc213525d46c28fd9284f48f214ce69f0f9e87",
+      "exit_code": 0,
+      "elapsed_s": 0.67,
+      "raw_json_file": "pydoublet_results_20260819_213217.json"
+    }
+  },
+  "all_scientific_fields_bit_identical": true,
+  "field_comparison": {
+    "brine_mass_flow_kg_s": {
+      "run_values": [
+        28.749278488136472,
+        28.749278488136472,
+        28.749278488136472
+      ],
+      "abs_spread": 0.0,
+      "rel_spread": 0.0,
+      "derived_rel_tolerance": 1e-11,
+      "bit_identical": true
+    },
+    "producer_wellhead_temperature_c": {
+      "run_values": [
+        76.31304410943065,
+        76.31304410943065,
+        76.31304410943065
+      ],
+      "abs_spread": 0.0,
+      "rel_spread": 0.0,
+      "derived_rel_tolerance": 1e-11,
+      "bit_identical": true
+    },
+    "reinjection_temperature_c": {
+      "run_values": [
+        35.0,
+        35.0,
+        35.0
+      ],
+      "abs_spread": 0.0,
+      "rel_spread": 0.0,
+      "derived_rel_tolerance": 1e-11,
+      "bit_identical": true
+    },
+    "geothermal_thermal_power_kw": {
+      "run_values": [
+        4345.417312073545,
+        4345.417312073545,
+        4345.417312073545
+      ],
+      "abs_spread": 0.0,
+      "rel_spread": 0.0,
+      "derived_rel_tolerance": 1e-11,
+      "bit_identical": true
+    },
+    "doublet_pump_power_kw": {
+      "run_values": [
+        177.44982728456736,
+        177.44982728456736,
+        177.44982728456736
+      ],
+      "abs_spread": 0.0,
+      "rel_spread": 0.0,
+      "derived_rel_tolerance": 1e-11,
+      "bit_identical": true
+    },
+    "cop": {
+      "run_values": [
+        24.488146190782246,
+        24.488146190782246,
+        24.488146190782246
+      ],
+      "abs_spread": 0.0,
+      "rel_spread": 0.0,
+      "derived_rel_tolerance": 1e-11,
+      "bit_identical": true
+    },
+    "brine_heat_capacity_j_kg_k": {
+      "run_values": [
+        3658.620333651976,
+        3658.620333651976,
+        3658.620333651976
+      ],
+      "abs_spread": 0.0,
+      "rel_spread": 0.0,
+      "derived_rel_tolerance": 1e-11,
+      "bit_identical": true
+    },
+    "delta_t_k": {
+      "run_values": [
+        41.31304410943065,
+        41.31304410943065,
+        41.31304410943065
+      ],
+      "abs_spread": 0.0,
+      "rel_spread": 0.0,
+      "derived_rel_tolerance": 1e-11,
+      "bit_identical": true
+    },
+    "pump_volume_flow_m3_h": {
+      "run_values": [
+        103.61430534854124,
+        103.61430534854124,
+        103.61430534854124
+      ],
+      "abs_spread": 0.0,
+      "rel_spread": 0.0,
+      "derived_rel_tolerance": 1e-11,
+      "bit_identical": true
+    }
+  },
+  "anchor_verification": {
+    "threshold_rel": 0.001,
+    "stop_triggered": false,
+    "fields": {
+      "brine_mass_flow_kg_s": {
+        "anchor": 28.749,
+        "actual": 28.749278488136472,
+        "rel_diff": 9.68688081231496e-06,
+        "within_0.1pct": true
+      },
+      "producer_wellhead_temperature_c": {
+        "anchor": 76.313,
+        "actual": 76.31304410943065,
+        "rel_diff": 5.780067701007608e-07,
+        "within_0.1pct": true
+      },
+      "reinjection_temperature_c": {
+        "anchor": 35.0,
+        "actual": 35.0,
+        "rel_diff": 0.0,
+        "within_0.1pct": true
+      },
+      "geothermal_thermal_power_kw": {
+        "anchor": 4345.417,
+        "actual": 4345.417312073545,
+        "rel_diff": 7.181670817595639e-08,
+        "within_0.1pct": true
+      },
+      "doublet_pump_power_kw": {
+        "anchor": 177.45,
+        "actual": 177.44982728456736,
+        "rel_diff": 9.733188651794397e-07,
+        "within_0.1pct": true
+      },
+      "cop": {
+        "anchor": 24.488,
+        "actual": 24.488146190782246,
+        "rel_diff": 5.969894733991371e-06,
+        "within_0.1pct": true
+      },
+      "brine_heat_capacity_j_kg_k": {
+        "anchor": 3658.62,
+        "actual": 3658.620333651976,
+        "rel_diff": 9.11961275656533e-08,
+        "within_0.1pct": true
+      }
+    }
+  },
+  "nondeterministic_fields": [
+    "metadata.timestamp",
+    "results filename timestamp suffix"
+  ],
+  "energy_consistency_diagnostic": {
+    "q_calc_kw_m_cp_dT": 4345.417312073546,
+    "q_reported_kw": 4345.417312073545,
+    "rel_residual": 2.092997372763114e-16,
+    "note": "diagnostic only; PyDoublet reported value untouched"
+  },
+  "reproduced_defects": {
+    "actual_runs_completed": {
+      "value_in_all_runs": 1000,
+      "expected_for_one_deterministic_run": 1,
+      "status": "reproduced baseline defect - NOT corrected (T1.4 scope)"
+    }
+  }
+}
