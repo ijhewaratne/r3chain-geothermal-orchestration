@@ -9,7 +9,11 @@ pandapipesAI/
 # Uploaded source archives
 *.zip
 
+# Baseline/diagnostic artifacts (raw logs; hashes tracked in docs/baselines/)
+artifacts/
+
 # Virtual environments
+.venvs/
 .venv/
 venv/
 env/

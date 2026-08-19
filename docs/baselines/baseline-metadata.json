@@ -1,0 +1,180 @@
+{
+  "task": "T1.2",
+  "date_utc": "2026-08-19",
+  "platform": "macOS 14.4.1 (23E224) arm64 (Apple Silicon)",
+  "python": {
+    "version": "3.11.16",
+    "source": "homebrew python@3.11",
+    "path": "/opt/homebrew/opt/python@3.11/bin/python3.11"
+  },
+  "tooling": {
+    "pip": "26.2.1",
+    "setuptools": "84.0.0",
+    "wheel": "0.48.0"
+  },
+  "repos": {
+    "PyDoublet": {
+      "head": "4fb328dc4d7e035dad13ca60c43856072acedb8b",
+      "clean_before": true,
+      "clean_after": true
+    },
+    "pandapipesAI": {
+      "head": "a1fe3c6f6a73155f9ee50546b8af713014bfa695",
+      "clean_before": true,
+      "clean_after": true
+    }
+  },
+  "pydoublet": {
+    "venv": ".venvs/pydoublet",
+    "install_cmd": "pip install -e \".[dev]\"",
+    "install_exit": 0,
+    "pip_check": "clean",
+    "probes": {
+      "import_pydoublet": {
+        "exit": 1,
+        "error": "ModuleNotFoundError: No module named 'reservoir_config'"
+      },
+      "from_pydoublet_import_Scenario": {
+        "exit": 1,
+        "error": "ModuleNotFoundError: No module named 'reservoir_config'"
+      },
+      "python_-m_pydoublet.main_--config_no_figures": {
+        "exit": 1,
+        "error": "package __init__ fails first: ModuleNotFoundError 'reservoir_config'"
+      },
+      "inpackage_run_with_config": {
+        "cmd": "cd pydoublet && python main.py --config ../examples/no_figures_config.json --no-figures",
+        "exit": 1,
+        "error": "Error: No module named 'pydantic' (undeclared dependency, config_schema.py)",
+        "elapsed_s": 23.47
+      },
+      "inpackage_run_default_params": {
+        "cmd": "cd pydoublet && python main.py --no-figures",
+        "exit": 0,
+        "elapsed_s": 0.75,
+        "results": {
+          "mass_flow_kg_s": 41.00208301313834,
+          "geothermal_power_mw": 7.694302675468557,
+          "cop": 30.245471954722422,
+          "heat_capacity_j_kg_k": 3663.1459609517174,
+          "temperature_profile_c_idx2": 86.22820302394497,
+          "actual_runs_completed_reported": 1000
+        },
+        "note": "Default main.py parameters, NOT the golden operating point. Golden values (28.749 kg/s, 4.345 MW, 76.31 C) correspond to examples/no_figures_config.json's shallower reservoir, unreachable until pydantic is available (--config path)."
+      }
+    },
+    "tests": {
+      "cmd": "python -m pytest tests/ -v --tb=short",
+      "exit": 2,
+      "collected": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 6,
+      "elapsed_s": 10.93,
+      "failing": [
+        {
+          "name": "tests/test_doublet.py",
+          "class": "collection ImportError (top-level internal imports / nonexistent module paths)"
+        },
+        {
+          "name": "tests/test_fluid.py",
+          "class": "collection ImportError (top-level internal imports / nonexistent module paths)"
+        },
+        {
+          "name": "tests/test_pipe.py",
+          "class": "collection ImportError (top-level internal imports / nonexistent module paths)"
+        },
+        {
+          "name": "tests/test_reservoir.py",
+          "class": "collection ImportError (top-level internal imports / nonexistent module paths)"
+        },
+        {
+          "name": "tests/test_scenario.py",
+          "class": "collection ImportError (top-level internal imports / nonexistent module paths)"
+        },
+        {
+          "name": "tests/test_well.py",
+          "class": "collection ImportError (top-level internal imports / nonexistent module paths)"
+        }
+      ],
+      "note": "tests_io.py never collected: filename matches neither test_*.py nor *_test.py."
+    },
+    "side_effects": {
+      "files": [
+        "pydoublet/results/pydoublet_results_20260819_170539.json (sha256 d1463324...)",
+        "pydoublet/log.txt (empty, sha256 e3b0c442...)"
+      ],
+      "preserved_at": "artifacts/baseline/pydoublet/side_effects/",
+      "repo_restored_clean": true
+    }
+  },
+  "pandapipesai": {
+    "venv": ".venvs/pandapipesai",
+    "install_cmd": "pip install -e \".[dev,viz,costing]\"",
+    "install_exit": 0,
+    "pip_check": "clean",
+    "environment_failures": [
+      {
+        "issue": "mcp 2.0.0 resolved by unbounded 'mcp>=1.0.0' pin; 'mcp.server.fastmcp' removed in 2.x -> tests/test_startup_warmup.py collection ImportError",
+        "classification": "environment/dependency-resolution failure, PRE-EXISTING unbounded pin; NOT a code or R3-CHAIN failure",
+        "remediation": "venv-only: pip install 'mcp>=1.0,<2' -> mcp 1.29.0; no repository file changed"
+      },
+      {
+        "issue": "test runs regenerate tracked file pandapipesai/special_modules/costing/data/_kww_flatdata_cache.json (1-line diff)",
+        "classification": "pre-existing repo behaviour (generated cache under version control)",
+        "remediation": "file restored via git checkout after each run; mutated copy + diff preserved in artifacts"
+      }
+    ],
+    "tests_no_network": {
+      "cmd": "PANDAPIPESAI_{SESSION,OUTPUT,CACHE}_DIR=<artifacts> python -m pytest tests/ -m 'not integration' -v --tb=short",
+      "exit": 0,
+      "collected": 1455,
+      "selected": 1152,
+      "deselected": 303,
+      "passed": 1152,
+      "failed": 0,
+      "skipped": 0,
+      "errors": 0,
+      "elapsed_s": 144.52,
+      "note": "Cleaner than upstream CLAUDE.md's own recorded baseline (821 passed/4 failed on Windows/conda). First attempt with mcp 2.0.0 recorded separately (exit 2, collection interrupted)."
+    },
+    "tests_integration": {
+      "cmd": "PANDAPIPESAI_{SESSION,OUTPUT,CACHE}_DIR=<artifacts> python -m pytest tests/ -m integration -v --tb=line",
+      "exit": 1,
+      "passed": 272,
+      "failed": 2,
+      "errors": 29,
+      "deselected": 1152,
+      "elapsed_s": 140.67,
+      "network": "real OSM/Overpass downloads (Lohme) - succeeded",
+      "classification": "all 31 non-passes share one root cause: missing pre-warmed OSM cache for 'Arnis' (cache key 412112d820324909) - environment/setup dependency, pre-existing, not code failures",
+      "status": "informational only; not part of the PoC no-network acceptance target"
+    },
+    "venv_deviation": "mcp downgraded venv-only to 1.29.0 (repo pin mcp>=1.0.0 wrongly resolves 2.0.0); no repository file changed",
+    "mcp_dependency_states": {
+      "declared_install": "unbounded 'mcp>=1.0.0' resolved mcp 2.0.0 -> mcp.server.fastmcp removed -> test collection broken (exit 2)",
+      "recorded_test_state": "venv-only compatibility override mcp==1.29.0 enabled the recorded no-network and integration test results",
+      "status": "override is a diagnostic enabler only, NOT the permanent dependency fix; permanent decision deferred to a later packaging/compatibility task"
+    }
+  },
+  "raw_log_hashes_sha256": {
+    "00-pip-upgrade.log": "50d85d4457a5310f402c5af03e7a9418c3aeac900338744bbf3cfd8f99b2a4ed",
+    "01-install.log": "8472f884a1e2e732788763ed4bcca8288a7915d69cd5d58d49dd05ea2c7bfe50",
+    "02-pip-check.log": "9261363b733079a641c2e4cc9bc46ffa1d8336945a87f807b6cf68847dbc9b09",
+    "03-pytest-no-network.log": "ce6b239187f98c72c198aee88f4533c30f56a37d06dde8b13714ead250886c56",
+    "04-kww-cache-mutation.diff": "46f8655332e4d09b71dd9467f1126599f55617b77be04a2fa3579b20e9d9d1cc",
+    "05-mcp-downgrade.log": "2877bc6de5f5db5637638fe14394a21623fd87f035a133f36cd9168c0e8f56b2",
+    "06-pip-check-after-mcp.log": "9261363b733079a641c2e4cc9bc46ffa1d8336945a87f807b6cf68847dbc9b09",
+    "07-pytest-no-network-mcp1.log": "6c793712f1ecd20a925a45867397d6906ab8745154d45f4d83597b4f03340909",
+    "08-pytest-integration.log": "a9732c1f045e934a8ecb04bd2d921b1e515688ac31875ec914b2947769f59cbf",
+    "pre-state.log": "89726e426703230d15130f5de921812202dcb87a5a0a7c787da0df3f3f0cc43b",
+    "03-import-pkg.log": "8e59bda4136c8bdbba89a6551194174e6c4afcd1ec3ae54b2f75683087d115a1",
+    "04-import-scenario.log": "8e59bda4136c8bdbba89a6551194174e6c4afcd1ec3ae54b2f75683087d115a1",
+    "05-module-run.log": "a964b2ebc32de814fdb54453438c310807e9ae35ffa9b0658b0348e3d2ddbfaa",
+    "06-inpackage-run.log": "3ded12a5f590c9ee13fb2476c5326f3a11f89a903289d6e371332e090fb118de",
+    "07-inpackage-default-run.log": "8b4003759f22e27040163b73e1b2739d03b2c04dbe7f0e26eb56edd2fb770983",
+    "08-side-effects.sha256": "adc98b7bb917ad1770d6f41dbc62a5b0a46046d6f9de12587fb2ed2b64c201ef",
+    "09-pytest.log": "5cab1acaf5ba243969cc4eec517c061339de0c275693bd47d50c7437e24a3037"
+  }
+}
