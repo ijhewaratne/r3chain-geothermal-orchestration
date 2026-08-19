@@ -1,10 +1,12 @@
-# Nested independent git repositories (NOT submodules at this stage — ADR-001 D7)
-repos/
+# Nested independent git repositories (NOT submodules at this stage — ADR-001 D7).
+# Root-anchored: unanchored "PyDoublet/" also matched nested dirs at any depth
+# (case-insensitively on macOS), silently ignoring fixtures/pydoublet/ (found T1.3).
+/repos/
 
 # Original reference copies (untracked upstream snapshots, frozen by
 # docs/provenance/manifest-*.sha256)
-PyDoublet/
-pandapipesAI/
+/PyDoublet/
+/pandapipesAI/
 
 # Uploaded source archives
 *.zip
