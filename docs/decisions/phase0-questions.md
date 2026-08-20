@@ -138,12 +138,32 @@ one-line answer per question is enough.
 ### Q11 — Minimum absolute network pressure and pressure convention (Tanja)
 - **Evidence:** the implementation plan's gate table (§11) lists "Minimum absolute
   network pressure: 1.0–1.5 bar, confirm". The project has adopted a single
-  convention: all pressure fields are absolute (`*_bar_abs`), matching how
-  pandapipes pressure output is treated; gauge pressures are never compared with
-  pandapipes output directly.
+  reporting convention: all pressure fields are absolute (`*_bar_abs`).
+  **Status (updated 2026-08-20, T2.2A):** the *technical* half of this question —
+  what pandapipes itself reports — is now resolved by direct evidence, not
+  assumption. pandapipes' own component documentation labels `p_bar` only as
+  "pressure in bar" without stating its reference, so this project verified it
+  directly: `res_junction.p_bar` is **gauge** pressure, confirmed both from the
+  installed pandapipes 0.14.0 source (`create_compressor` is the one component
+  that computes a genuinely absolute pressure, by explicitly *adding* a separate
+  ambient-pressure field to the node's stored `p_bar`-backing state — proving
+  that state alone excludes the atmospheric offset) and experimentally (a
+  known `ext_grid` gauge input reproduces unchanged in `res_junction.p_bar`,
+  with no ~1 bar shift). Conversion between the two uses
+  `NORMAL_PRESSURE = 1.01325 bar` — pandapipes' own constant, not an invented
+  number — via `network/pressure.py::to_absolute_bar()`/`to_gauge_bar()`, pinned
+  by `tests/network/test_pressure_semantics.py`. Given the source only states
+  "pressure in bar" and not a reference, retaining this source-backed pinning
+  test (rather than trusting documentation prose alone) is the correct standing
+  practice, not a one-time check to later remove.
+- **Still open:** the *policy* half of Q11 — Tanja's confirmation that
+  `min_pressure_bar_abs = 1.5` (vs. the plan's 1.0 bar alternative) is the right
+  feasibility threshold — remains pending. The technical convention question
+  ("is pandapipes' output absolute, and is the project's absolute-pressure
+  labelling consistent with that") is resolved; the numeric-threshold question
+  is not.
 - **Provisional:** `min_pressure_bar_abs = 1.5` (the stricter bound), config keys
   `network.min_pressure_bar_abs` / `gates.min_pressure_bar_abs`,
-  `pressure_reference: "absolute"`. A Sprint-2 unit test pins the pressure-reference
-  semantics of pandapipes results before the gate is applied.
+  `pressure_reference: "absolute"`.
 - **Impact if different:** 1.0 bar abs loosens the feasibility margin at the network's
   low-pressure points; candidates near the remote section are most affected.

@@ -1,10 +1,11 @@
 {
   "_meta": {
-    "schema_version": "0.6",
+    "schema_version": "0.7",
     "status": "demo_assumption",
     "created": "2026-08-19",
     "revised": "2026-08-20",
     "changelog": {
+      "0.7": "T2.2A: CORRECTED _meta.pressure_convention and gates._note, which incorrectly claimed pandapipes reports absolute pressure — verified directly against installed pandapipes 0.14.0 source and by experiment (tests/network/test_pressure_semantics.py) that pandapipes' res_junction.p_bar is GAUGE pressure. All _bar_abs config values are now converted to gauge before use and back to absolute for reporting (network/pressure.py); ATMOSPHERIC_PRESSURE_BAR=1.01325 matches pandapipes' own NORMAL_PRESSURE constant. Added network.geometry (single coordinate source for the synthetic four-consumer topology), network.pipe_sizing (trunk/branch DN, adiabatic-pipe simplification), network.circulation_pump (empirically-determined plift_bar), and populated candidates[].supply_junction/return_junction/surface_connection_length_m (previously null, pending this exact task).",
       "0.6": "T2.1: relocated pydoublet.reinjection_temperature_c to coupling_assumptions.reinjection_minimum_temperature_c (same 35.0 degC value, unchanged meaning pending Q3 — moved because it is a coupling-boundary policy assumption the adapter consumes via max(T_reinj_min, T_DH_return+minimum_hx_approach_k), not a PyDoublet-contract fact); added coupling_assumptions.dh_water_specific_heat_capacity_j_kg_k (4180.0, standard reference value for water, kept in J/(kg*K) to match geothermal_brine_specific_heat_capacity_j_kg_k's unit convention) for the adapter's independent DH-mass-flow calculation.",
       "0.5": "T1.5B second correction round: pydoublet.scenario_identity.scenario_identifier_fallback_policy corrected — the fallback is now a caller-supplied SourceProvenance.scenario_identifier (a real scenario identifier), never a source commit hash or format-hint string, which were never valid scenario identifiers. Also documents the new calculation_mode requirement (T1.5 supports only explicitly-confirmed deterministic results) and the model-level contract invariants now enforced on PyDoubletCouplingResult/PyDoubletCouplingFailure.",
       "0.4": "T1.5B correction round: added pydoublet.scenario_identity (scenario-name/timestamp pointers and result-identifier convention — scenario identity must never be derived from a raw-result content hash), pydoublet.producer_wellhead_temperature.agreement_absolute_tolerance_c/agreement_relative_tolerance_fraction (temperature-agreement check now uses math.isclose with both an absolute-°C and a relative tolerance, not relative-only), and pydoublet.legacy_run_count_correction (documents the known actual_runs_completed==monte_carlo_runs legacy defect, its correction rule, and the ambiguous-case failure code). These are validation/audit-policy parameters, not physical or economic assumptions.",
@@ -16,7 +17,7 @@
     "adr": "docs/decisions/ADR-001-geothermal-poc-scope.md",
     "adr_temperature_source": "docs/decisions/ADR-002-pydoublet-temperature-source.md",
     "source_plan_sections": ["8.2", "9.2", "10.1", "10.2", "11", "12.2"],
-    "pressure_convention": "All pressure fields in this project are ABSOLUTE pressures in bar (suffix _bar_abs). pandapipes pressure output is treated as absolute; a Sprint-2 unit test must pin this semantics before any pressure gate is applied. Never compare gauge pressure with pandapipes absolute output.",
+    "pressure_convention": "All pressure fields in this project are ABSOLUTE pressures in bar (suffix _bar_abs) — this is a project-level reporting convention, not what pandapipes itself computes. VERIFIED (T2.2A, tests/network/test_pressure_semantics.py) against installed pandapipes 0.14.0: pandapipes' res_junction.p_bar is GAUGE pressure (relative to atmosphere), not absolute. Every _bar_abs config value is converted to gauge via network/pressure.py::to_gauge_bar() immediately before any pandapipes create_* call, and every res_junction.p_bar is converted back to absolute via to_absolute_bar() immediately before comparison against a _bar_abs gate or KPI reporting. Raw pandapipes gauge output must never be compared directly against a _bar_abs value anywhere in this project.",
     "questions_without_config_impact": {
       "Q9": "MCP server topology - governs architecture, recorded in ADR-001 D6/D7, no numeric config value.",
       "Q10": "Hosting and PyDoublet licence - governs distribution, recorded in ADR-001 D7, no numeric config value."
@@ -108,47 +109,73 @@
     "min_pressure_note": "demo_assumption pending confirmation (Q11). Plan §11 gives 1.0-1.5 bar absolute with 'confirm'; 1.5 adopted provisionally as the stricter bound.",
     "fluid": "water",
     "pipe_roughness_mm": 0.1,
-    "ground_temperature_c": 10.0
+    "ground_temperature_c": 10.0,
+    "geometry": {
+      "_status": "demo_assumption",
+      "_question_refs": [],
+      "_note": "T2.2A. The single geometry source (also implemented as network/geometry.py's coordinate table, which this section must stay consistent with — see tests/network/test_geometry.py). A straight 1000 m trunk main in 4x250 m segments; consumers on +80 m perpendicular branches; candidates on the opposite side at varying offsets from the SAME trunk junction as the co-located consumer, so each candidate's label matches its real topological position. Not tied to any Phase-0 question — a PoC geometry choice, not a physical/economic assumption.",
+      "trunk_segment_length_m": 250.0,
+      "trunk_segment_count": 4,
+      "consumer_branch_offset_m": 80.0,
+      "candidate_site_offsets_m": { "C1": 50.0, "C2": 70.0, "C3": 90.0, "C4": 120.0 },
+      "trunk_to_consumer_attachment": { "consumer_1": "trunk_1", "consumer_2": "trunk_2", "consumer_3": "trunk_3", "consumer_4": "trunk_4" },
+      "trunk_to_candidate_attachment": { "C1": "trunk_1", "C2": "trunk_2", "C3": "trunk_3", "C4": "trunk_4" }
+    },
+    "pipe_sizing": {
+      "_status": "demo_assumption",
+      "_question_refs": [],
+      "_note": "T2.2A, corrected: DN150 originally gave a worst-case trunk velocity of ~1.48 m/s — 98% of gates.max_pipe_velocity_m_s=1.5, not a comfortable margin for a baseline meant to stay clear of a hard gate. Upsized to DN200: real solved max velocity (verified via pipeflow, not estimated) is 0.9854 m/s, ~66% of the gate (>30% headroom), now the CONSUMER branch at DN100 (consumer_4, 950 kW) rather than the trunk. Worst consumer branch (consumer_4, 950 kW) computes to ~0.99 m/s at DN100 — kept unchanged, already comfortable. pipe_heat_transfer_coefficient_w_per_m2k=0.0 is an explicit adiabatic-pipe SIMPLIFICATION, not a researched insulation U-value — network_heat_loss_kw is therefore 0 in this baseline.",
+      "trunk_pipe_dn_mm": 200.0,
+      "branch_pipe_dn_mm": 100.0,
+      "pipe_heat_transfer_coefficient_w_per_m2k": 0.0
+    },
+    "circulation_pump": {
+      "_status": "demo_assumption",
+      "_question_refs": [],
+      "_note": "T2.2A. pressure_lift_bar determined empirically at implementation time (a deterministic hydraulic sizing pass, not an independently invented number): the smallest tested value keeping absolute pressure comfortably above gates.min_pressure_bar_abs=1.5 everywhere (verified minimum 3.0 bar_abs at the return-side plant boundary) while staying well under gates.max_pump_dp_bar=6.0. At this value the baseline converges and every consumer receives its exact design qext_w/deltat_k. OPEN FOR T2.2B, EXPLICITLY UNRESOLVED: res_circ_pump_pressure.qext_w (~3.289 MW at these settings) exceeds the sum of consumer qext_w (3.2 MW) by ~2.8% under adiabatic pipes (pipe_heat_transfer_coefficient_w_per_m2k=0.0, so pipe heat loss cannot explain the gap) — likely temperature-dependent water cp between the hot/cold legs, not yet reconciled against gates.energy_balance_tolerance_fraction=0.02. T2.2A does NOT claim the baseline passes the energy-balance gate; no energy-balance KPI or gate is implemented in T2.2A at all (network/baseline.py does not exist yet) — this is T2.2B's first task before any pass/fail claim is made.",
+      "pressure_lift_bar": 3.0
+    },
+    "atmospheric_pressure_bar": 1.01325
   },
 
   "candidates": {
     "_status": "demo_assumption",
     "_question_refs": [],
-    "_note": "Sprint-2 derivation rule: candidate coordinates and valid supply/return junction pairs are defined FIRST; connection-pipe lengths are then derived from (or explicitly constructed together with) that geometry. The map, the pandapipes connection pipes and the economic calculation must all consume the SAME single length value per candidate. The economic configuration and the network geometry may never hold different connection lengths. Lengths are therefore null until the Sprint-2 geometry exists.",
+    "_note": "T2.2A: supply_junction/return_junction/surface_connection_length_m populated from the single geometry source (network.geometry / network/geometry.py, cross-checked by tests/network/test_geometry.py). connection_dn stays null: sizing the candidate's own surface-connection pipe requires its actual flow rate, which depends on the geothermal evaluation (a later, separately-approved task — T2.2 creates valid junction pairs without evaluating a geothermal connection). The map, the pandapipes connection pipes and the economic calculation must all consume the SAME single length value per candidate.",
     "list": [
       {
         "id": "C1",
         "label": "Near network head",
-        "surface_connection_length_m": null,
-        "supply_junction": null,
-        "return_junction": null,
+        "surface_connection_length_m": 50.0,
+        "supply_junction": "trunk_1",
+        "return_junction": "ret_trunk_1",
         "connection_dn": null,
         "construction_multiplier": 1.0
       },
       {
         "id": "C2",
         "label": "Near central trunk",
-        "surface_connection_length_m": null,
-        "supply_junction": null,
-        "return_junction": null,
+        "surface_connection_length_m": 70.0,
+        "supply_junction": "trunk_2",
+        "return_junction": "ret_trunk_2",
         "connection_dn": null,
         "construction_multiplier": 1.0
       },
       {
         "id": "C3",
         "label": "Near branch intersection",
-        "surface_connection_length_m": null,
-        "supply_junction": null,
-        "return_junction": null,
+        "surface_connection_length_m": 90.0,
+        "supply_junction": "trunk_3",
+        "return_junction": "ret_trunk_3",
         "connection_dn": null,
         "construction_multiplier": 1.0
       },
       {
         "id": "C4",
         "label": "Near remote/end section",
-        "surface_connection_length_m": null,
-        "supply_junction": null,
-        "return_junction": null,
+        "surface_connection_length_m": 120.0,
+        "supply_junction": "trunk_4",
+        "return_junction": "ret_trunk_4",
         "connection_dn": null,
         "construction_multiplier": 1.0
       }
@@ -158,7 +185,7 @@
   "gates": {
     "_status": "demo_assumption",
     "_question_refs": ["Q4", "Q5", "Q6", "Q11"],
-    "_note": "Hard technical gates, applied in plan §11 order before any economic ranking. All pressure fields use the ABSOLUTE reference (see _meta.pressure_convention); adapter, pandapipes evaluation and feasibility gates must share it. Never compare gauge pressure with pandapipes absolute pressure output.",
+    "_note": "Hard technical gates, applied in plan §11 order before any economic ranking. All pressure fields use the ABSOLUTE reference (see _meta.pressure_convention). pandapipes itself reports GAUGE pressure (verified, T2.2A) — every pressure gate must be evaluated against network/pressure.py::to_absolute_bar(res_junction.p_bar), never against the raw gauge value directly.",
     "max_pipe_velocity_m_s": 1.5,
     "max_pump_dp_bar": 6.0,
     "min_pressure_bar_abs": 1.5,

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "r3chain-geothermal"
 version = "0.1.0"
-description = "R3-CHAIN orchestration package: typed PyDoublet coupling contract, adapter and reporting code (deliberately independent of the PyDoublet and pandapipesAI repositories — see ADR-001 D7)."
+description = "R3-CHAIN orchestration package: typed PyDoublet coupling contract, adapter and reporting code (deliberately independent of the PyDoublet and pandapipesAI repositories — see ADR-001 D7). Depends directly on the standalone pandapipes PyPI library (BSD-3-Clause, unrelated to the repo-hosting/licence questions in Q10) for the synthetic network layer, T2.2."
 requires-python = ">=3.11"
 # No license field: intentionally omitted. This package's own code is not
 # the issue, but it sits in the same repository as PyDoublet reference
@@ -22,6 +22,14 @@ dependencies = [
     # RFC 6901 JSON Pointer resolution for raw PyDoublet result field paths
     # (ADR-002) -- a mature library rather than a hand-rolled path parser.
     "jsonpointer>=3.0,<4",
+    # Synthetic district-heating network construction and thermo-hydraulic
+    # pipeflow (T2.2) -- bounded to the tested-compatible 0.14.x series
+    # (0.14.0 verified installed in .venvs/pandapipesai; this project's own
+    # test suite, including the pressure-semantics pinning test, is the
+    # actual compatibility check for any 0.14.x patch release). BSD-3-Clause;
+    # a standalone PyPI library, not the pandapipesAI repository itself --
+    # unrelated to Q10.
+    "pandapipes>=0.14,<0.15",
 ]
 
 [project.optional-dependencies]

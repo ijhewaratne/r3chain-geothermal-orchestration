@@ -18,7 +18,7 @@ def _load_config() -> dict:
 
 def test_from_config_dict_reads_real_config():
     config = _load_config()
-    assert config["_meta"]["schema_version"] == "0.6"
+    assert config["_meta"]["schema_version"] == "0.7"
     assumptions = CouplingAssumptions.from_config_dict(config)
     assert assumptions.dh_supply_temperature_c == 70.0
     assert assumptions.dh_return_temperature_c == 40.0
