@@ -1,10 +1,11 @@
 {
   "_meta": {
-    "schema_version": "0.5",
+    "schema_version": "0.6",
     "status": "demo_assumption",
     "created": "2026-08-19",
     "revised": "2026-08-20",
     "changelog": {
+      "0.6": "T2.1: relocated pydoublet.reinjection_temperature_c to coupling_assumptions.reinjection_minimum_temperature_c (same 35.0 degC value, unchanged meaning pending Q3 — moved because it is a coupling-boundary policy assumption the adapter consumes via max(T_reinj_min, T_DH_return+minimum_hx_approach_k), not a PyDoublet-contract fact); added coupling_assumptions.dh_water_specific_heat_capacity_j_kg_k (4180.0, standard reference value for water, kept in J/(kg*K) to match geothermal_brine_specific_heat_capacity_j_kg_k's unit convention) for the adapter's independent DH-mass-flow calculation.",
       "0.5": "T1.5B second correction round: pydoublet.scenario_identity.scenario_identifier_fallback_policy corrected — the fallback is now a caller-supplied SourceProvenance.scenario_identifier (a real scenario identifier), never a source commit hash or format-hint string, which were never valid scenario identifiers. Also documents the new calculation_mode requirement (T1.5 supports only explicitly-confirmed deterministic results) and the model-level contract invariants now enforced on PyDoubletCouplingResult/PyDoubletCouplingFailure.",
       "0.4": "T1.5B correction round: added pydoublet.scenario_identity (scenario-name/timestamp pointers and result-identifier convention — scenario identity must never be derived from a raw-result content hash), pydoublet.producer_wellhead_temperature.agreement_absolute_tolerance_c/agreement_relative_tolerance_fraction (temperature-agreement check now uses math.isclose with both an absolute-°C and a relative tolerance, not relative-only), and pydoublet.legacy_run_count_correction (documents the known actual_runs_completed==monte_carlo_runs legacy defect, its correction rule, and the ambiguous-case failure code). These are validation/audit-policy parameters, not physical or economic assumptions.",
       "0.3": "pydoublet.producer_wellhead_temperature_source replaced by pydoublet.producer_wellhead_temperature (primary/legacy-fallback structured mapping) after the PyDoublet repair shipped an explicitly named field — see ADR-002.",
@@ -29,6 +30,10 @@
     "dh_return_temperature_c": 40.0,
     "minimum_hx_approach_k": 5.0,
     "hx_heat_delivery_factor": 0.98,
+    "reinjection_minimum_temperature_c": 35.0,
+    "reinjection_minimum_temperature_note": "Relocated from pydoublet.reinjection_temperature_c (T2.1) — same provisional value, unchanged meaning pending Q3 (is exit_temp_heat_exchanger a fixed input, a required reinjection limit, or a calculated result?). Used as the adapter's policy floor in max(T_reinj_min, T_DH_return+minimum_hx_approach_k) — independent of what any specific PyDoublet run itself assumed for its own heat-exchanger exit temperature (see coupling result field geothermal_brine_hx_outlet_temperature_c, a separate quantity used only for the raw energy-consistency check).",
+    "dh_water_specific_heat_capacity_j_kg_k": 4180.0,
+    "dh_water_specific_heat_capacity_note": "Standard reference specific heat capacity of water near typical DH operating temperatures; not tied to a pending phase-0 question. Used for district_heating_water_mass_flow_kg_s = deliverable_geothermal_heat_kw / (dh_water_specific_heat_capacity_j_kg_k/1000 * (dh_supply_temperature_c - dh_return_temperature_c)) — always computed independently from geothermal_brine_mass_flow_kg_s.",
     "curtailment_allowed": true,
     "auxiliary_policy": "cost_shortfall",
     "auxiliary_policy_options": ["cost_shortfall", "strict_infeasible"],
@@ -59,6 +64,7 @@
       "question_ref": "Q2",
       "note": "See ADR-002 for the full source evidence and policy. No longer an unsupported array-index assumption; Dr. Jan's domain-owner confirmation is still pending."
     },
+    "reinjection_temperature_relocation_note": "reinjection_temperature_c moved to coupling_assumptions.reinjection_minimum_temperature_c as of schema 0.6 (T2.1) — see that field's note.",
     "scenario_identity": {
       "_note": "scenario_identifier identifies the SCENARIO (stable across repeated executions of the same PyDoublet configuration); result_identifier identifies THIS SPECIFIC raw result instance via its canonical content hash. Never conflate the two — the content hash changes on every execution because /metadata/timestamp changes, even when the scenario is identical.",
       "path_format": "json_pointer",
@@ -81,9 +87,7 @@
       "audit_warning_code": "LEGACY_PYDOUBLET_RUN_COUNT_METADATA_CORRECTED",
       "ambiguous_case_failure_code": "PYDOUBLET_LEGACY_RUN_COUNT_AMBIGUOUS",
       "ambiguous_case_policy": "if the reported actual_runs_completed does not exactly match monte_carlo_runs under trusted legacy provenance, calculation mode is treated as uncertain and validation fails rather than guessing the true run count."
-    },
-    "reinjection_temperature_c": 35.0,
-    "reinjection_temperature_note": "Fixed modelling input in the supplied example (heat_exchanger_params.exit_temp_heat_exchanger); meaning pending Q3."
+    }
   },
 
   "network": {
