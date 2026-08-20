@@ -35,15 +35,36 @@ one-line answer per question is enough.
   building a duplicate server (plan §5), and Sprint-5 scope shrinks.
 
 ### Q2 — Producer wellhead temperature field (Jan)
-- **Evidence:** The exported JSON has no named wellhead-temperature field. The value
-  76.313 °C appears only as `temperature_profile_c[2]` (from
-  `Doublet.temp_along_doublet`), whose node label is `"5&6, Prod_Top/Entry_HE"`
-  (`pydoublet/doublet_config/doublet.py`, `node_names_along_doublet`;
-  export in `pydoublet/scenario.py::_extract_simulation_results`). Position-based,
-  undocumented, fragile.
-- **Provisional:** `demo_assumption`: index 2 of `temperature_profile_c` is the
-  producer wellhead temperature (config key `pydoublet.producer_wellhead_temperature_source`).
-  The Sprint-1 PyDoublet repair adds an explicit named field pending your confirmation.
+- **Status (updated 2026-08-20, after the PyDoublet packaging repair):**
+  **technically resolved from PyDoublet source code and project documentation —
+  Dr. Jan's domain-owner confirmation remains pending.** This is no longer an
+  unsupported array-index assumption. Evidence trail (full detail: ADR-002):
+  the producer well's own temperature profile has node 0 at
+  `producer_well.depth_profile_m[0] == 0.0` — a direct depth-coordinate fact,
+  not an inference from a label; `doc/examples.rst` independently documents
+  the same "index 0 = wellhead" convention elsewhere in this project; and the
+  repaired PyDoublet result (commit `4b29d1a0b37094543a436e33aba459558fbeb9eb`)
+  now exposes this value under an explicit, named field,
+  `/simulation_results/producer_wellhead_temperature_c` (RFC 6901 JSON Pointer),
+  sourced directly from
+  `/simulation_results/producer_well/temperature_profile_c/0` (not copied from
+  the legacy `/simulation_results/temperature_profile_c/2` index, though the
+  two values agree exactly).
+  **Dr. Jan has not yet confirmed this** — his sign-off is still requested;
+  nothing here should be read as claiming that confirmation has happened.
+- **Superseded evidence (pre-repair, kept for history):** before the repair,
+  the exported JSON had no named wellhead-temperature field; the value
+  76.313 °C appeared only at `/simulation_results/temperature_profile_c/2`
+  (RFC 6901 JSON Pointer; from `Doublet.temp_along_doublet`), whose node
+  label is `"5&6, Prod_Top/Entry_HE"`
+  (`pydoublet/doublet_config/doublet.py`, `node_names_along_doublet`; export
+  in `pydoublet/scenario.py::_extract_simulation_results`) — position-based,
+  undocumented, fragile. The pristine fixture (`fixtures/pydoublet/raw_result.json`,
+  unchanged) still reflects exactly this pre-repair state.
+- **Config:** `config/demo_assumptions.json`'s
+  `pydoublet.producer_wellhead_temperature` now records the primary field
+  path, the legacy fallback path, and the fallback policy (ADR-002) — see
+  that file and ADR-002 for the full structured mapping.
 - **Impact if different:** adapter input mapping and the golden fixture change; all
   HX feasibility numbers shift.
 

@@ -1,12 +1,17 @@
 {
   "_meta": {
-    "schema_version": "0.2",
+    "schema_version": "0.3",
     "status": "demo_assumption",
     "created": "2026-08-19",
-    "revised": "2026-08-19",
+    "revised": "2026-08-20",
+    "changelog": {
+      "0.3": "pydoublet.producer_wellhead_temperature_source replaced by pydoublet.producer_wellhead_temperature (primary/legacy-fallback structured mapping) after the PyDoublet repair shipped an explicitly named field — see ADR-002.",
+      "0.2": "candidate connection lengths set to null pending Sprint-2 geometry; pressure fields switched to explicit absolute reference; economics values restructured with unit/currency/source_status."
+    },
     "description": "Provisional configuration for the R3-CHAIN geothermal PoC. Every value here is a labelled demonstration assumption, NOT a claimed engineering standard. Each section carries _status and _question_refs pointing to docs/decisions/phase0-questions.md. Values are replaceable without code changes; changing one is an assumption change requiring approval (CLAUDE.md).",
     "questions_document": "docs/decisions/phase0-questions.md",
     "adr": "docs/decisions/ADR-001-geothermal-poc-scope.md",
+    "adr_temperature_source": "docs/decisions/ADR-002-pydoublet-temperature-source.md",
     "source_plan_sections": ["8.2", "9.2", "10.1", "10.2", "11", "12.2"],
     "pressure_convention": "All pressure fields in this project are ABSOLUTE pressures in bar (suffix _bar_abs). pandapipes pressure output is treated as absolute; a Sprint-2 unit test must pin this semantics before any pressure gate is applied. Never compare gauge pressure with pandapipes absolute output.",
     "questions_without_config_impact": {
@@ -37,11 +42,17 @@
     "_question_refs": ["Q1", "Q2", "Q3"],
     "example_config": "examples/complete_example.json",
     "energy_consistency_tolerance_fraction": 0.02,
-    "producer_wellhead_temperature_source": {
-      "field": "simulation_results.temperature_profile_c",
-      "index": 2,
-      "node_label": "5&6, Prod_Top/Entry_HE",
-      "note": "Position-based extraction pending Q2 confirmation; Sprint-1 repair adds an explicit named field."
+    "producer_wellhead_temperature": {
+      "path_format": "json_pointer",
+      "primary_field_path": "/simulation_results/producer_wellhead_temperature_c",
+      "legacy_fallback_field_path": "/simulation_results/temperature_profile_c/2",
+      "unit": "degC",
+      "mapping_status": "technically_resolved_from_source_pending_domain_owner_confirmation",
+      "evidence_pydoublet_commit": "4b29d1a0b37094543a436e33aba459558fbeb9eb",
+      "fallback_policy": "legacy_fallback_allowed_only_for_recognized_pristine_or_legacy_results; post_repair_result_missing_primary_field_is_a_validation_failure_not_a_fallback",
+      "audit_warning_code": "LEGACY_PYDOUBLET_TEMPERATURE_INDEX_FALLBACK",
+      "question_ref": "Q2",
+      "note": "See ADR-002 for the full source evidence and policy. No longer an unsupported array-index assumption; Dr. Jan's domain-owner confirmation is still pending."
     },
     "reinjection_temperature_c": 35.0,
     "reinjection_temperature_note": "Fixed modelling input in the supplied example (heat_exchanger_params.exit_temp_heat_exchanger); meaning pending Q3."

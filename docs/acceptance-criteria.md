@@ -77,6 +77,25 @@ Week-6 exit gate (plan §17):
       warnings, output-file hashes).
 - [ ] A colleague can run the demonstration from the README alone.
 
+## Producer wellhead temperature contract (ADR-002)
+
+- [ ] The adapter prefers the primary JSON Pointer
+      `/simulation_results/producer_wellhead_temperature_c` (the named field)
+      over the legacy pointer `/simulation_results/temperature_profile_c/2`
+      whenever the primary pointer resolves.
+- [ ] Any use of the legacy fallback is traceable and emits the
+      `LEGACY_PYDOUBLET_TEMPERATURE_INDEX_FALLBACK` audit warning.
+- [ ] The original raw PyDoublet result and the field's source path are
+      preserved alongside every extracted value, primary or fallback.
+- [ ] A post-repair PyDoublet result missing the named field is rejected
+      (validation failure), never silently patched via the legacy fallback.
+- [ ] When both the named field and the legacy index are present, their
+      values must agree; disagreement is itself a validation failure.
+- [ ] The temperature unit is explicitly °C wherever this value is reported
+      or logged.
+- [ ] No unlabelled index-based extraction of this value is permitted
+      anywhere in adapter or reporting code.
+
 Standing constraints verified at both gates:
 
 - [ ] Every physical field carries an explicit unit in its name or schema.
