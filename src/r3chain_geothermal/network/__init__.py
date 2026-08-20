@@ -1,3 +1,19 @@
+from .baseline import (
+    BASELINE_CONTRACT_SCHEMA_VERSION,
+    ENTHALPY_INTEGRATION_METHOD,
+    ENTHALPY_INTEGRATION_SEGMENTS,
+    BaselineBoundaryResult,
+    BaselineNetworkFailure,
+    BaselineNetworkResult,
+    CirculationPumpResult,
+    ConsumerBaselineResult,
+    EnergyBalanceCheck,
+    GateTolerances,
+    MassBalanceCheck,
+    PandapipesInternalEnergyConsistency,
+    parse_baseline_result_json,
+    run_baseline_evaluation,
+)
 from .blueprint import (
     BLUEPRINT_SCHEMA_VERSION,
     BlueprintCandidate,
@@ -10,20 +26,36 @@ from .blueprint import (
     build_default_blueprint,
 )
 from .builder import build_pandapipes_net
+from .errors import BaselineFailureCode
 from .pressure import ATMOSPHERIC_PRESSURE_BAR, to_absolute_bar, to_gauge_bar
 
 __all__ = [
     "ATMOSPHERIC_PRESSURE_BAR",
+    "BASELINE_CONTRACT_SCHEMA_VERSION",
     "BLUEPRINT_SCHEMA_VERSION",
+    "ENTHALPY_INTEGRATION_METHOD",
+    "ENTHALPY_INTEGRATION_SEGMENTS",
+    "BaselineBoundaryResult",
+    "BaselineFailureCode",
+    "BaselineNetworkFailure",
+    "BaselineNetworkResult",
     "BlueprintCandidate",
     "BlueprintConsumer",
     "BlueprintJunction",
     "BlueprintPipe",
+    "CirculationPumpResult",
     "CirculationPumpSpec",
+    "ConsumerBaselineResult",
+    "EnergyBalanceCheck",
+    "GateTolerances",
+    "MassBalanceCheck",
+    "PandapipesInternalEnergyConsistency",
     "NetworkBlueprint",
     "NetworkBuildParameters",
     "build_default_blueprint",
     "build_pandapipes_net",
+    "parse_baseline_result_json",
+    "run_baseline_evaluation",
     "to_absolute_bar",
     "to_gauge_bar",
 ]
