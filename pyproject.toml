@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "r3chain-geothermal"
+version = "0.1.0"
+description = "R3-CHAIN orchestration package: typed PyDoublet coupling contract, adapter and reporting code (deliberately independent of the PyDoublet and pandapipesAI repositories — see ADR-001 D7)."
+requires-python = ">=3.11"
+# No license field: intentionally omitted. This package's own code is not
+# the issue, but it sits in the same repository as PyDoublet reference
+# material whose licence is unresolved (Phase-0 Q10, Apache-2.0 vs MIT
+# declarations conflict) -- adding any licence claim here would be premature
+# until that is resolved. See docs/decisions/phase0-questions.md Q10.
+authors = [
+    { name = "Ishantha Hewaratne" },
+]
+dependencies = [
+    # Pydantic v2 API (model_dump, ConfigDict, discriminated unions) --
+    # same range already tested and shipped for PyDoublet itself (T1.4A).
+    "pydantic>=2.0,<3",
+    # RFC 6901 JSON Pointer resolution for raw PyDoublet result field paths
+    # (ADR-002) -- a mature library rather than a hand-rolled path parser.
+    "jsonpointer>=3.0,<4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["r3chain_geothermal*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
