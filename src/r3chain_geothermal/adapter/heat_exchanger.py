@@ -198,12 +198,13 @@ class HeatExchangerCouplingResult(BaseModel):
             errors.append("district_heating_water_mass_flow_kg_s.value must be > 0")
         if self.deliverable_geothermal_heat_kw.value <= 0:
             errors.append("deliverable_geothermal_heat_kw.value must be > 0")
-        if self.district_heating_water_mass_flow_kg_s.value == self.coupling_input.geothermal_brine_mass_flow_kg_s.value:
-            errors.append(
-                "district_heating_water_mass_flow_kg_s must never equal "
-                "geothermal_brine_mass_flow_kg_s -- brine and DH-water flow "
-                "must be computed independently"
-            )
+        # NOTE: district_heating_water_mass_flow_kg_s and
+        # geothermal_brine_mass_flow_kg_s are REQUIRED to be computed via
+        # independent formulas (enforced below by recomputation from
+        # coupling_input/assumptions), but their VALUES may coincidentally
+        # be numerically equal -- that is not itself a defect and must not
+        # be rejected. "Separately derived" is enforced by the
+        # recomputation check, not by a value-inequality check.
 
         # Recompute the entire physics chain and cross-check every stored value.
         computed_kw, reported_kw, rel_diff = _compute_raw_energy_consistency(self.coupling_input)

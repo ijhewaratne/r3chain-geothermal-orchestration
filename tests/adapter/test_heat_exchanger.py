@@ -99,10 +99,44 @@ def test_dh_mass_flow_matches_target():
     assert result.district_heating_water_mass_flow_kg_s.unit == "kg/s"
 
 
-def test_raw_power_never_labelled_as_deliverable():
+def test_golden_case_deliverable_heat_is_numerically_less_than_raw_power():
+    """A numeric fact of the GOLDEN worked example specifically (temperature-
+    limited binding + a 0.98 delivery factor < 1.0) -- NOT a general contract
+    rule. deliverable_geothermal_heat_kw is permitted to equal
+    raw_geothermal_thermal_power_kw (e.g. hx_heat_delivery_factor=1.0 with
+    the raw-power term binding -- see
+    test_deliverable_heat_may_equal_raw_power_when_factor_is_one_and_raw_power_binds).
+    The two are always separately named/unit-labelled/derived regardless."""
     result = evaluate_heat_exchanger_coupling(_golden_coupling_input(), assumptions=_golden_assumptions())
     assert result.deliverable_geothermal_heat_kw.value != result.coupling_input.raw_geothermal_thermal_power_kw.value
     assert result.deliverable_geothermal_heat_kw.value < result.coupling_input.raw_geothermal_thermal_power_kw.value
+
+
+def test_deliverable_heat_may_equal_raw_power_when_factor_is_one_and_raw_power_binds():
+    """Equality-acceptance test (post-16187e9a audit correction): when
+    hx_heat_delivery_factor == 1.0 and the raw PyDoublet power is the
+    binding term of min(raw_power, temperature_limited_power),
+    deliverable_geothermal_heat_kw legitimately equals
+    raw_geothermal_thermal_power_kw exactly. This is a valid success, not an
+    error -- "raw power is never automatically DH-deliverable power" is
+    about not ASSUMING equality without checking, not about forbidding a
+    genuinely-computed equal result. The fields remain separately named,
+    unit-labelled, and independently derived regardless."""
+    coupling_input = _golden_coupling_input()
+    assumptions = _assumptions(
+        dh_return_temperature_c=10.0, reinjection_minimum_temperature_c=20.0, hx_heat_delivery_factor=1.0,
+    )
+    result = evaluate_heat_exchanger_coupling(coupling_input, assumptions=assumptions)
+    assert isinstance(result, HeatExchangerCouplingResult)
+    assert result.deliverable_heat_binding_constraint == "pydoublet_reported_power"
+    assert result.deliverable_geothermal_heat_kw.value == coupling_input.raw_geothermal_thermal_power_kw.value
+    # Still separately named fields, on separate objects, independently derived:
+    assert "deliverable_geothermal_heat_kw" != "raw_geothermal_thermal_power_kw"
+    assert result.deliverable_geothermal_heat_kw.unit == "kW"
+    assert coupling_input.raw_geothermal_thermal_power_kw.unit == "kW"
+    # Round-trips cleanly -- equality is not rejected anywhere in the boundary.
+    restored = parse_heat_exchanger_result_json(result.model_dump_json())
+    assert restored == result
 
 
 # ── Two distinct "35 degC" concepts kept separate ───────────────────────────
@@ -261,15 +295,59 @@ def test_deliverable_heat_binding_pydoublet_power_when_dh_return_very_cold():
 
 
 # ── Brine/DH-water flow separation ──────────────────────────────────────────
-def test_dh_water_flow_never_equals_brine_flow():
+# NOTE (post-16187e9a audit correction): DH-water flow and brine flow are
+# REQUIRED to be independently DERIVED (different formulas, different
+# inputs) but are NOT required to be numerically unequal -- coincidental
+# equality is a valid outcome and must be accepted, not rejected. The old
+# model-level invariant enforcing inequality has been removed; see
+# test_dh_water_flow_may_coincidentally_equal_brine_flow below.
+def test_golden_case_dh_water_flow_differs_numerically_from_brine_flow():
+    """A numeric fact of the GOLDEN worked example specifically -- NOT a
+    general contract rule. See
+    test_dh_water_flow_may_coincidentally_equal_brine_flow for the
+    equality-acceptance case."""
     result = evaluate_heat_exchanger_coupling(_golden_coupling_input(), assumptions=_golden_assumptions())
     assert result.district_heating_water_mass_flow_kg_s.value != result.coupling_input.geothermal_brine_mass_flow_kg_s.value
 
 
+def test_dh_water_flow_may_coincidentally_equal_brine_flow():
+    """Equality-acceptance test (post-16187e9a audit correction): a
+    dh_water_specific_heat_capacity_j_kg_k value exists (~3742.4 J/(kg*K))
+    for which the DH mass flow, computed entirely independently from the
+    brine mass flow via a different formula and different inputs, happens
+    to land on the exact same numeric value as
+    coupling_input.geothermal_brine_mass_flow_kg_s. This must be ACCEPTED,
+    not rejected -- "brine and DH-water flow must never be conflated" is
+    about never aliasing/reusing one as the other, not about their values
+    never coinciding."""
+    coupling_input = _golden_coupling_input()
+    brine_flow = coupling_input.geothermal_brine_mass_flow_kg_s.value
+    golden_result = evaluate_heat_exchanger_coupling(coupling_input, assumptions=_golden_assumptions())
+    deliverable_kw = golden_result.deliverable_geothermal_heat_kw.value
+    delta_t_dh = 70.0 - 40.0
+    cp_dh_j_kg_k_for_equal_flow = (deliverable_kw / (brine_flow * delta_t_dh)) * 1000.0
+
+    assumptions = _assumptions(dh_water_specific_heat_capacity_j_kg_k=cp_dh_j_kg_k_for_equal_flow)
+    result = evaluate_heat_exchanger_coupling(coupling_input, assumptions=assumptions)
+
+    assert isinstance(result, HeatExchangerCouplingResult)
+    assert result.district_heating_water_mass_flow_kg_s.value == pytest.approx(brine_flow, rel=1e-9)
+    # Still separately named, separately derived (different formula, different
+    # assumption inputs) -- coincidental equality does not collapse them:
+    assert result.district_heating_water_mass_flow_kg_s is not result.coupling_input.geothermal_brine_mass_flow_kg_s
+    assert result.district_heating_water_mass_flow_kg_s.unit == "kg/s"
+    assert result.coupling_input.geothermal_brine_mass_flow_kg_s.unit == "kg/s"
+    # Round-trips cleanly -- equality is not rejected anywhere in the boundary.
+    restored = parse_heat_exchanger_result_json(result.model_dump_json())
+    assert restored == result
+
+
 def test_four_core_quantities_distinctly_named_and_unit_labelled():
     """Raw power, deliverable heat, brine flow, and DH-water flow are four
-    separate fields, each with its own explicit unit -- never aliased or
-    reused across concepts."""
+    separate fields, each with its own explicit unit, each independently
+    derived -- never aliased or reused across concepts. This does NOT claim
+    their numeric values must differ (see the coincidental-equality tests
+    above/below); "distinct" here means distinctly named/labelled/derived."""
     result = evaluate_heat_exchanger_coupling(_golden_coupling_input(), assumptions=_golden_assumptions())
     raw_power = result.coupling_input.raw_geothermal_thermal_power_kw
     deliverable_heat = result.deliverable_geothermal_heat_kw
@@ -282,8 +360,9 @@ def test_four_core_quantities_distinctly_named_and_unit_labelled():
 
     assert raw_power.unit == "kW" and deliverable_heat.unit == "kW"
     assert brine_flow.unit == "kg/s" and dh_flow.unit == "kg/s"
-    assert raw_power.value != deliverable_heat.value
-    assert brine_flow.value != dh_flow.value
+    # Each is a separate NormalizedQuantity instance, never the same object:
+    assert raw_power is not deliverable_heat
+    assert brine_flow is not dh_flow
 
 
 def test_dh_water_flow_field_naming_never_conflated_with_brine():
@@ -411,11 +490,12 @@ def test_tamper_negative_dh_water_mass_flow_is_rejected():
         parse_heat_exchanger_result_json(json.dumps(payload))
 
 
-def test_tamper_dh_water_flow_set_equal_to_brine_flow_is_rejected():
+def test_tamper_dh_water_mass_flow_inconsistent_with_recomputation_is_rejected():
+    """A plausible-looking but wrong dh-flow value (unrelated to brine
+    flow -- this is about recomputation consistency, not the removed
+    flow-equality invariant) must still be rejected."""
     payload = _valid_success_payload()
-    payload["district_heating_water_mass_flow_kg_s"]["value"] = (
-        payload["coupling_input"]["geothermal_brine_mass_flow_kg_s"]["value"]
-    )
+    payload["district_heating_water_mass_flow_kg_s"]["value"] = 99.0
     with pytest.raises(ValidationError):
         parse_heat_exchanger_result_json(json.dumps(payload))
 
