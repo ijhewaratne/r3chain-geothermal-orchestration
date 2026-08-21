@@ -1,0 +1,114 @@
+"""Server/registry temp-directory lifecycle tests (T5.1A hardening round
+2): a server-owned registry's root directory must be cleaned up on normal
+process exit; a caller-supplied registry's lifecycle is never touched by
+build_server()."""
+from __future__ import annotations
+
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+from unittest import mock
+
+from r3chain_geothermal.mcp_server.registry import RunRegistry
+from r3chain_geothermal.mcp_server.server import build_server
+
+
+def _run_registry_close_calls(mock_register: mock.MagicMock) -> list:
+    """`atexit.register` is a single, process-global function -- patching
+    it (necessarily globally, since `server.atexit` IS the same module
+    object as the top-level `atexit` module) can also observe unrelated
+    registrations made by other code (e.g. multiprocessing's own internal
+    `_exit_function`, lazily triggered the first time something in the
+    `mcp`/anyio import chain runs). Filter down to calls that registered
+    a `RunRegistry.close` bound method specifically."""
+    return [
+        call.args[0] for call in mock_register.call_args_list
+        if call.args and getattr(call.args[0], "__func__", None) is RunRegistry.close
+    ]
+
+
+def test_build_server_registers_atexit_cleanup_for_a_server_owned_registry():
+    with mock.patch("r3chain_geothermal.mcp_server.server.atexit.register") as mock_register:
+        build_server()
+    close_calls = _run_registry_close_calls(mock_register)
+    assert len(close_calls) == 1
+    registered_callable = close_calls[0]
+    assert registered_callable.__self__.__class__ is RunRegistry
+    # Mocking atexit.register means the real cleanup callback was never
+    # invoked -- close the registry this call actually created so the
+    # test doesn't leave a stray /tmp/r3chain-mcp-* directory behind.
+    registered_callable()
+
+
+def test_build_server_does_not_register_atexit_cleanup_for_a_caller_supplied_registry():
+    with tempfile.TemporaryDirectory() as td:
+        supplied_registry = RunRegistry(max_size=5, root_dir=Path(td))
+        with mock.patch("r3chain_geothermal.mcp_server.server.atexit.register") as mock_register:
+            build_server(registry=supplied_registry)
+        assert _run_registry_close_calls(mock_register) == []
+
+
+def test_build_server_creates_a_real_root_directory_that_atexit_would_clean_up():
+    """Confirms the exact object atexit.register is wired to actually
+    owns a real, existing directory -- the behavior a process-exit
+    atexit callback would perform, exercised directly (killing the
+    interpreter to prove atexit itself fires is not something a unit
+    test can do; registry.close()'s own removal behavior is covered by
+    tests/mcp_server/test_registry.py::test_close_removes_the_entire_root_directory)."""
+    created_registries: list[RunRegistry] = []
+    real_init = RunRegistry.__init__
+
+    def _capturing_init(self, *args, **kwargs):
+        real_init(self, *args, **kwargs)
+        created_registries.append(self)
+
+    with mock.patch.object(RunRegistry, "__init__", _capturing_init):
+        build_server()
+
+    assert len(created_registries) == 1
+    assert created_registries[0].root_dir.exists()
+
+
+def test_real_server_process_cleans_up_its_temp_directory_on_sigterm():
+    """The direct regression test for the actual leak this hardening round
+    found: the MCP stdio client's own documented shutdown sequence closes
+    the server's stdin, waits, then sends SIGTERM as the NORMAL path (not
+    a hang fallback) -- verified empirically during this hardening round
+    by reading mcp.client.stdio's own source (PROCESS_TERMINATION_TIMEOUT
+    = 2.0s). Before the SIGTERM handler was added, every such shutdown
+    left a `/tmp/r3chain-mcp-*` directory behind (51 were found
+    accumulated from this session's own manual verification runs).
+
+    This test launches the real server as a real subprocess, locates the
+    temp directory it actually created, sends it a real SIGTERM, and
+    asserts the directory is gone afterward."""
+    before = set(Path(tempfile.gettempdir()).glob("r3chain-mcp-*"))
+
+    process = subprocess.Popen(
+        [sys.executable, "-m", "r3chain_geothermal.mcp_server.server"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    try:
+        new_dir = None
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            after = set(Path(tempfile.gettempdir()).glob("r3chain-mcp-*"))
+            created = after - before
+            if created:
+                new_dir = created.pop()
+                break
+            time.sleep(0.02)
+        assert new_dir is not None, "server subprocess never created its temp directory in time"
+        assert new_dir.exists()
+
+        process.send_signal(signal.SIGTERM)
+        process.wait(timeout=5)
+
+        assert not new_dir.exists(), "SIGTERM handler did not clean up the registry's temp directory"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)

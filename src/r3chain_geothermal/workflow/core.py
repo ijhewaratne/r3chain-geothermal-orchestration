@@ -120,7 +120,7 @@ def compute_source_provenance_sha256(source_provenance: SourceProvenance) -> str
     return canonical_raw_result_sha256(source_provenance.model_dump(mode="json"))
 
 
-def _compute_run_id(input_sha256: str, config_sha256: str, source_provenance_sha256: str, contract_schema_version: str) -> str:
+def compute_run_id(input_sha256: str, config_sha256: str, source_provenance_sha256: str, contract_schema_version: str) -> str:
     """Pure, content-derived from FOUR canonical hashes -- the raw
     PyDoublet result, the config, the source provenance (see
     compute_source_provenance_sha256), and this module's own
@@ -128,7 +128,14 @@ def _compute_run_id(input_sha256: str, config_sha256: str, source_provenance_sha
     silently collide with an older run's run_id even given identical
     input/config/provenance). The SAME four hashes always produce the
     SAME run_id, regardless of when or where run_workflow() executes;
-    changing ANY ONE of the four changes run_id."""
+    changing ANY ONE of the four changes run_id.
+
+    Public (T5.1A): mcp_server/tools.py imports this directly to learn a
+    run's run_id BEFORE deciding whether to call run_workflow() at all
+    (GEO_REGISTRY's reuse-instead-of-rerun path) -- reusing this exact
+    function, rather than re-deriving the same formula independently,
+    guarantees the MCP server's run_id can never silently drift from
+    run_workflow()'s own."""
     combined = canonical_raw_result_sha256({
         "input_sha256": input_sha256, "config_sha256": config_sha256,
         "source_provenance_sha256": source_provenance_sha256, "contract_schema_version": contract_schema_version,
@@ -206,7 +213,7 @@ class WorkflowAuditRecord(BaseModel):
         expected_provenance_hash = compute_source_provenance_sha256(self.source_provenance)
         if self.source_provenance_sha256 != expected_provenance_hash:
             errors.append("source_provenance_sha256 does not match recomputation from source_provenance")
-        expected_run_id = _compute_run_id(
+        expected_run_id = compute_run_id(
             self.input_sha256, self.config_sha256, self.source_provenance_sha256, self.contract_schema_version,
         )
         if self.run_id != expected_run_id:
@@ -421,7 +428,7 @@ def run_workflow(
     input_sha256 = canonical_raw_result_sha256(pydoublet_raw_result)
     config_sha256 = canonical_raw_result_sha256(config)
     source_provenance_sha256 = compute_source_provenance_sha256(source_provenance)
-    run_id = _compute_run_id(input_sha256, config_sha256, source_provenance_sha256, WORKFLOW_CONTRACT_SCHEMA_VERSION)
+    run_id = compute_run_id(input_sha256, config_sha256, source_provenance_sha256, WORKFLOW_CONTRACT_SCHEMA_VERSION)
 
     coupling_assumptions = CouplingAssumptions.from_config_dict(config)
     gate_tolerances = GateTolerances.from_config_dict(config)
