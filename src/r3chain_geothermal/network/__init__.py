@@ -26,13 +26,28 @@ from .blueprint import (
     build_default_blueprint,
 )
 from .builder import build_pandapipes_net
-from .errors import BaselineFailureCode
+from .candidate import (
+    CANDIDATE_CONTRACT_SCHEMA_VERSION,
+    CONNECTION_PIPE_DN_MM,
+    PANDAPIPES_MINIMUM_AUXILIARY_FLOW_STABILIZATION_APPLIED,
+    CandidateEvaluationBoundaryResult,
+    CandidateEvaluationFailure,
+    CandidateEvaluationResult,
+    CandidateKpiDeltas,
+    GeothermalInjectionPolicy,
+    evaluate_candidate,
+    parse_candidate_result_json,
+)
+from .errors import BaselineFailureCode, CandidateFailureCode
 from .pressure import ATMOSPHERIC_PRESSURE_BAR, to_absolute_bar, to_gauge_bar
 
 __all__ = [
     "ATMOSPHERIC_PRESSURE_BAR",
     "BASELINE_CONTRACT_SCHEMA_VERSION",
     "BLUEPRINT_SCHEMA_VERSION",
+    "CANDIDATE_CONTRACT_SCHEMA_VERSION",
+    "CONNECTION_PIPE_DN_MM",
+    "PANDAPIPES_MINIMUM_AUXILIARY_FLOW_STABILIZATION_APPLIED",
     "ENTHALPY_INTEGRATION_METHOD",
     "ENTHALPY_INTEGRATION_SEGMENTS",
     "BaselineBoundaryResult",
@@ -43,18 +58,26 @@ __all__ = [
     "BlueprintConsumer",
     "BlueprintJunction",
     "BlueprintPipe",
+    "CandidateEvaluationBoundaryResult",
+    "CandidateEvaluationFailure",
+    "CandidateEvaluationResult",
+    "CandidateFailureCode",
+    "CandidateKpiDeltas",
     "CirculationPumpResult",
     "CirculationPumpSpec",
     "ConsumerBaselineResult",
     "EnergyBalanceCheck",
     "GateTolerances",
+    "GeothermalInjectionPolicy",
     "MassBalanceCheck",
     "PandapipesInternalEnergyConsistency",
     "NetworkBlueprint",
     "NetworkBuildParameters",
     "build_default_blueprint",
     "build_pandapipes_net",
+    "evaluate_candidate",
     "parse_baseline_result_json",
+    "parse_candidate_result_json",
     "run_baseline_evaluation",
     "to_absolute_bar",
     "to_gauge_bar",

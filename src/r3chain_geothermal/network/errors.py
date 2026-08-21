@@ -42,3 +42,57 @@ class BaselineFailureCode(str, Enum):
     via the SAME temperature-dependent-cp formula -- see baseline.py's
     module docstring for why a naive comparison is wrong) exceeded
     gates.energy_balance_tolerance_fraction (plan §11 gate 11)."""
+
+
+class CandidateFailureCode(str, Enum):
+    """Stable, machine-readable failure codes for a rejected T2.3 candidate
+    evaluation. Reuses BaselineFailureCode's six codes verbatim (redeclared
+    here rather than inherited -- Python's str-Enum does not support
+    extending an existing Enum's members) plus one candidate-specific code
+    for the geothermal injection branch's own hydraulic boundary. Economic
+    infeasibility has no code here -- T2.3 is technical-gates only (plan
+    §11 items 6-11); ranking/economics are a later, separately-approved
+    task."""
+
+    THERMAL_PIPEFLOW_NOT_CONVERGED = "THERMAL_PIPEFLOW_NOT_CONVERGED"
+    """pandapipes raised PipeflowNotConverged (hydraulics or heat-transfer
+    stage) during mode="sequential" solving on the candidate net (plan §11
+    gate 6). Same meaning as BaselineFailureCode's code of the same name."""
+
+    CONSUMER_TEMPERATURE_NOT_MET = "CONSUMER_TEMPERATURE_NOT_MET"
+    """A consumer's supply-side temperature dropped below
+    build_parameters.supply_temperature_c by more than
+    gates.max_consumer_supply_drop_k (plan §11 gate 7)."""
+
+    PRESSURE_LIMIT_EXCEEDED = "PRESSURE_LIMIT_EXCEEDED"
+    """A junction's absolute pressure (network/pressure.py::to_absolute_bar),
+    across every junction in the candidate net INCLUDING the three new
+    geothermal-injection junctions, fell below gates.min_pressure_bar_abs
+    (plan §11 gate 8)."""
+
+    VELOCITY_LIMIT_EXCEEDED = "VELOCITY_LIMIT_EXCEEDED"
+    """A pipe's mean velocity, across every pipe in the candidate net
+    INCLUDING the two new connection pipes, exceeded
+    gates.max_pipe_velocity_m_s (plan §11 gate 9)."""
+
+    MASS_BALANCE_FAILED = "MASS_BALANCE_FAILED"
+    """The combined (main plant pump + geothermal injection) supply-side
+    mass flow vs. total consumer mass-flow residual exceeded
+    gates.mass_balance_tolerance_fraction (plan §11 gate 10)."""
+
+    ENERGY_BALANCE_FAILED = "ENERGY_BALANCE_FAILED"
+    """The combined (main plant pump + geothermal injection) physical
+    enthalpy vs. consumer-plus-pipe-loss physical enthalpy residual
+    exceeded gates.energy_balance_tolerance_fraction (plan §11 gate 11)."""
+
+    GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT = "GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT"
+    """pandapipes raised UserWarning during pipeflow() -- distinct from
+    PipeflowNotConverged -- most commonly
+    CirculationPump.extract_results()'s hard-coded, near-zero-tolerance
+    direction-change check on the MAIN plant pump firing because this
+    candidate's geothermal injection left the main pump's own net mass
+    flow numerically negative. T2.3's curtailment policy
+    (network/candidate.py, GeothermalInjectionPolicy.minimum_auxiliary_circulation_fraction)
+    is specifically designed to keep this unreached in the worked case;
+    this code exists so an unanticipated combination fails loudly with an
+    exact, documented cause instead of an unhandled exception."""

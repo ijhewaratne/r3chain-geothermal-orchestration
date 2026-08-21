@@ -618,7 +618,7 @@ def test_parser_policy_matches_demo_assumptions_config():
     config = json.loads(
         (Path(__file__).resolve().parents[2] / "config" / "demo_assumptions.json").read_text()
     )
-    assert config["_meta"]["schema_version"] == "0.7"
+    assert config["_meta"]["schema_version"] == "0.8"
 
     temp_mapping = config["pydoublet"]["producer_wellhead_temperature"]
     assert temp_mapping["path_format"] == "json_pointer"
