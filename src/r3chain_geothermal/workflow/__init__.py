@@ -1,9 +1,13 @@
 from .artifacts import (
     AUDIT_FILENAME,
+    CANDIDATE_COMPARISON_CSV_FILENAME,
     CONFIG_SNAPSHOT_FILENAME,
     MANIFEST_FILENAME,
+    NETWORK_CANDIDATES_SVG_FILENAME,
     PYDOUBLET_INPUT_FILENAME,
+    RECOMMENDATION_MD_FILENAME,
     WORKFLOW_RESULT_FILENAME,
+    ArtifactHashRecord,
     ManifestRecord,
     write_workflow_artifacts,
 )
@@ -14,34 +18,48 @@ from .core import (
     StageCallRecord,
     WorkflowAuditRecord,
     WorkflowBoundaryResult,
+    WorkflowConfigurationError,
     WorkflowFailure,
     WorkflowResult,
     WorkflowWarningRecord,
     compute_source_provenance_sha256,
     parse_workflow_result_json,
     run_workflow,
+    validate_config_structure,
 )
+from .csv_export import render_candidate_comparison_csv
 from .errors import WorkflowFailureCode
+from .recommendation import render_recommendation_markdown
+from .svg_export import render_network_candidates_svg
 
 __all__ = [
     "AUDIT_FILENAME",
+    "CANDIDATE_COMPARISON_CSV_FILENAME",
     "CONFIG_SNAPSHOT_FILENAME",
     "MANIFEST_FILENAME",
+    "NETWORK_CANDIDATES_SVG_FILENAME",
     "PYDOUBLET_INPUT_FILENAME",
+    "RECOMMENDATION_MD_FILENAME",
     "WORKFLOW_CONTRACT_SCHEMA_VERSION",
     "WORKFLOW_RESULT_FILENAME",
     "WORKFLOW_RUN_ID_HASH_LENGTH",
     "WORKFLOW_RUN_ID_PREFIX",
+    "ArtifactHashRecord",
     "ManifestRecord",
     "StageCallRecord",
     "WorkflowAuditRecord",
     "WorkflowBoundaryResult",
+    "WorkflowConfigurationError",
     "WorkflowFailure",
     "WorkflowFailureCode",
     "WorkflowResult",
     "WorkflowWarningRecord",
     "compute_source_provenance_sha256",
     "parse_workflow_result_json",
+    "render_candidate_comparison_csv",
+    "render_network_candidates_svg",
+    "render_recommendation_markdown",
     "run_workflow",
+    "validate_config_structure",
     "write_workflow_artifacts",
 ]

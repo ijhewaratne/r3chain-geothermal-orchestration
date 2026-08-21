@@ -37,6 +37,9 @@ dev = [
     "pytest>=8.0",
 ]
 
+[project.scripts]
+r3chain-geothermal-demo = "r3chain_geothermal.workflow.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["r3chain_geothermal*"]

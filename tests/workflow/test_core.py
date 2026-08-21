@@ -17,11 +17,13 @@ from r3chain_geothermal.network import CandidateEvaluationFailure, CandidateEval
 from r3chain_geothermal.workflow import (
     WORKFLOW_RUN_ID_PREFIX,
     StageCallRecord,
+    WorkflowConfigurationError,
     WorkflowFailure,
     WorkflowFailureCode,
     WorkflowResult,
     parse_workflow_result_json,
     run_workflow,
+    validate_config_structure,
 )
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -462,3 +464,78 @@ def test_no_map_csv_svg_or_cli_logic_in_core_module():
 
 def test_no_pydoublet_subprocess_call():
     assert "subprocess" not in _code_body_lower()
+
+
+# ── validate_config_structure() / WorkflowConfigurationError ────────────────
+def test_validate_config_structure_passes_silently_for_the_real_config():
+    assert validate_config_structure(_config()) is None
+
+
+def test_validate_config_structure_raises_configuration_error_for_missing_top_level_section():
+    config = _config()
+    del config["gates"]
+    with pytest.raises(WorkflowConfigurationError):
+        validate_config_structure(config)
+
+
+def test_validate_config_structure_raises_configuration_error_for_missing_nested_field():
+    config = _config()
+    del config["coupling_assumptions"]["dh_supply_temperature_c"]
+    with pytest.raises(WorkflowConfigurationError):
+        validate_config_structure(config)
+
+
+def test_validate_config_structure_raises_configuration_error_for_wrong_field_type():
+    config = _config()
+    config["gates"]["min_pressure_bar_abs"] = "not-a-number"
+    with pytest.raises(WorkflowConfigurationError):
+        validate_config_structure(config)
+
+
+def test_validate_config_structure_raises_configuration_error_for_a_rejected_value():
+    """GateTolerances' own model_validator rejects a non-positive
+    tolerance with a plain ValueError -- validate_config_structure() must
+    wrap it as WorkflowConfigurationError, never let the bare ValueError
+    escape."""
+    config = _config()
+    config["gates"]["max_pipe_velocity_m_s"] = -1.0
+    with pytest.raises(WorkflowConfigurationError):
+        validate_config_structure(config)
+
+
+def test_validate_config_structure_never_raises_a_bare_underlying_exception_type():
+    """The whole point of WorkflowConfigurationError: callers can catch
+    ONE narrow type, never a bare KeyError/TypeError/ValueError/
+    ValidationError that could be confused with an unrelated defect."""
+    config = _config()
+    del config["network"]["consumers"]
+    try:
+        validate_config_structure(config)
+    except WorkflowConfigurationError:
+        pass
+    except (KeyError, TypeError, ValueError, ValidationError) as exc:
+        pytest.fail(f"a bare {type(exc).__name__} escaped instead of WorkflowConfigurationError")
+
+
+def test_a_config_that_passes_validate_config_structure_lets_run_workflow_proceed_normally():
+    """A successful validate_config_structure() call is a guarantee that
+    run_workflow() will not itself raise for a config-structure reason
+    (module docstring) -- proven here by actually running the workflow
+    afterward and confirming it returns a normal, non-exceptional result."""
+    config = _config()
+    validate_config_structure(config)
+    result = run_workflow(_raw(), config, source_provenance=_provenance())
+    assert isinstance(result, (WorkflowResult, WorkflowFailure))
+
+
+def test_workflow_configuration_error_is_a_plain_exception_not_swallowed_by_run_workflow():
+    """run_workflow() itself never raises WorkflowConfigurationError --
+    that type is only ever raised by validate_config_structure(), a
+    SEPARATE, caller-invoked pre-check (module docstring)."""
+    config = _config()
+    del config["gates"]
+    # run_workflow() does NOT call validate_config_structure() internally,
+    # so it raises the underlying bare exception (KeyError here), not
+    # WorkflowConfigurationError -- proving the two are genuinely decoupled.
+    with pytest.raises(KeyError):
+        run_workflow(_raw(), config, source_provenance=_provenance())

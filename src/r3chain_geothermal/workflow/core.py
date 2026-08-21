@@ -76,7 +76,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated, Any, Callable, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
 
 from ..adapter import CouplingAssumptions, evaluate_heat_exchanger_coupling
 from ..adapter.heat_exchanger import HeatExchangerCouplingFailure, HeatExchangerCouplingResult
@@ -354,6 +354,56 @@ def _build_blueprint_kwargs(config: dict[str, Any]) -> dict[str, Any]:
         p_supply_bar_abs=network_cfg["p_supply_bar_abs"],
         pump_pressure_lift_bar=network_cfg["circulation_pump"]["pressure_lift_bar"],
     )
+
+
+class WorkflowConfigurationError(Exception):
+    """Raised ONLY by `validate_config_structure()` -- a `config` dict
+    that is structurally invalid for `run_workflow()`: a missing section,
+    a wrong field type, or a value one of the typed assumption-snapshot
+    models itself rejects (`CouplingAssumptions`/`GateTolerances`/
+    `GeothermalInjectionPolicy`/`EconomicAssumptions.from_config_dict()`,
+    or `_build_blueprint_kwargs()`).
+
+    Deliberately narrow, and deliberately NOT raised for anything else
+    `run_workflow()` might unexpectedly fail on. `run_workflow()` itself
+    never raises this -- callers validate `config` with
+    `validate_config_structure()` BEFORE calling `run_workflow()`, so
+    that a genuinely malformed config (this class, mapped to one exit
+    code by a caller such as `cli.py`) stays distinguishable from a
+    truly unexpected internal failure during a validated run (a solver
+    defect, a programming bug -- mapped to a DIFFERENT exit code). A
+    single broad `except (KeyError, TypeError, ValueError, ValidationError)`
+    wrapped around the whole `run_workflow()` call would conflate the
+    two; this class exists specifically so callers do not have to."""
+
+
+_CONFIG_STRUCTURE_ERRORS: tuple[type[Exception], ...] = (KeyError, TypeError, ValueError, ValidationError)
+
+
+def validate_config_structure(config: dict[str, Any]) -> None:
+    """Attempts to construct every config-derived object `run_workflow()`
+    itself builds from `config` -- the four assumption-snapshot
+    classmethods plus `_build_blueprint_kwargs()` -- WITHOUT running the
+    workflow. Raises `WorkflowConfigurationError` (never a bare
+    `KeyError`/`TypeError`/`ValueError`/pydantic `ValidationError`) if
+    any of them fails.
+
+    A successful call is a guarantee: `run_workflow()` will not itself
+    raise for a config-STRUCTURE reason afterward (the exact same
+    construction calls run internally, on the exact same already-loaded
+    `config` dict). Callers (e.g. `cli.py`) can therefore validate
+    `--config` narrowly, before calling `run_workflow()`, and treat any
+    exception that DOES still escape `run_workflow()` as a genuinely
+    unexpected failure -- never silently reclassified as "your config is
+    wrong"."""
+    try:
+        CouplingAssumptions.from_config_dict(config)
+        GateTolerances.from_config_dict(config)
+        GeothermalInjectionPolicy.from_config_dict(config)
+        EconomicAssumptions.from_config_dict(config)
+        _build_blueprint_kwargs(config)
+    except _CONFIG_STRUCTURE_ERRORS as exc:
+        raise WorkflowConfigurationError(f"config is structurally invalid: {exc!r}") from exc
 
 
 def run_workflow(
