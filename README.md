@@ -100,6 +100,87 @@ always produce the same `run_id` and the same `bundle_scientific_sha256`,
 even though `workflow_result.json`/`audit.json`'s own on-disk bytes are not
 claimed to be byte-identical (they carry a real invocation timestamp).
 
+## MCP server and scripted client (interim architecture)
+
+> This demonstrates Claude/MCP orchestration of the deterministic
+> R3-CHAIN workflow. It does not yet demonstrate communication between an
+> official PyDoublet-MCP server and pandapipesAI's MCP server; that
+> topology remains pending Q1 and Q9 (`docs/decisions/phase0-questions.md`).
+
+Installing with the optional `mcp` extra (`pip install -e ".[dev,mcp]"`)
+registers two more console scripts:
+
+- **`r3chain-geothermal-mcp-server`** — a standalone stdio MCP server
+  exposing six `geo_` tools (`geo_get_capabilities`,
+  `geo_validate_pydoublet_result`, `geo_run_workflow`,
+  `geo_get_run_summary`, `geo_get_audit`, `geo_get_artifact`), each a
+  thin wrapper over the same `run_workflow()`/`write_workflow_artifacts()`
+  functions the CLI above calls — no physics/economics/ranking logic of
+  its own.
+- **`r3chain-geothermal-mcp-demo`** — a scripted MCP client that launches
+  the server over stdio and runs the exact eight-step demonstration
+  sequence (`initialize` → `tools/list` → the six tools in order, with
+  `geo_get_artifact` paginated), publishing a compact
+  `session_record.json` (tool order, compact inputs/outputs, warnings,
+  `execution_route`, and a deterministic recommendation — never the raw
+  PyDoublet result, an absolute path, or environment data):
+
+  ```bash
+  r3chain-geothermal-mcp-demo \
+    --input fixtures/pydoublet/repaired_result.json \
+    --provenance config/demo_source_provenance.json \
+    --output-dir artifacts/mcp-demo \
+    [--enable-cli-fallback]
+  ```
+
+  `--enable-cli-fallback` opts in to a deterministic, non-MCP fallback
+  path (the same `run_workflow()`/`write_workflow_artifacts()` functions,
+  called directly) used ONLY when the MCP transport itself fails to
+  start or breaks mid-session — never for a typed workflow/domain
+  outcome (a stopped workflow, or zero feasible candidates, is always a
+  valid, fully audited `execution_route: "mcp"` result) and never for a
+  malformed/unexpected server response (the wrong tool set, a payload
+  that fails schema validation, or a paginated artifact whose content
+  does not match its own recorded hash — a client-side or server-side
+  bug, never silently masked by a fallback run). There is no
+  `--server-command` flag; the launch command is fixed internally.
+
+  `R3CHAIN_MCP_CONFIG_PATH` is a **server-operator/test launch setting
+  only** — read once, by `r3chain-geothermal-mcp-server` itself, at
+  process startup. It is never a `geo_` tool argument and never a
+  scripted-client (`r3chain-geothermal-mcp-demo`) argument; a client can
+  observe which config a running server actually loaded via
+  `geo_get_capabilities`'s `demo_assumptions_config_sha256`, which always
+  reflects that server process's own active configuration.
+
+### Claude Desktop
+
+Add this to your own `claude_desktop_config.json` (uses the installed
+command name — no machine-specific path to edit):
+
+```json
+{
+  "mcpServers": {
+    "r3chain-geothermal": {
+      "command": "r3chain-geothermal-mcp-server",
+      "args": []
+    }
+  }
+}
+```
+
+`r3chain_geothermal.mcp_client.claude_desktop.render_claude_desktop_config_json()`
+renders this same template programmatically.
+`r3chain_geothermal.mcp_client.prompt.render_workshop_prompt()` renders a
+ready-to-paste prompt instructing Claude to use the six tools for every
+technical/economic/ranking decision, never to compute one itself, to
+preserve every warning verbatim, and to state the interim-architecture
+limitation above. This is a **Claude-ready scripted MCP demonstration**
+— the scripted client (`r3chain-geothermal-mcp-demo`) is what has
+actually been run and verified end-to-end; the config/prompt are
+ready-to-use artifacts for a live Claude Desktop session, which is a
+separate, human-driven step.
+
 ## Layers
 
 `hashing` → `contracts`/`parsers` (PyDoublet result parsing) →

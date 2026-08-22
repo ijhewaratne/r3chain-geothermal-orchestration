@@ -21,7 +21,7 @@ from .schemas import (
     RunSummary,
     SourceProvenanceInput,
 )
-from .tools import GEO_TOOL_NAMES, GEO_TOOL_REGISTRY, INTERIM_ARCHITECTURE_DISCLAIMER
+from .tools import GEO_TOOL_NAMES, GEO_TOOL_REGISTRY, INTERIM_ARCHITECTURE_DISCLAIMER, summarize_workflow_result
 
 __all__ = [
     "DEFAULT_MAX_REGISTRY_SIZE",
@@ -41,4 +41,5 @@ __all__ = [
     "SourceProvenanceInput",
     "ToolError",
     "ToolErrorCode",
+    "summarize_workflow_result",
 ]

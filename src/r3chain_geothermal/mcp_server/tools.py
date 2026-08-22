@@ -163,9 +163,18 @@ def validate_pydoublet_result(
 
 
 # ── shared: WorkflowResult/WorkflowFailure -> RunSummary ────────────────────
-def _run_summary_from_result(
+def summarize_workflow_result(
     result: WorkflowResult | WorkflowFailure, artifact_filenames: frozenset[str], *, reused_existing_run: bool,
 ) -> RunSummary:
+    """Public (T5.1B): the ONE place a `WorkflowResult`/`WorkflowFailure`
+    is mapped to the compact `RunSummary` shape every `geo_` tool and the
+    scripted client's own deterministic CLI-fallback path
+    (`mcp_client.cli_fallback`) both return. Reusing this function
+    directly from both callers -- rather than each maintaining its own
+    copy of this mapping -- is what makes "the fallback path reproduces
+    the same deterministic identifiers and ranking as the MCP path" a
+    structural guarantee instead of something that could silently drift
+    between two independently-written implementations."""
     if isinstance(result, WorkflowFailure):
         return RunSummary(
             run_id=result.run_id,
@@ -244,7 +253,7 @@ def run_workflow_tool(
         # exists on disk (write_workflow_artifacts() always writes it last),
         # so it must still be a valid geo_get_artifact target.
         all_filenames = frozenset(manifest.files.keys()) | {MANIFEST_FILENAME}
-        summary = _run_summary_from_result(result, all_filenames, reused_existing_run=False)
+        summary = summarize_workflow_result(result, all_filenames, reused_existing_run=False)
         summary = summary.model_copy(update={"bundle_scientific_sha256": manifest.bundle_scientific_sha256})
         return RunEntry(
             run_id=run_id, summary=summary, audit=result.audit,

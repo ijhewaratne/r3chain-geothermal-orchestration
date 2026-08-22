@@ -49,6 +49,7 @@ mcp = [
 [project.scripts]
 r3chain-geothermal-demo = "r3chain_geothermal.workflow.cli:main"
 r3chain-geothermal-mcp-server = "r3chain_geothermal.mcp_server.server:main"
+r3chain-geothermal-mcp-demo = "r3chain_geothermal.mcp_client.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
