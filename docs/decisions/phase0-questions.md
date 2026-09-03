@@ -33,6 +33,11 @@ one-line answer per question is enough.
   `pydoublet_get_result`) for Sprint 5, per implementation plan §13.
 - **Impact if different:** if PyDoublet-MCP exists, we extend its contract instead of
   building a duplicate server (plan §5), and Sprint-5 scope shrinks.
+- **Status (updated 2026-08-30):** **Decided.** No separate PyDoublet-MCP repository
+  exists or will be built for this project; the interim R3-CHAIN server
+  (`mcp_server/`) is the project's own integration architecture. Recorded
+  session-level in `docs/CODEX_HANDOVER.md` (2026-08-22) and confirmed by the
+  project owner this session. See also Q9.
 
 ### Q2 — Producer wellhead temperature field (Jan)
 - **Status (updated 2026-08-20, after the PyDoublet packaging repair):**
@@ -52,6 +57,12 @@ one-line answer per question is enough.
   two values agree exactly).
   **Dr. Jan has not yet confirmed this** — his sign-off is still requested;
   nothing here should be read as claiming that confirmation has happened.
+- **Status (updated 2026-08-30):** **Decided by the project owner** to proceed with
+  the existing producer-wellhead temperature mapping as implemented in code.
+  Recorded session-level in `docs/CODEX_HANDOVER.md` (2026-08-22) and confirmed by
+  the project owner this session. **Dr. Jan's domain-owner sign-off is still
+  separately pending** — this decision is about proceeding with the current
+  implementation, not a claim that his confirmation has been obtained.
 - **Superseded evidence (pre-repair, kept for history):** before the repair,
   the exported JSON had no named wellhead-temperature field; the value
   76.313 °C appeared only at `/simulation_results/temperature_profile_c/2`
@@ -98,8 +109,10 @@ one-line answer per question is enough.
 ### Q6 — Shortfall policy (Tanja)
 - **Provisional:** `auxiliary_policy: "cost_shortfall"` — geothermal supplies what it
   feasibly can; a documented auxiliary source covers the remainder and is costed.
-  A strict mode (any shortfall ⇒ infeasible) is implemented and configurable
-  (plan §9.5; ADR-001 D5).
+  A strict mode (any shortfall ⇒ infeasible) is named in `auxiliary_policy_options`
+  as a planned second mode (plan §9.5) but is **not yet implemented** — the code
+  currently raises `ValueError` if `auxiliary_policy` is set to anything other than
+  `cost_shortfall` (updated 2026-08-30; see ADR-001 D5, corrected the same day).
 - **Impact if different:** strict mode likely rejects all candidates at 3.2 MW demand
   if deliverable heat lands below demand, changing the whole demo narrative.
 
@@ -112,12 +125,26 @@ one-line answer per question is enough.
   Sprint 4. Doublet CAPEX identical across candidates, so it cannot drive ranking.
 - **Impact if different:** absolute LCOH changes; relative candidate ranking is
   driven only by connection-length/DN CAPEX, pumping electricity and auxiliary cost.
+- **Status (updated 2026-08-30):** **Decided by the project owner** to proceed with
+  the existing economic assumptions as configured in `config/demo_assumptions.json`
+  (placeholders remain visibly labelled `demo_assumption`/provisional). Recorded
+  session-level in `docs/CODEX_HANDOVER.md` (2026-08-22) and confirmed by the
+  project owner this session. Approved cost sources from Tanja/project partners
+  remain a separate, still-open follow-up before any figure can be called
+  validated rather than illustrative.
 
 ### Q8 — Ranking rule (Tanja)
 - **Provisional:** feasibility-first, then lowest annualised incremental cost;
   tie-breakers per plan §12.3. Recorded as ADR-001 D4.
 - **Impact if different:** a weighted multi-criteria score would require a new ADR
   and is recommended against in version 1.
+- **Status (updated 2026-08-30):** **Decided by the project owner** to proceed with
+  feasibility-first, lowest-annualised-cost ranking as implemented. Recorded
+  session-level in `docs/CODEX_HANDOVER.md` (2026-08-22) and confirmed by the
+  project owner this session. Note: the tie-breaker *order* is currently
+  hard-coded in `economics/ranking.py` rather than read from config — this is a
+  separate, still-open configuration-authority gap (traceability row/Phase-1
+  item), not part of this decision.
 
 ### Q9 — Two-server MCP topology (Tanja + Jan)
 - **Provisional:** target picture is two servers (PyDoublet[-MCP] + pandapipesAI)
@@ -125,6 +152,13 @@ one-line answer per question is enough.
   minimal wrapper only (ADR-001 D6).
 - **Impact if different:** a one-server decision moves the PyDoublet tools into
   pandapipesAI's server and removes the fallback server from Sprint 5.
+- **Status (updated 2026-08-30):** **Decided.** One-server topology: the interim
+  R3-CHAIN server (`mcp_server/`) is the selected integration architecture, not a
+  two-server PyDoublet[-MCP] + pandapipesAI composition. Recorded session-level in
+  `docs/CODEX_HANDOVER.md` (2026-08-22) and confirmed by the project owner this
+  session. `INTERIM_ARCHITECTURE_DISCLAIMER` and its reuse sites (`server.py`
+  instructions, README.md) were updated 2026-08-30 to stop describing this as
+  pending.
 
 ### Q10 — Hosting and PyDoublet licence (Jan)
 - **Evidence:** `PyDoublet/LICENSE` is Apache-2.0, while `pyproject.toml`
@@ -134,6 +168,12 @@ one-line answer per question is enough.
   workspace until resolved; work stays on the local integration branch.
 - **Impact if different:** affects where the R3-CHAIN branches can be hosted and
   whether demo code may vendor PyDoublet snippets.
+- **Status (updated 2026-08-30):** **Decided.** MIT is the selected licensing
+  position for this project. Recorded session-level in `docs/CODEX_HANDOVER.md`
+  (2026-08-22) and confirmed by the project owner this session. Per that same
+  decision, upstream PyDoublet license files are **not** to be modified without
+  separate authorization; no PyDoublet code is copied/redistributed outside the
+  local workspace.
 
 ### Q11 — Minimum absolute network pressure and pressure convention (Tanja)
 - **Evidence:** the implementation plan's gate table (§11) lists "Minimum absolute
@@ -162,6 +202,13 @@ one-line answer per question is enough.
   ("is pandapipes' output absolute, and is the project's absolute-pressure
   labelling consistent with that") is resolved; the numeric-threshold question
   is not.
+- **Status (updated 2026-08-30):** **Decided by the project owner** to proceed
+  with the existing `min_pressure_bar_abs = 1.5` threshold as configured.
+  Recorded session-level in `docs/CODEX_HANDOVER.md` (2026-08-22) and confirmed
+  by the project owner this session. **Tanja's domain-owner confirmation of this
+  numeric threshold remains separately open** — this decision is about
+  proceeding with the current configured value, not a claim that her
+  confirmation has been obtained.
 - **Provisional:** `min_pressure_bar_abs = 1.5` (the stricter bound), config keys
   `network.min_pressure_bar_abs` / `gates.min_pressure_bar_abs`,
   `pressure_reference: "absolute"`.

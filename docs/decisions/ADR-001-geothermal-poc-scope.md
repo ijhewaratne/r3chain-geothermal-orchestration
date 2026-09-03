@@ -60,8 +60,12 @@ physical failure.
 
 Geothermal supplies as much feasible heat as possible; a documented auxiliary source
 covers any shortfall for KPI/economic accounting (`auxiliary_policy:
-"cost_shortfall"`). A strict mode, in which any shortfall is infeasible, is also
-implemented for testing and available by configuration.
+"cost_shortfall"`). `strict_infeasible` (any shortfall is infeasible) is named in
+`auxiliary_policy_options` as a planned second mode, but is **not yet implemented**:
+`network/candidate.py`'s `GeothermalInjectionPolicy` currently raises `ValueError`
+for any value other than `cost_shortfall`. Only rejection of the unbuilt mode is
+tested (`tests/network/test_candidate.py::test_policy_rejects_strict_infeasible_auxiliary_policy`).
+Building it, or removing it from the named vocabulary, is open Phase-1 work.
 
 ### D6 — Workshop adjustment (decided 2026-08-19)
 

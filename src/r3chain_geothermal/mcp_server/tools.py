@@ -69,9 +69,9 @@ from .schemas import (
 
 INTERIM_ARCHITECTURE_DISCLAIMER = (
     "This demonstrates Claude/MCP orchestration of the deterministic R3-CHAIN "
-    "workflow. It does not yet demonstrate communication between an official "
-    "PyDoublet-MCP server and pandapipesAI's MCP server; that topology remains "
-    "pending Q1 and Q9."
+    "workflow. The R3-CHAIN MCP server is the selected one-server integration "
+    "architecture (Q1/Q9, decided): no separate PyDoublet-MCP server exists or "
+    "will be built for this project."
 )
 
 GEO_TOOL_NAMES = (

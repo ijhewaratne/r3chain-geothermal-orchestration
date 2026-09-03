@@ -67,8 +67,8 @@ def test_get_capabilities_reports_exact_six_tools(fixed_config, registry):
 def test_get_capabilities_includes_the_mandatory_disclaimer_verbatim(fixed_config, registry):
     caps = tools.get_capabilities(fixed_config=fixed_config, registry=registry)
     assert caps.interim_architecture_disclaimer == tools.INTERIM_ARCHITECTURE_DISCLAIMER
-    assert "does not yet demonstrate communication between an official" in caps.interim_architecture_disclaimer
-    assert "Q1 and Q9" in caps.interim_architecture_disclaimer
+    assert "selected one-server integration architecture" in caps.interim_architecture_disclaimer
+    assert "Q1/Q9, decided" in caps.interim_architecture_disclaimer
 
 
 def test_get_capabilities_reports_the_exact_artifact_allow_list(fixed_config, registry):

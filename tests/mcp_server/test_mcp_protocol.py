@@ -65,7 +65,7 @@ def test_tools_call_geo_get_capabilities():
     payload = call_result.structuredContent
     content = payload.get("result", payload)
     assert content["server_name"] == "r3chain-geothermal-mcp"
-    assert "Q1 and Q9" in content["interim_architecture_disclaimer"]
+    assert "Q1/Q9, decided" in content["interim_architecture_disclaimer"]
 
 
 def test_tools_call_geo_run_workflow_worked_case_matches_the_cli():
