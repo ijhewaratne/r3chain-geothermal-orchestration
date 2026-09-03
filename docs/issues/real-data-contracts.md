@@ -67,10 +67,27 @@ is a readiness gap, not a validation error" distinction. Full offline suite: 994
 failed (the same pre-existing subprocess-timing test noted in earlier phase issues, confirmed
 unrelated and flaky under load).
 
+## Update (2026-09-03, `feature/complete-synthetic-prototype`, Phase 5): the mandatory gate
+
+`data_contracts/readiness.py::enforce_real_data_readiness()` (new function) wraps
+`generate_readiness_report()` (unchanged, no new validation logic) in a discriminated
+`RealDataReadinessGranted`/`DataRequirementsNotMet` boundary result — the `DATA_REQUIREMENTS_NOT_MET`
+result Phase 5 names explicitly, enumerating every missing/invalid dataset via a small, stable
+`RealDataRequirement` enum (topology, pipe attributes, demands/temperatures, spatial CRS,
+geothermal scenarios, economics, provenance/licensing, approval status) mapped from the existing
+`missing_datasets`/`validation_errors`/`unresolved_approvals` fields `generate_readiness_report()`
+already computed. A synthetic package is always granted (OPT-006's own policy, unchanged); a real
+package is granted only when fully supplied, valid, and approved — never a silent fallback to
+synthetic data while still labelled real (the failure result echoes `readiness.classification`
+unchanged). See `docs/issues/real-data-readiness-gate.md` for the full account, including why NO
+production code currently calls this function with a real package (there is no real-data entry
+point anywhere in this repository to wire it into — Phase 8 remains blocked).
+
 ## Not covered by this issue
 
 - No wiring into `network/blueprint.py` or `workflow/core.py` — real-data ingestion stays Phase
-  8-gated.
+  8-gated. `enforce_real_data_readiness()` (above) is the ENFORCED CHOKE POINT any such future
+  wiring must call; it is not itself that wiring.
 - No GeoJSON geometry parsing/validity engine — metadata-level CRS/hash declarations only.
 - Workstream J (OPT-001..007, synthetic joint site/connection optimisation) is not part of this
   issue, though it is expected to consume this workstream's `StudyPackage`/readiness contracts.
