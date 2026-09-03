@@ -35,6 +35,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    # tests/mcp_client/test_wheel_install.py invokes `python -m build`
+    # directly to produce the wheel it then installs into a fresh venv --
+    # `build` must be present in a plain `pip install -e ".[dev]"` for that
+    # test to even run, not merely happen to be available globally.
+    "build>=1.0",
 ]
 # T5.1A: the interim standalone MCP server (mcp_server/) is an OPTIONAL
 # layer -- normal simulation-package installation (adapter/network/
