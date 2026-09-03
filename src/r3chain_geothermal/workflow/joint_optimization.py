@@ -473,3 +473,75 @@ def run_joint_optimization_demo(
         scenarios=scenarios, alternatives=alternatives, objectives_considered=objectives,
         pareto_shortlist_alternative_ids=shortlist_ids, created_at=created_at,
     )
+
+
+def run_joint_optimization_full_product(
+    golden_coupling_input: PyDoubletCouplingResult,
+    blueprint: NetworkBlueprint,
+    baseline: BaselineNetworkResult,
+    screened_candidates_by_id: dict[str, ScreenedCandidate],
+    *,
+    coupling_assumptions: CouplingAssumptions,
+    injection_policy: GeothermalInjectionPolicy,
+    tolerances: GateTolerances,
+    economic_assumptions: EconomicAssumptions,
+) -> JointOptimizationResult:
+    """R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md Phase 4: the FULL
+    deterministic product of every synthetic geothermal scenario
+    (`build_synthetic_geothermal_scenarios()`) x every ACCEPTED generated
+    candidate (`screened_candidates_by_id`, `network.candidate_generation
+    .generate_candidates()`'s own output) -- no hand-curated subset, no
+    undisclosed filtering, unlike `run_joint_optimization_demo()`'s own
+    six-alternative demonstration above (kept unchanged, still available,
+    documented with its OWN audited justification in
+    docs/issues/joint-location-optimization.md).
+
+    Every alternative in the resulting `scenarios x accepted_candidates`
+    grid is evaluated and returned in `result.alternatives` --
+    `len(result.alternatives)` therefore EQUALS the full, unfiltered
+    search-space size by construction; nothing is silently dropped before
+    ranking. The one filtering step that DOES happen -- CAN-005's own
+    site/route screening inside `generate_candidates()` (rejecting, e.g.,
+    excessive route length or protected geometry) -- is a separate,
+    already-audited, upstream step with its own stable reason codes
+    (`screened_candidates_by_id` itself, passed in by the caller, still
+    carries every rejected candidate and its exact reason) -- it is not
+    hidden by this function, and this function does not additionally
+    filter beyond it.
+
+    The design-option axis currently contributes exactly ONE value
+    ("standard", `network.candidate_generation.DesignOption`'s only
+    implemented variant) for every accepted candidate -- stated plainly
+    rather than silently multiplied by a design-option count that does
+    not yet vary (see `docs/issues/candidate-generation.md`'s own
+    documented limitation)."""
+    created_at = datetime.now(timezone.utc)
+    scenarios = build_synthetic_geothermal_scenarios(golden_coupling_input)
+    baseline_economics = compute_baseline_economics(baseline, assumptions=economic_assumptions)
+
+    accepted_candidate_ids = sorted(cid for cid, sc in screened_candidates_by_id.items() if sc.accepted)
+
+    alternatives: list[AlternativeEvaluation] = []
+    for scenario in scenarios:
+        for candidate_id in accepted_candidate_ids:
+            screened_candidate = screened_candidates_by_id[candidate_id]
+            spec = screened_candidate.spec
+            assert spec is not None  # accepted implies spec is set (ScreenedCandidate's own invariant)
+            identity = AlternativeIdentity(
+                geothermal_scenario_id=scenario.scenario_id, surface_site_id=scenario.surface_site_id,
+                connection_candidate_id=candidate_id, route_id=spec.route_id, design_option_id=spec.design_option_id,
+                operating_policy_id="standard",
+            )
+            alternatives.append(evaluate_alternative(
+                identity, scenario, screened_candidate, blueprint, baseline, baseline_economics,
+                coupling_assumptions=coupling_assumptions, injection_policy=injection_policy,
+                tolerances=tolerances, economic_assumptions=economic_assumptions,
+            ))
+
+    feasible = [a for a in alternatives if a.feasible]
+    shortlist_ids, objectives = pareto_shortlist(feasible)
+
+    return JointOptimizationResult(
+        scenarios=scenarios, alternatives=alternatives, objectives_considered=objectives,
+        pareto_shortlist_alternative_ids=shortlist_ids, created_at=created_at,
+    )

@@ -100,10 +100,23 @@ non-empty, and byte-identical across repeated exports; the recommendation text's
 "SYNTHETIC" language. Full offline suite: 1009 passed, 0 failed (a fully clean run — the
 previously-noted, pre-existing subprocess-timing flake did not recur this time).
 
-## Not covered by this issue
+## Update (2026-09-03, `feature/complete-synthetic-prototype`, Phase 4): the full product, wired in
 
-- No cartesian product of every scenario × every generated candidate — a deliberate, documented
-  scope reduction (above).
-- No wiring of OPT-006's real-mode readiness check into this module.
-- No `workflow/artifacts.py`-grade manifest/hash audit for the extended-mode output bundle.
+The three items below, each flagged "not covered" at the time this issue was first closed, are now
+addressed by `workflow/joint_optimization.py::run_joint_optimization_full_product()` and
+`workflow/joint_workflow.py` (new file) — see `docs/issues/joint-optimization-workflow-integration.md`
+for the full account. Summary: a genuine full scenario × accepted-generated-candidate product (no
+curation, no undisclosed filtering — 3 scenarios × 11 accepted candidates = 33 alternatives,
+measured, `len(result.alternatives)` equals the search-space size by construction) is now exposed
+as its own top-level workflow entry point with a hash-audited artifact bundle, reachable from the
+CLI via the same `config`-driven mode-switch convention as `candidates.mode` (Phase 3.2) and, for
+MCP, by pointing the server's fixed config at such a config (`geo_run_workflow`'s own response
+mapping is a documented, deliberate scope boundary — see that new issue document). The curated
+six-alternative `run_joint_optimization_demo()` above is UNCHANGED and still available as a
+lighter-weight, hand-picked illustration; it is not replaced.
+
+## Not covered by this issue (remaining, unaffected by the update above)
+
+- No wiring of OPT-006's real-mode readiness check into this module (Phase 8, external-data-gated,
+  still not attempted).
 - No `location_shortlist.geojson` (no real spatial data exists to populate one).

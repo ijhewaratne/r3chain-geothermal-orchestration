@@ -113,6 +113,13 @@ from ..contracts import SourceProvenance
 from .artifacts import write_workflow_artifacts
 from .core import WorkflowConfigurationError, WorkflowFailure, WorkflowResult, run_workflow, validate_config_structure
 from .csv_export import render_candidate_comparison_csv
+from .joint_workflow import (
+    JointOptimizationWorkflowFailure,
+    JointOptimizationWorkflowResult,
+    is_joint_optimization_enabled,
+    run_joint_optimization_workflow,
+    write_joint_optimization_artifacts,
+)
 from .recommendation import render_recommendation_markdown
 from .svg_export import render_network_candidates_svg
 
@@ -250,6 +257,67 @@ def _build_argument_parser() -> _CliArgumentParser:
     return parser
 
 
+def _run_joint_optimization_cli(
+    pydoublet_raw_result: dict[str, Any], config: dict[str, Any], source_provenance: SourceProvenance, output_dir: Path,
+) -> int:
+    """R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md Phase 4: the SAME
+    CLI entry point dispatches here instead of the single-scenario path
+    whenever `config["joint_optimization"]["enabled"]` is true -- the
+    same config-driven mode-switch convention already established for
+    `candidates.mode` (Phase 3.2), not a second command. Reuses this
+    module's own staged, rollback-safe publish machinery
+    (`_publish_temp_dir`) unchanged; only the run/build step differs from
+    the single-scenario path above.
+
+    NOTE on exit codes: unlike the single-scenario path,
+    `validate_config_structure()` does not (yet) check
+    `candidates.generated`'s own presence/validity when joint-optimization
+    is enabled (that config section is only ever read here, inside
+    `run_joint_optimization_workflow()` itself). A joint-optimization
+    config that is missing/malformed there is therefore reported as
+    EXIT_WORKFLOW_FAILURE (2) with a `BLUEPRINT_CONSTRUCTION_FAILED`
+    JointOptimizationWorkflowFailure, not EXIT_INPUT_ERROR (1) -- still a
+    typed, audited, non-crashing outcome, just a different exit code than
+    the single-scenario path's own pre-validated config guarantee."""
+    result = run_joint_optimization_workflow(pydoublet_raw_result, config, source_provenance=source_provenance)
+
+    try:
+        parent_dir = output_dir.parent if str(output_dir.parent) else Path(".")
+        parent_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.tmp-", dir=str(parent_dir)))
+    except OSError as exc:
+        print(f"error: failed to create a temporary working directory: {exc}", file=sys.stderr)
+        return EXIT_ARTIFACT_PUBLICATION_FAILURE
+
+    try:
+        write_joint_optimization_artifacts(result, pydoublet_raw_result, config, temp_dir)
+        _publish_temp_dir(temp_dir, output_dir)
+    except Exception as exc:  # noqa: BLE001 -- any publication-stage failure maps to one exit code
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        print(f"error: failed to publish the artifact bundle: {exc}", file=sys.stderr)
+        return EXIT_ARTIFACT_PUBLICATION_FAILURE
+
+    if isinstance(result, JointOptimizationWorkflowFailure):
+        print(f"joint-optimization workflow stopped: {result.failure_code.value}: {result.message}", file=sys.stderr)
+        print(f"run_id: {result.run_id}", file=sys.stderr)
+        print(f"bundle published (failure audit trail): {output_dir}", file=sys.stderr)
+        return EXIT_WORKFLOW_FAILURE
+
+    assert isinstance(result, JointOptimizationWorkflowResult)
+    print(f"run_id: {result.run_id}")
+    n_alternatives = len(result.joint_result.alternatives)
+    n_feasible = sum(1 for a in result.joint_result.alternatives if a.feasible)
+    print(f"evaluated {n_alternatives} (scenario, candidate) alternatives -- {n_feasible} feasible")
+    if result.joint_result.pareto_shortlist_alternative_ids:
+        print(f"Pareto shortlist ({len(result.joint_result.pareto_shortlist_alternative_ids)} non-dominated):")
+        for alt_id in result.joint_result.pareto_shortlist_alternative_ids:
+            print(f"  {alt_id}")
+    else:
+        print("no feasible alternative -- no recommendation (synthetic scenario/connection/design comparison only)")
+    print(f"bundle published: {output_dir}")
+    return EXIT_OK
+
+
 def run_cli(argv: list[str]) -> int:
     args = _build_argument_parser().parse_args(argv)
 
@@ -264,6 +332,9 @@ def run_cli(argv: list[str]) -> int:
     except (_CliInputError, WorkflowConfigurationError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_INPUT_ERROR
+
+    if is_joint_optimization_enabled(config):
+        return _run_joint_optimization_cli(pydoublet_raw_result, config, source_provenance, output_dir)
 
     # config is now proven structurally valid (validate_config_structure()
     # above ran every construction run_workflow() itself performs from it).
