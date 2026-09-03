@@ -14,8 +14,22 @@ This package does **not** determine where to drill. It ranks network
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,mcp]"
 python -m pytest -q
+```
+
+`dev` includes `build` (needed by `tests/mcp_client/test_wheel_install.py`, which builds and
+installs a real wheel into a separate fresh venv as part of the suite) alongside `pytest`; `mcp`
+is required for the MCP server/client console scripts and their own tests (both are skipped, not
+failed, if omitted — `pytest.importorskip("mcp")`). `.github/workflows/ci.yml` runs this exact
+sequence, plus a wheel build and a fresh-venv wheel-install smoke test, on both Ubuntu and macOS.
+
+To build and smoke-test a wheel yourself, outside CI:
+
+```bash
+python -m build --wheel --outdir dist/
+python -m venv /tmp/r3chain-wheel-smoke && source /tmp/r3chain-wheel-smoke/bin/activate
+python -m pip install "$(ls dist/*.whl)[mcp]"
 ```
 
 ## One-command reproducible run
@@ -100,6 +114,84 @@ always produce the same `run_id` and the same `bundle_scientific_sha256`,
 even though `workflow_result.json`/`audit.json`'s own on-disk bytes are not
 claimed to be byte-identical (they carry a real invocation timestamp).
 
+## Alternative demonstrations
+
+The canonical `config/demo_assumptions.json` above always evaluates the four hand-picked C1-C4
+candidates. Three other configs, each a genuinely separate file (never a modification of the
+canonical one — a different config produces a different `run_id`/`config_sha256` by design, never
+a silent change to the canonical golden result), exercise different parts of the deterministic
+workflow through the *same* CLI:
+
+- **`config/demo_assumptions_workshop_negative.json`** — adds one deliberately infeasible fifth
+  candidate (`C5_negative`, an excessive connection length) to the canonical C1-C4 set via
+  `candidates.include_workshop_negative_demo`/`candidates.workshop_negative_demo`. Demonstrates the
+  full failure-reporting path: an exact `PRESSURE_LIMIT_EXCEEDED` failure code, excluded from
+  ranking, no invented economics — while C1-C4 remain numerically identical to the canonical run.
+- **`config/demo_assumptions_generated_candidates.json`** — sets `candidates.mode="generated"`, replacing
+  the candidate set entirely with `network.candidate_generation.generate_candidates()`'s own
+  deterministic attachment × route search (every eligible trunk/consumer junction × direct/diverted
+  route, screened with an exact, stable reason code for anything rejected — excessive route length,
+  a protected zone, a missing junction) instead of the four hand-picked points. For this fixed
+  synthetic topology: 16 combinations screened, 11 accepted, 8 feasible, 3 correctly rejected
+  (`VELOCITY_LIMIT_EXCEEDED` at three consumer-adjacent attachments whose branch pipes are sized
+  only for consumer demand). Optional `candidates.generated.max_candidates` caps the accepted set
+  deterministically (first N by candidate ID). Known limitation, stated plainly rather than
+  silently glossed over: a generated candidate's own connection-pipe-DN design axis is recorded but
+  not yet consumed by the physics evaluator, which still uses one fixed DN for every candidate
+  (`docs/issues/candidate-generation.md`).
+- **A joint-optimization run** — any config with `joint_optimization.enabled=true` (in addition to
+  a `candidates.generated` block) dispatches the CLI to a genuinely different, full-product
+  evaluation: every one of three synthetic geothermal scenarios (derived from the one golden
+  PyDoublet result — this prototype cannot run real PyDoublet scenarios — by adjusting producer
+  temperature and/or brine mass flow, one deliberately made heat-exchanger-infeasible) paired with
+  *every* accepted generated candidate — 3 × 11 = 33 alternatives for this topology, with **no
+  curation**: the evaluated set size always equals the true, unfiltered search space, never a
+  hand-picked subset presented without disclosing how large the full space actually is. Since no
+  approved multi-objective weighting policy exists, the result is a **Pareto shortlist** of
+  non-dominated alternatives, never an invented single ranking. Publishes its own,
+  separately-hash-audited artifact bundle (`joint_optimization_result.json`,
+  `generated_candidates.json`, `screened_alternatives.json`, `alternative_comparison.csv`,
+  `pareto_or_ranking.json`, `joint_recommendation.md`, `manifest.json`) at the same `--output-dir`.
+  This is a **synthetic scenario/connection/design comparison**, explicitly labelled as such in
+  every artifact — never a geological drilling-site recommendation, and never confused with the
+  canonical single-scenario C1-C4 comparison, which a joint-optimization config never touches.
+  `docs/issues/joint-optimization-workflow-integration.md` has the full design rationale, including
+  why this is a separate top-level entry point rather than a mode inside the single-scenario
+  workflow (a Pareto shortlist cannot honestly be forced into a single-ranking result shape).
+
+Try it directly:
+
+```bash
+r3chain-geothermal-demo \
+  --input fixtures/pydoublet/repaired_result.json \
+  --config config/demo_assumptions_workshop_negative.json \
+  --provenance config/demo_source_provenance.json \
+  --output-dir artifacts/workshop-negative-demo
+
+r3chain-geothermal-demo \
+  --input fixtures/pydoublet/repaired_result.json \
+  --config config/demo_assumptions_generated_candidates.json \
+  --provenance config/demo_source_provenance.json \
+  --output-dir artifacts/generated-candidates-demo
+```
+
+## Strict input-provenance validation
+
+By default, the raw PyDoublet result's own content is trusted as given (its physics/units are still
+independently validated — that never changes). To additionally pin the EXACT raw bytes a caller
+expects, pass `expected_raw_sha256` (a lowercase 64-hex-character SHA-256, matching
+`canonical_raw_result_sha256()`'s own canonical-JSON encoding) via `SourceProvenance` (library/MCP
+level) or `SourceProvenanceInput` (the `geo_validate_pydoublet_result`/`geo_run_workflow` MCP tool
+argument) — `contracts.SourceProvenance.expected_raw_sha256` and
+`mcp_server.schemas.SourceProvenanceInput.expected_raw_sha256`. Omitted (the default) is
+byte-for-byte behaviorally identical to this feature not existing at all. When supplied and it does
+not match the actual computed hash, the server returns `PYDOUBLET_RAW_HASH_MISMATCH` and — for
+`geo_run_workflow` specifically — creates NO artifact directory at all: a provenance mismatch means
+the caller did not send the input they believed they were sending, so nothing about that attempt is
+persisted as an audited scientific result. This is a library/MCP-level feature only — the CLI above
+does not expose an `--expected-hash` flag (`tests/mcp_server/test_input_provenance_mcp.py`,
+`tests/parsers/test_input_provenance_enforcement.py`).
+
 ## MCP server and scripted client (interim architecture)
 
 > This demonstrates Claude/MCP orchestration of the deterministic
@@ -181,6 +273,62 @@ limitation above. This is a **Claude-ready scripted MCP demonstration**
 actually been run and verified end-to-end; the config/prompt are
 ready-to-use artifacts for a live Claude Desktop session, which is a
 separate, human-driven step.
+
+### Persistent run registry (restart recovery)
+
+By default (`R3CHAIN_RUN_ROOT` unset), a server's run registry is ephemeral: every run lives only
+for that process's lifetime, in a temporary directory deleted on shutdown — identical behavior to
+every earlier version of this project. Setting `R3CHAIN_RUN_ROOT=/some/stable/path` before starting
+`r3chain-geothermal-mcp-server` makes the registry **persistent**: completed runs survive a server
+restart. On startup, the server scans that directory's immediate children and rehydrates any that
+validate as complete, correctly-named, hash-consistent run bundles — anything corrupt, incomplete,
+or tampered with is skipped (never crashes startup) and recorded in a diagnostic warning list, never
+silently re-run. A rehydrated run is served from disk on the next `geo_run_workflow` call for the
+same input (`reused_existing_run: true` in the response) rather than recomputed, and every artifact
+— including full pagination through a multi-page file — works identically to a freshly computed run.
+
+Two independent, ORTHOGONAL retention controls bound how many runs a persistent registry keeps:
+`max_size` (an LRU count bound — the oldest unpinned run is evicted, from memory AND disk, once the
+bound is exceeded) and the newer `max_age_days` (age-based, applied only at startup rehydration,
+`None`/disabled by default so it can never unexpectedly discard evidence unless a caller explicitly
+opts in with a positive value — a pruned run is recorded in the same startup warning list, never
+silently deleted with no trace).
+
+### Artifact retrieval and pagination
+
+`geo_get_artifact(run_id, filename, offset=0, limit=<default>)` returns one slice of a named
+artifact file's text content, plus `total_length` and `next_offset` (`null` once the end of the file
+has been reached). To retrieve a large file in full, loop: pass the previous response's
+`next_offset` as the next call's `offset` until `next_offset` comes back `null`, then concatenate
+every `content` chunk in order. `limit` is bounded (`1..16384` characters per call); `filename` must
+be one of the fixed, allowed artifact names for that run (never an arbitrary path) —
+`geo_get_capabilities`'s own `allowed_artifact_filenames` lists them.
+
+## Limitations and the real-data boundary
+
+This is a **synthetic proof of concept**. Every network, every geothermal scenario besides the one
+golden PyDoublet result, and every generated/screened candidate is deliberately invented for this
+demonstration. Concretely, this project does **not**:
+
+- Use, reference, or fabricate any real Wuppertal (or any other real place's) network, geological,
+  or economic data. `data_contracts/` defines the TYPED CONTRACTS a real study package would need
+  to satisfy (network topology, pipe attributes, CRS-declared spatial layers, geothermal scenarios,
+  economic line items, provenance/licensing, approval status) and a mandatory readiness gate
+  (`enforce_real_data_readiness()`) that any future real-data caller must pass before proceeding —
+  but no code path anywhere in this repository actually ingests real data today. Verified directly:
+  no reference to `DatasetClassification.REAL` exists in `network/blueprint.py`, `workflow/core.py`,
+  or `workflow/joint_workflow.py`.
+- Determine where a geothermal doublet should be drilled. Every result here ranks or Pareto-compares
+  **network connection points** for one already-computed, already-fixed doublet result — never a
+  drilling-site recommendation, stated explicitly in every `recommendation.md`/
+  `joint_recommendation.md` this project produces.
+- Claim a validated commercial cost basis. Every economic figure (CAPEX, O&M, interest rate,
+  electricity/auxiliary-heat prices) is a labelled `demo_assumption` placeholder in
+  `config/demo_assumptions.json`, not a researched market value — see that file's own
+  `docs/config-field-classification.md` for exactly which of its fields are actually consumed by
+  the economics calculation versus purely descriptive.
+- Vary a generated candidate's connection-pipe diameter in the actual physics evaluation (recorded
+  as metadata, not yet consumed — a documented, deliberate limitation, not silently absent).
 
 ## Layers
 

@@ -6,10 +6,21 @@ that document has a row below. **PASS** means implemented and verified with exec
 attempted because it requires external data/approval not yet supplied (Phase 8). No PARTIAL or
 BLOCKED item is collapsed into PASS.
 
-Implementation branch: `feature/joint-location-optimization` (linear history from
-`feature/r3chain-orchestration-poc` @ `940f4cf`). Phase commits, in order: `5951189` (Phase 1),
-`6a7efca` (Phase 2), `1796b29` + `2f064d1` + `311a5a6` (Phase 3), `3ea33e6` (Phase 4), `09dc653`
-(Phase 5), `321a786` (Phase 6), `8eb61d3` (Phase 7). Full offline suite as of this report: see
+Implementation branch: `feature/complete-synthetic-prototype` (linear history from
+`feature/r3chain-orchestration-poc` @ `9478c391`, which itself carries the first-session history
+recorded below: `5951189` (Phase 1), `6a7efca` (Phase 2), `1796b29` + `2f064d1` + `311a5a6` (Phase
+3), `3ea33e6` (Phase 4), `09dc653` (Phase 5), `321a786` (Phase 6), `8eb61d3` (Phase 7)). A second,
+later session (against `R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md`'s own Phases 0-9
+numbering, distinct from the first session's Workstream-labelled phases above) added: `bb513e0`
+(spec preserved in-repo), `1ba27a0` (reproducible dev install), `df91ce9` (scientific-hash
+cross-platform fix), `760d608` (CI), `aa3b97e` (lifecycle test hardening), `5e84ffc` (gate-precedence
+documentation), `1565eb4` (Phase 3.1 — doublet-component retargeting), `a481dc1` (Phase 3.2 —
+generated candidates wired into `run_workflow`), `1c45971` (Phase 4 — joint-optimization full
+product + its own workflow entry point), `d2b4994` (Phase 5 — real-data readiness gate), `042feba`
+(Phase 6 — config classification + registry retention). This document's own status column reflects
+BOTH sessions' cumulative state, updated in place rather than superseded — a row unchanged since the
+first session keeps its original evidence citation; a row this second session's work resolved,
+partially resolved, or added is marked and dated below. Full offline suite as of this report: see
 `docs/decisions/decision-register.md`'s final entries and this document's own "Final suite result"
 section below.
 
@@ -43,7 +54,7 @@ section below.
 | RR-003 | PASS | `_rehydrate()`/`_load_run_entry()` — pattern-matched directory names, manifest schema/run-id/hash re-verification, warnings collected, never a crash. |
 | RR-004 | PASS | Rehydrated `RunEntry` reconstructs run id, status, bundle dir, summary, artifact inventory. |
 | RR-005 | PASS | Existing in-memory dedup/locking primitive unchanged and reused. |
-| RR-006 | **PARTIAL** | Max-size FIFO/pinned eviction reused; no separate TTL/max-age mechanism was added — documented in `docs/issues/mcp-persistent-run-registry.md`. |
+| RR-006 | PASS *(resolved 2026-09-03, `042feba`)* | Max-size FIFO/pinned eviction (count-based retention) plus a NEW `RunRegistry(max_age_days=...)` (age-based retention, `None`-disabled by default so it can never unexpectedly destroy acceptance evidence) — both controls, applied at startup rehydration only, never a running timer. `tests/mcp_server/test_persistent_registry.py`'s 5 new tests: default-disabled, non-positive-value rejection, pruning past the configured age, non-pruning within it, and (a related RR-008 strengthening) multiple simultaneously-stored runs surviving restart independently. |
 | RR-007 | PASS | Existing artifact allow-list/offset/limit/path-traversal protections unchanged. |
 | RR-008 | PASS | `test_rr008_restart_recovery_full_acceptance` — the exact 8-step scenario, executed and passing. |
 | RR-009 | PASS | Typed errors for unknown run id, corrupt manifest, missing/unapproved artifact, invalid pagination; never silently regenerates on a read-only call. |
@@ -52,8 +63,8 @@ section below.
 
 | ID | Status | Evidence |
 |---|---|---|
-| CFG-001 | **PARTIAL** | The two gaps CFG-003 named explicitly are closed; a complete field-by-field executable/descriptive/deprecated/unsupported classification ledger for every config value was not produced (`docs/issues/config-gates-and-shortfall-policy.md`). Candidate lists in `config/demo_assumptions.json` remain descriptive-only (Workstream H's own generator is the executable path instead — `docs/issues/candidate-generation.md`). |
-| CFG-002 | **PARTIAL** | Exact source-config identity (`config_sha256`) is preserved and load-bearing throughout; a separately-documented resolved-executable-config identity/hash was not added as its own artifact. |
+| CFG-001 | PASS *(resolved 2026-09-03, `042feba`)* | `docs/config-field-classification.md` classifies every field of `config/demo_assumptions.json` executable/descriptive/deprecated/unsupported, verified against actual `from_config_dict()` call sites (not inferred), with mechanical proof (`tests/test_config_field_classification.py`, 4 tests: bulk and per-field descriptive-field removal leaves validation passing; an executable-field control proves the test method detects real dependencies). Confirms `candidates.list` is descriptive-only (as previously noted) and additionally surfaces that almost the entire `pydoublet.*` section, `economics.ranking_rule`/`tie_breakers`, and six duplicated technical thresholds (`coupling_assumptions.*`/`network.min_pressure_bar_abs` vs. the `gates.*` copies actually enforced) are also descriptive-only — findings not previously documented. |
+| CFG-002 | **PARTIAL, now explicitly scoped** *(2026-09-03)* | Exact source-config identity (`config_sha256`) remains preserved and load-bearing throughout. A `resolved_config_sha256` (hashing only the CFG-001-classified executable subset) was deliberately NOT added this session either: doing so would add a new field to the already hash-pinned `WorkflowAuditRecord`/`ManifestRecord` contracts, moving `bundle_scientific_sha256` for the canonical golden run a fourth time in one session for a purely additive audit-completeness field — recorded as a scope decision in `docs/config-field-classification.md`'s own closing section, with the exact GOV-004 process a future change must follow. |
 | CFG-003 | PASS | `max_pump_dp_bar` and `heat_delivery_tolerance_fraction` now enforced (`PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED`, `GEOTHERMAL_HEAT_SHORTFALL`); ranking tie-break order remains hard-coded, not config-driven (a residual, documented instance of the same class of gap). |
 | CFG-004 | PASS | Gate order in `network/baseline.py`/`network/candidate.py` reordered and verified (pressure → pump-dp → velocity → mass-balance → energy-balance); delivered-heat/capacity gate placed immediately after candidate convergence. |
 | CFG-005 | PASS | Pre-existing `network/pressure.py` gauge/absolute discipline, unchanged and still enforced. |
@@ -90,13 +101,13 @@ section below.
 | DLT-005 | PASS | All DLT-005-listed result fields present, including pandapipes element handles. |
 | DLT-006 | PASS | Parity by construction (shared underlying calls) — bit-identical (`rel_tol=1e-12`) to `evaluate_candidate()` for all 4 candidates × 2 sizing policies. |
 | DLT-007 | PASS | `docs/geothermal-doublet-component-guide.md` — boundary diagram, inputs/units, equations, limitations, construction and result-extraction examples, explicit "not necessarily upstream" statement. |
-| *(Phase-4 exit gate)* | **PARTIAL, by design** | `evaluate_candidate()` is NOT retargeted to call the new component — a documented, deliberate deferral (no duplicate physics exists to remove today; retargeting the most heavily validated module is left as a separate step). |
+| *(Phase-4 exit gate)* | PASS *(resolved 2026-09-03, `1565eb4`)* | `evaluate_candidate()` NOW retargeted to call `build_and_evaluate_geothermal_doublet_with_net()` directly — the prior deferral is superseded (`docs/issues/geothermal-doublet-component.md`'s own "Update" section). Reverses the earlier deliberate deferral per an explicit later instruction not to preserve duplicate orchestration code without a documented reason; a genuine cross-module constant-propagation bug surfaced and fixed during the retargeting (`DoubletOperatingPolicy`'s solver-tolerance defaults now read `network.candidate`'s constants via a live module reference instead of a copied-at-import-time value). Zero KPI/`run_id`/hash impact, verified by the full pre-existing exact-value-pinned test suite passing with zero test-file edits beyond the one genuine bug fix. |
 
 ## Workstream H — candidate generation (Phase 5, `09dc653`)
 
 | ID | Status | Evidence |
 |---|---|---|
-| CAN-001 | PASS | Predefined (unchanged) and generated (`network/candidate_generation.py`) modes both present and independently tested. |
+| CAN-001 | PASS, strengthened *(2026-09-03, `a481dc1`)* | Predefined (unchanged) and generated (`network/candidate_generation.py`) modes both present and independently tested. Generated mode is now additionally WIRED into `run_workflow()`/`validate_config_structure()` via `config["candidates"]["mode"]` (`workflow/core.py::_apply_candidate_mode()`), reachable through the CLI and, for MCP, by pointing the server's fixed config at a config with `mode=="generated"` — no longer library-only. `config/demo_assumptions_generated_candidates.json` demonstrates it end to end. `mcp_server/schemas.py::CapabilitiesSummary.candidate_generation_modes`'s own docstring updated to drop the now-stale "not yet wired" caveat. |
 | CAN-002 | PASS | Explicit eligibility rules (trunk/consumer membership, one exclusion zone, a max-route-length limit); never a proximity-only connection. |
 | CAN-003 | PASS | `{study_id}-{attachment_id}-{route_id}-{design_option_id}`, stable and iteration-order-independent. |
 | CAN-004 | PASS | `RouteOption.kind` interface with `synthetic_direct` implemented; `network_graph`/`external_gis` declared but raise `NotImplementedError` rather than mislabel a straight-line distance. |
@@ -116,7 +127,7 @@ section below.
 | DATA-006 | PASS | `EconomicLineItem` — currency/price-year/source/approval/uncertainty/inclusion-note, separate line-item categories. |
 | DATA-007 | PASS | `validate_study_package()` — exact field/location errors, never silent imputation, never raises; duplicate/topology/temperature/CRS/provenance/unit checks. |
 | DATA-008 | PASS | `build_synthetic_sample_package()` ("Riverbend", invented) — validates cleanly, exercises every schema section. |
-| DATA-009 | PASS | `generate_readiness_report()` — supplied/missing datasets, validation errors, provisional assumptions, unresolved approvals, both optimisation-permission flags. |
+| DATA-009 | PASS, strengthened *(2026-09-03, `d2b4994`)* | `generate_readiness_report()` — supplied/missing datasets, validation errors, provisional assumptions, unresolved approvals, both optimisation-permission flags. ADDITIONALLY, `enforce_real_data_readiness()` (new) wraps this in a discriminated `RealDataReadinessGranted`/`DataRequirementsNotMet` boundary result naming the exact `DATA_REQUIREMENTS_NOT_MET` failure via 8 named `RealDataRequirement` categories — the mandatory choke point for a future real-data entry point, with 7 new tests (`tests/data_contracts/test_readiness_gate.py`) including a genuinely complete, approved REAL package proving the granted path is reachable for real data, not only synthetic. |
 
 ## Workstream J — synthetic joint site/connection optimisation (Phase 7, `8eb61d3`)
 
@@ -126,9 +137,9 @@ section below.
 | OPT-002 | PASS | `evaluate_alternative()` sequences the 10 stages (collapsed to 4 observable `JointEvaluationStage` values where existing functions perform several stages internally — documented). |
 | OPT-003 | PASS | `pareto_shortlist()` — non-dominated filter across 6 objectives with actual data; no invented weights (no approved weighting policy exists). |
 | OPT-004 | PASS | Per-scenario results reported directly; no probabilistic uncertainty is fabricated (single deterministic scenario per alternative, explicitly noted in each `risk_note`). |
-| OPT-005 | PASS | Curated 6-alternative demonstration — every numeric minimum measured and asserted directly (`test_demonstration_satisfies_every_opt005_minimum`). |
-| OPT-006 | **PARTIAL, documented deferral** | `data_contracts.readiness` already computes the required permission flags; wiring that check into `joint_optimization.py` itself (so a real-mode alternative is blocked pre-evaluation) is not implemented — this module operates in synthetic mode only. |
-| OPT-007 | **PASS, lighter-weight than the main pipeline** | 5 of 6 named files produced (`location_shortlist.geojson` never applicable — no real spatial data); no full byte/scientific-hash manifest audit for this bundle (documented scope decision). |
+| OPT-005 | PASS, strengthened *(2026-09-03, `1c45971`)* | Curated 6-alternative demonstration (`run_joint_optimization_demo()`) UNCHANGED and still available, every numeric minimum measured and asserted directly. ADDITIONALLY, `run_joint_optimization_full_product()` now evaluates the FULL, uncurated product (3 synthetic scenarios × 11 accepted generated candidates = 33 alternatives, measured; `len(result.alternatives)` equals the unfiltered search-space size by construction) — satisfying the specification's own instruction not to limit the demonstration to a hand-selected list without disclosing the unfiltered size, wrapped in its own top-level workflow entry point (`workflow/joint_workflow.py`) reachable from the CLI via `config["joint_optimization"]["enabled"]`. |
+| OPT-006 | **PARTIAL, gate now exists, not yet wired here** *(2026-09-03, `d2b4994`)* | `data_contracts.readiness.enforce_real_data_readiness()` (new) is now the MANDATORY, typed `DATA_REQUIREMENTS_NOT_MET`-returning gate any future real-data caller must use — a genuine strengthening over the prior state (a permission-flag-only report). It is still not wired into `joint_optimization.py` itself, and — verified directly before this session's work — there is currently no real-data entry point anywhere in this repository to wire it into; Phase 8 remains blocked (`docs/issues/real-data-readiness-gate.md`). |
+| OPT-007 | **PASS, lighter-weight than the main pipeline** | 5 of 6 named files produced (`location_shortlist.geojson` never applicable — no real spatial data); no full byte/scientific-hash manifest audit for the ORIGINAL curated-demo export path (documented scope decision, unchanged). The NEW full-product workflow entry point (OPT-005 above) DOES carry a full byte/scientific-hash-audited manifest (`JointOptimizationManifestRecord`, `write_joint_optimization_artifacts()`) — the audit gap is closed for that path specifically, not for `joint_optimization_export.py`'s original lighter-weight exporter. |
 
 ## MCP and orchestration requirements
 
@@ -159,9 +170,9 @@ section below.
 | NFR-003 | PASS | Every new model across all seven phases is an immutable, `extra="forbid"` Pydantic type with unit-bearing field names. |
 | NFR-004 | PASS | No broad exception is ever converted to a generic success; every failure surface remains a typed, discriminated result. |
 | NFR-005 | PASS | No new arbitrary MCP filesystem access; no GIS/geometry library dependency added; no dynamic code execution; no pickle. |
-| NFR-006 | **PARTIAL** | `SELF_CONSISTENT_FLOW_MAX_ITERATIONS` and candidate-generation's own screening limits are bounded and named; a general, config-exposed "maximum candidates/maximum scenario combinations/concurrent workflows" bound was not newly added this cycle (the existing registry's `max_size` bound, from before this work, remains the only such control). |
+| NFR-006 | **PARTIAL, narrowed** *(2026-09-03)* | `SELF_CONSISTENT_FLOW_MAX_ITERATIONS` and candidate-generation's own screening limits remain bounded and named. `candidates.generated.max_candidates` (Phase 3.2/`a481dc1`, also honoured by the joint-optimization full product, `workflow/joint_workflow.py`) now provides an explicit, config-exposed cap on the generated-candidate count specifically. A general "maximum scenario combinations/concurrent workflows" bound beyond this and the registry's pre-existing `max_size` was not added this session either. |
 | NFR-007 | PASS | Canonical predefined C1-C4 CLI/MCP workflow verified unchanged (Phase 9 fresh-install run); every public schema change in this cycle carried its own contract-version increment. |
-| NFR-008 | **PARTIAL** | This traceability matrix plus the ten `docs/issues/*.md` records document reproduction steps in detail; `README.md` itself was not rewritten to walk a colleague through every new capability end-to-end (see "Remaining work" below). |
+| NFR-008 | PASS *(resolved 2026-09-03)* | `README.md` rewritten to cover: environment install (including the `build`/`mcp` extras and a manual wheel-build/smoke-test recipe matching CI), the canonical C1-C4 workflow, strict input-provenance validation, the workshop-negative and generated-candidates alternative demonstrations (both with working, directly-runnable commands), the joint-optimization full-product demonstration, MCP server install + Claude Desktop config, the persistent run registry and its two retention controls, `geo_get_artifact` pagination, and an explicit "Limitations and the real-data boundary" section. This traceability matrix and the now-11 `docs/issues/*.md` records remain the deeper reference for any one capability's own design rationale. |
 | NFR-009 | PASS | No restricted real dataset committed; nested-repository provenance untouched. |
 
 ## Acceptance scenarios
@@ -209,25 +220,58 @@ has only ever increased across every phase, per NFR-007/19.3's own requirement �
 weakened or removed to make the suite pass. The suite requires no network access and no real
 Wuppertal data at any point.
 
+## Second-session update (2026-09-03, `feature/complete-synthetic-prototype`)
+
+A later session, working from `R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md`'s own Phase 0-9
+numbering (an independent, more skeptical audit that explicitly re-verified every prior claim in
+this document against the actual code before accepting it), resolved five of the seven "Remaining
+work" items the first session left open — see the row-level updates above (each carrying its own
+resolution date/commit) and the commit list in this document's own header. In order of the original
+list below: item 2 (README) — resolved. Item 3 (CFG-001) — resolved; CFG-002 remains an explicit,
+now more narrowly documented deferral. Item 4 (OPT-006) — the gate now exists
+(`enforce_real_data_readiness()`) but remains unwired into `joint_optimization.py` specifically,
+since no real-data entry point exists anywhere to wire it into. Item 5 (NFR-006) — narrowed, not
+fully closed (`candidates.generated.max_candidates` added). Item 6 (doublet-component retargeting)
+— resolved. Items 1 (Phase 8) and 7 (AC-11) remain exactly as before: correctly not attempted, and
+correctly deferred to a genuine, human-performed Claude Desktop session respectively. Two genuinely
+NEW capabilities this second session added were not contemplated by the first session's own
+requirement list at all and so have no ID above: candidate-generation wired into `run_workflow()`
+(CAN-001's own row, updated) and the full-product joint-optimization workflow entry point (OPT-005's
+own row, updated) — both fully tested and documented in their own `docs/issues/*.md` files.
+
+Full offline suite as of this second session's own final commit (`042feba`): **1060 collected, 1060
+passed, 0 failed** — a fully clean run, re-verified after every commit in this session (`1565eb4`,
+`a481dc1`, `1c45971`, `d2b4994`, `042feba`, plus the six hardening commits preceding them). One
+scientific-hash rebaseline occurred and was handled per GOV-004 (`df91ce9`, a cross-platform
+floating-point-noise fix, diagnosed via `git stash`-isolated causal identification before
+rebaselining, documented in `decision-register.md` IMPL-015); a second, smaller rebaseline occurred
+during the generated-candidates work when a presentation-text honesty fix
+(`economics/ranking.py::SHARED_CAPEX_STATEMENT`, no longer hardcoding "C1-C4" for a run whose
+candidates are not C1-C4) incidentally changed `bundle_scientific_sha256` for the canonical run too,
+since that text is part of every bundle — also diagnosed via `git stash` isolation before
+rebaselining (IMPL-017). Neither rebaseline changed the canonical `run_id` or any KPI/ranking value.
+
 ## Remaining work (honestly scoped, not hidden)
 
 1. **Phase 8 (real Wuppertal application)** — correctly not started. Requires the Appendix B data
    request to be fulfilled and domain-owner approvals (Tanja, Dr. Jan) before any of Phase 8's own
    activities may begin.
-2. **README.md** — not rewritten in this cycle to walk a colleague through the seven new
-   capabilities end-to-end (NFR-008's own full literal requirement); this traceability matrix and
-   the ten `docs/issues/*.md` records are the current reproduction reference.
-3. **CFG-001/CFG-002** — a complete field-by-field configuration classification ledger and a
-   separately-documented resolved-config-identity hash were not produced; the two SPECIFIC gaps
-   CFG-003 named are closed.
-4. **OPT-006** — the real-mode readiness gate exists (Workstream I) but is not wired into
-   `joint_optimization.py` itself.
-5. **NFR-006** — no NEW general-purpose "maximum candidates/scenario combinations/concurrent
-   workflows" bound was added this cycle beyond the registry's pre-existing `max_size`.
-6. **`evaluate_candidate()` → doublet-component retargeting** — deliberately deferred per the
-   Phase-4 exit gate's own two-clause reading; no duplicate physics exists to remove today.
-7. **AC-11** — the literal live-Claude-Desktop session step was not re-executed in this automated
-   session; its automatable components are covered elsewhere in this matrix.
+2. ~~**README.md**~~ — resolved, second session (above).
+3. ~~**CFG-001**~~ — resolved, second session (above). **CFG-002** remains open: a
+   `resolved_config_sha256` was deliberately not added, to avoid a fourth same-session hash
+   rebaseline for a purely additive audit field — see CFG-002's own row.
+4. **OPT-006** — `enforce_real_data_readiness()` (the gate itself) now exists and is tested, but
+   remains unwired into `joint_optimization.py` specifically; no real-data entry point exists
+   anywhere in this repository today for it to gate.
+5. **NFR-006** — narrowed (`candidates.generated.max_candidates` added, second session) but not
+   fully closed: no general "maximum scenario combinations/concurrent workflows" bound exists
+   beyond that and the registry's pre-existing `max_size`.
+6. ~~**`evaluate_candidate()` → doublet-component retargeting**~~ — resolved, second session
+   (above, `1565eb4`).
+7. **AC-11** — the literal live-Claude-Desktop session step was not re-executed in either session;
+   its automatable components are covered elsewhere in this matrix. This remains the one item this
+   document cannot resolve on its own — it requires a genuine, human-performed Claude Desktop
+   replay, prepared for but not substitutable by any amount of further automated work.
 
 None of the above affects the canonical C1-C4 golden result, `run_id`, or any previously-approved
 scientific/economic value — every item is either a genuinely new-workstream refinement opportunity
