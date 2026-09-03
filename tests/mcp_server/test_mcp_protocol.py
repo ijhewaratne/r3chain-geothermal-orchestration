@@ -86,7 +86,12 @@ def test_tools_call_geo_run_workflow_worked_case_matches_the_cli():
     payload = call_result.structuredContent
     content = payload.get("result", payload)
     assert content["run_id"] == "r3chain-run-93d41133daa11d1a"
-    assert content["bundle_scientific_sha256"] == "90f52416785f0ea8f7f8dc33ede68c9b5529e6e9d51dd60e8d2e1df0389b8d2f"
+    # Rebaselined (CFG-003, decision-register.md IMPL-007): schema 1.0.0 ->
+    # 1.1.0 added GateTolerances.max_pump_dp_bar / GeothermalInjectionPolicy.
+    # heat_delivery_tolerance_fraction -- new fields in workflow_result.json's
+    # hashed content. run_id above is unaffected; the LCOH assertion below
+    # proves the actual canonical ranking is unchanged too.
+    assert content["bundle_scientific_sha256"] == "fd1e3408cbccfeb81d2847a60d809c2c8e407fb26de4738a624cb28ad00456f6"
     lcoh_by_id = {r["candidate_id"]: round(r["indicative_lcoh_eur_per_mwh"], 4) for r in content["ranked"]}
     assert lcoh_by_id == {"C1": 52.1714, "C2": 52.2602, "C3": 52.3489, "C4": 52.4821}
 

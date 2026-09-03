@@ -225,11 +225,14 @@ def test_energy_balance_failed_via_artificially_tight_tolerance():
     assert result.details["residual_fraction"] > result.details["tolerance_fraction"]
 
 
-def test_all_six_failure_codes_covered():
+def test_all_seven_failure_codes_covered():
+    """Was "all six" prior to CFG-003 (decision-register.md IMPL-007),
+    which added PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED."""
     assert {c.value for c in BaselineFailureCode} == {
         "THERMAL_PIPEFLOW_NOT_CONVERGED", "CONSUMER_TEMPERATURE_NOT_MET",
         "PRESSURE_LIMIT_EXCEEDED", "VELOCITY_LIMIT_EXCEEDED",
         "MASS_BALANCE_FAILED", "ENERGY_BALANCE_FAILED",
+        "PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED",
     }
 
 
@@ -320,6 +323,7 @@ def test_strict_json_round_trip_for_failure_codes(failure_code):
 @pytest.mark.parametrize("tight_field,failure_code", [
     ("mass_balance_tolerance_fraction", BaselineFailureCode.MASS_BALANCE_FAILED),
     ("energy_balance_tolerance_fraction", BaselineFailureCode.ENERGY_BALANCE_FAILED),
+    ("max_pump_dp_bar", BaselineFailureCode.PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED),
 ])
 def test_strict_json_round_trip_for_balance_failure_codes(tight_field, failure_code):
     tight = _tolerances().model_copy(update={tight_field: 1e-18})
@@ -454,18 +458,19 @@ def test_gate_tolerances_from_config_dict_reads_real_config():
     assert tolerances.max_consumer_supply_drop_k == gates["max_consumer_supply_drop_k"]
     assert tolerances.min_pressure_bar_abs == gates["min_pressure_bar_abs"]
     assert tolerances.max_pipe_velocity_m_s == gates["max_pipe_velocity_m_s"]
+    assert tolerances.max_pump_dp_bar == gates["max_pump_dp_bar"]
     assert tolerances.mass_balance_tolerance_fraction == gates["mass_balance_tolerance_fraction"]
     assert tolerances.energy_balance_tolerance_fraction == gates["energy_balance_tolerance_fraction"]
 
 
 @pytest.mark.parametrize("field", [
-    "max_consumer_supply_drop_k", "min_pressure_bar_abs", "max_pipe_velocity_m_s",
+    "max_consumer_supply_drop_k", "min_pressure_bar_abs", "max_pipe_velocity_m_s", "max_pump_dp_bar",
     "mass_balance_tolerance_fraction", "energy_balance_tolerance_fraction",
 ])
 def test_gate_tolerances_rejects_non_positive(field):
     kwargs = dict(
         max_consumer_supply_drop_k=5.0, min_pressure_bar_abs=1.5, max_pipe_velocity_m_s=1.5,
-        mass_balance_tolerance_fraction=0.005, energy_balance_tolerance_fraction=0.02,
+        max_pump_dp_bar=6.0, mass_balance_tolerance_fraction=0.005, energy_balance_tolerance_fraction=0.02,
     )
     kwargs[field] = 0.0
     with pytest.raises(ValidationError):
@@ -477,7 +482,7 @@ def test_gate_tolerances_rejects_non_finite(bad_value):
     with pytest.raises(ValidationError):
         GateTolerances(
             max_consumer_supply_drop_k=bad_value, min_pressure_bar_abs=1.5, max_pipe_velocity_m_s=1.5,
-            mass_balance_tolerance_fraction=0.005, energy_balance_tolerance_fraction=0.02,
+            max_pump_dp_bar=6.0, mass_balance_tolerance_fraction=0.005, energy_balance_tolerance_fraction=0.02,
         )
 
 

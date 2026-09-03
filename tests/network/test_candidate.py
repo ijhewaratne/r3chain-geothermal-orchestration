@@ -51,7 +51,7 @@ def _tolerances() -> GateTolerances:
 def _policy(**overrides) -> GeothermalInjectionPolicy:
     base = dict(
         curtailment_allowed=True, auxiliary_policy="cost_shortfall",
-        minimum_auxiliary_circulation_fraction=0.01,
+        minimum_auxiliary_circulation_fraction=0.01, heat_delivery_tolerance_fraction=0.01,
     )
     base.update(overrides)
     return GeothermalInjectionPolicy(**base)
@@ -534,12 +534,14 @@ def test_velocity_limit_exceeded_via_undersized_connection_pipe(monkeypatch):
     assert result.details["pipe"] == "geo_supply_connection_C1"
 
 
-def test_all_seven_failure_codes_reachable():
+def test_all_nine_failure_codes_reachable():
     """Enumerates CandidateFailureCode and cross-checks it against the
     dedicated failure-path tests above -- if a new code is ever added to
     the enum without a corresponding reachability test, this test's own
     membership assertion documents the gap explicitly rather than passing
-    silently."""
+    silently. Was "all seven" prior to CFG-003/DSP-003
+    (decision-register.md IMPL-007), which added
+    PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED and GEOTHERMAL_HEAT_SHORTFALL."""
     covered = {
         CandidateFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED,
         CandidateFailureCode.CONSUMER_TEMPERATURE_NOT_MET,
@@ -548,9 +550,72 @@ def test_all_seven_failure_codes_reachable():
         CandidateFailureCode.MASS_BALANCE_FAILED,
         CandidateFailureCode.ENERGY_BALANCE_FAILED,
         CandidateFailureCode.GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT,
+        CandidateFailureCode.PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED,
+        CandidateFailureCode.GEOTHERMAL_HEAT_SHORTFALL,
     }
     assert covered == set(CandidateFailureCode)
-    assert len(covered) == 7
+    assert len(covered) == 9
+
+
+def test_pump_differential_pressure_exceeded_via_tight_tolerance():
+    """Both the main plant pump and the geothermal injection pump reuse the
+    SAME blueprint.circulation_pump.pressure_lift_bar design value (module
+    docstring, "Selected topology") and are both pressure-fixing boundary
+    components (create_circ_pump_const_pressure / a flat-lift-curve
+    create_pump_from_parameters), so an artificially tight max_pump_dp_bar
+    trips the MAIN pump's check first -- sufficient to prove
+    PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED is reachable; the candidate.py
+    module docstring for the second (injection-pump) check records why
+    that branch is defensive/future-proofing rather than independently
+    reachable under today's shared-value topology."""
+    bp = _blueprint()
+    baseline = _baseline(bp)
+    coupling_result = _golden_coupling_result()
+    tight = _tolerances().model_copy(update={"max_pump_dp_bar": 0.001})
+    result = evaluate_candidate(
+        coupling_result, bp, _candidate("C1"), baseline,
+        injection_policy=_policy(), tolerances=tight,
+    )
+    assert isinstance(result, CandidateEvaluationFailure)
+    assert result.failure_code == CandidateFailureCode.PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED
+    assert result.details["pump"] == "circulation_pump"
+    assert result.details["max_pump_dp_bar"] == 0.001
+
+
+def test_geothermal_heat_shortfall_under_strict_infeasible_policy():
+    """DSP-003/AC-05: the SAME deliberately-reduced-resource case that
+    remains FEASIBLE under the default cost_shortfall policy (see
+    test_stabilization_warning_absent_in_shortfall_case, which uses the
+    identical hx_heat_delivery_factor=0.3 fixture and asserts a
+    CandidateEvaluationResult) becomes INFEASIBLE under strict_infeasible."""
+    bp = _blueprint()
+    baseline = _baseline(bp)
+    coupling_result = _golden_coupling_result(hx_heat_delivery_factor=0.3)
+    result = evaluate_candidate(
+        coupling_result, bp, _candidate("C1"), baseline,
+        injection_policy=_policy(auxiliary_policy="strict_infeasible"), tolerances=_tolerances(),
+    )
+    assert isinstance(result, CandidateEvaluationFailure)
+    assert result.failure_code == CandidateFailureCode.GEOTHERMAL_HEAT_SHORTFALL
+    assert result.details["deliverable_geothermal_heat_kw"] < result.details["required_minimum_kw"]
+    assert math.isclose(result.details["baseline_total_heat_delivered_kw"], 3200.0, rel_tol=1e-9)
+
+
+def test_geothermal_heat_shortfall_absent_under_cost_shortfall_policy():
+    """AC-04: the identical reduced-resource case as the strict_infeasible
+    test above remains feasible (auxiliary covers the shortfall) under the
+    default "cost_shortfall" policy -- GEOTHERMAL_HEAT_SHORTFALL must never
+    be raised there."""
+    bp = _blueprint()
+    baseline = _baseline(bp)
+    coupling_result = _golden_coupling_result(hx_heat_delivery_factor=0.3)
+    result = evaluate_candidate(
+        coupling_result, bp, _candidate("C1"), baseline,
+        injection_policy=_policy(auxiliary_policy="cost_shortfall"), tolerances=_tolerances(),
+    )
+    assert isinstance(result, CandidateEvaluationResult)
+    assert result.auxiliary_heat_kw > 0
+    assert result.geothermal_coverage_fraction < 1.0
 
 
 def test_consumer_temperature_not_met():
@@ -652,6 +717,7 @@ def test_policy_from_config_dict_reads_real_config():
     assert policy.curtailment_allowed is True
     assert policy.auxiliary_policy == "cost_shortfall"
     assert math.isclose(policy.minimum_auxiliary_circulation_fraction, 0.01)
+    assert math.isclose(policy.heat_delivery_tolerance_fraction, 0.01)
 
 
 def test_policy_rejects_curtailment_disabled():
@@ -659,15 +725,26 @@ def test_policy_rejects_curtailment_disabled():
         _policy(curtailment_allowed=False)
 
 
-def test_policy_rejects_strict_infeasible_auxiliary_policy():
-    with pytest.raises(ValidationError):
-        _policy(auxiliary_policy="strict_infeasible")
+def test_policy_accepts_strict_infeasible_auxiliary_policy():
+    """DSP-001/DSP-003 (decision-register.md IMPL-007): strict_infeasible
+    was rejected prior to this change (T2.3 scope note, now superseded) --
+    it is now a fully implemented policy, not merely an accepted enum
+    value. See test_geothermal_heat_shortfall_under_strict_infeasible_policy
+    for the behavioral test."""
+    policy = _policy(auxiliary_policy="strict_infeasible")
+    assert policy.auxiliary_policy == "strict_infeasible"
 
 
 @pytest.mark.parametrize("bad_value", [-0.1, 1.0, 1.5])
 def test_policy_rejects_out_of_range_minimum_auxiliary_circulation_fraction(bad_value):
     with pytest.raises(ValidationError):
         _policy(minimum_auxiliary_circulation_fraction=bad_value)
+
+
+@pytest.mark.parametrize("bad_value", [-0.1, 1.0, 1.5])
+def test_policy_rejects_out_of_range_heat_delivery_tolerance_fraction(bad_value):
+    with pytest.raises(ValidationError):
+        _policy(heat_delivery_tolerance_fraction=bad_value)
 
 
 # ── Determinism and independence across C1-C4 ───────────────────────────────
@@ -755,7 +832,7 @@ def test_strict_json_round_trip_for_success():
 
 @pytest.mark.parametrize("failure_code", list(CandidateFailureCode))
 def test_strict_json_round_trip_for_failure_codes(failure_code, monkeypatch):
-    """Covers all seven CandidateFailureCode values -- one dedicated,
+    """Covers all nine CandidateFailureCode values -- one dedicated,
     independently-verified scenario per code, matching the scenario used
     in that code's own dedicated failure test above."""
     import r3chain_geothermal.network.candidate as candidate_module
@@ -763,6 +840,7 @@ def test_strict_json_round_trip_for_failure_codes(failure_code, monkeypatch):
     bp = _blueprint()
     tolerances = _tolerances()
     policy = _policy()
+    coupling_result = _golden_coupling_result()
 
     if failure_code == CandidateFailureCode.MASS_BALANCE_FAILED:
         tolerances = tolerances.model_copy(update={"mass_balance_tolerance_fraction": 1e-18})
@@ -778,9 +856,13 @@ def test_strict_json_round_trip_for_failure_codes(failure_code, monkeypatch):
         tolerances = tolerances.model_copy(update={"max_consumer_supply_drop_k": 1e-9})
     elif failure_code == CandidateFailureCode.PRESSURE_LIMIT_EXCEEDED:
         bp = _blueprint(p_supply_bar_abs=4.51)
+    elif failure_code == CandidateFailureCode.PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED:
+        tolerances = tolerances.model_copy(update={"max_pump_dp_bar": 0.001})
+    elif failure_code == CandidateFailureCode.GEOTHERMAL_HEAT_SHORTFALL:
+        policy = _policy(auxiliary_policy="strict_infeasible")
+        coupling_result = _golden_coupling_result(hx_heat_delivery_factor=0.3)
 
     baseline = _baseline(bp)
-    coupling_result = _golden_coupling_result()
     result = evaluate_candidate(
         coupling_result, bp, _candidate("C1"), baseline,
         injection_policy=policy, tolerances=tolerances,

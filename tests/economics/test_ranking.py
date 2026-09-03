@@ -49,7 +49,10 @@ def _tolerances() -> GateTolerances:
 
 
 def _policy(**overrides) -> GeothermalInjectionPolicy:
-    base = dict(curtailment_allowed=True, auxiliary_policy="cost_shortfall", minimum_auxiliary_circulation_fraction=0.01)
+    base = dict(
+        curtailment_allowed=True, auxiliary_policy="cost_shortfall",
+        minimum_auxiliary_circulation_fraction=0.01, heat_delivery_tolerance_fraction=0.01,
+    )
     base.update(overrides)
     return GeothermalInjectionPolicy(**base)
 

@@ -43,6 +43,15 @@ class BaselineFailureCode(str, Enum):
     module docstring for why a naive comparison is wrong) exceeded
     gates.energy_balance_tolerance_fraction (plan §11 gate 11)."""
 
+    PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED = "PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED"
+    """The main plant circulation pump's measured pressure lift
+    (CirculationPumpResult.pressure_lift_bar) exceeded
+    gates.max_pump_dp_bar (CFG-003/CFG-004 gate 11,
+    R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md Workstream D). Prior to
+    this code's addition, max_pump_dp_bar was declared in configuration but
+    never enforced by any gate -- see docs/decisions/decision-register.md
+    IMPL-007."""
+
 
 class CandidateFailureCode(str, Enum):
     """Stable, machine-readable failure codes for a rejected T2.3 candidate
@@ -96,3 +105,20 @@ class CandidateFailureCode(str, Enum):
     is specifically designed to keep this unreached in the worked case;
     this code exists so an unanticipated combination fails loudly with an
     exact, documented cause instead of an unhandled exception."""
+
+    PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED = "PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED"
+    """Either the main plant circulation pump's or the geothermal injection
+    pump's measured pressure lift exceeded gates.max_pump_dp_bar
+    (CFG-003/CFG-004 gate 11). Same meaning as BaselineFailureCode's code
+    of the same name, extended to also cover the injection branch's own
+    pump -- see docs/decisions/decision-register.md IMPL-007."""
+
+    GEOTHERMAL_HEAT_SHORTFALL = "GEOTHERMAL_HEAT_SHORTFALL"
+    """Under injection_policy.auxiliary_policy == "strict_infeasible" only:
+    coupling_input.deliverable_geothermal_heat_kw fell short of
+    baseline.total_heat_delivered_kw by more than
+    gates.heat_delivery_tolerance_fraction (DSP-003,
+    R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md Workstream E). Never
+    raised under the default "cost_shortfall" policy, which instead covers
+    any shortfall from the auxiliary source (auxiliary_heat_kw) -- see
+    GeothermalInjectionPolicy's own docstring."""

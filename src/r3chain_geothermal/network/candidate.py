@@ -172,8 +172,21 @@ from .builder import build_pandapipes_net
 from .errors import CandidateFailureCode
 from .pressure import to_absolute_bar
 
-CANDIDATE_CONTRACT_SCHEMA_VERSION: Literal["1.0.0"] = "1.0.0"
-"""Versioned independently of every other layer's own contract schema."""
+CANDIDATE_CONTRACT_SCHEMA_VERSION: Literal["1.1.0"] = "1.1.0"
+"""Versioned independently of every other layer's own contract schema.
+Bumped 1.0.0 -> 1.1.0 (Workstream D/E,
+R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md, decision-register.md
+IMPL-007): GeothermalInjectionPolicy now accepts and enforces
+"strict_infeasible" (previously rejected), gaining a
+heat_delivery_tolerance_fraction field; GateTolerances (network/baseline.py)
+gained max_pump_dp_bar, now enforced against both the main plant pump and
+the geothermal injection pump here. Both are previously-declared-but-
+unenforced configuration fields (CFG-003) -- see that module's own
+docstring for the same note. Changes bundle_scientific_sha256 for any
+bundle embedding CandidateEvaluationResult (new fields in the audited
+schema) but not run_id, and not any C1-C4 canonical numeric KPI,
+feasibility, or candidate-ordering value under the canonical
+"cost_shortfall" policy and 3.0 bar canonical pump lift (CFG-006)."""
 
 CONNECTION_PIPE_DN_MM = 200.0
 """Empirically sized (module docstring, "Selected topology") to keep both
@@ -255,7 +268,29 @@ class GeothermalInjectionPolicy(BaseModel):
 
     curtailment_allowed: bool
     auxiliary_policy: Literal["cost_shortfall", "strict_infeasible"]
+    """DSP-001's typed shortfall-policy enum, under this project's existing
+    config vocabulary (decision-register.md IMPL-007 records the
+    correspondence to the spec's own "auxiliary_supply"/"strict_infeasible"
+    naming: this project's pre-existing "cost_shortfall" IS
+    "auxiliary_supply" -- same policy, kept under its established name
+    rather than renamed, since renaming config/demo_assumptions.json's
+    literal value would change config_sha256/run_id for zero functional
+    gain, and config/demo_assumptions.json's own
+    coupling_assumptions.auxiliary_policy_options already lists both
+    values). "strict_infeasible" (DSP-003) is now implemented: see
+    heat_delivery_tolerance_fraction below and
+    CandidateFailureCode.GEOTHERMAL_HEAT_SHORTFALL."""
     minimum_auxiliary_circulation_fraction: float
+    heat_delivery_tolerance_fraction: float
+    """gates.heat_delivery_tolerance_fraction (CFG-003/DSP-003, added
+    schema 1.1.0). Previously declared in config but never consumed by any
+    check -- see decision-register.md IMPL-007. Consumed ONLY under
+    auxiliary_policy=="strict_infeasible": a candidate is infeasible
+    (GEOTHERMAL_HEAT_SHORTFALL) when
+    coupling_input.deliverable_geothermal_heat_kw falls short of
+    baseline_total_heat_delivered_kw by more than this fraction. Never
+    consulted under "cost_shortfall" (DSP-004: a genuine resource shortfall
+    there is simply covered by auxiliary_heat_kw, not gated)."""
 
     @model_validator(mode="after")
     def _validate_policy(self) -> "GeothermalInjectionPolicy":
@@ -267,17 +302,15 @@ class GeothermalInjectionPolicy(BaseModel):
                 "deliverable heat exceeds the curtailment ceiling) -- changing "
                 "this is a scientific-assumption change requiring separate approval"
             )
-        if self.auxiliary_policy != "cost_shortfall":
-            errors.append(
-                f"auxiliary_policy {self.auxiliary_policy!r} is not implemented -- "
-                "only 'cost_shortfall' (auxiliary always covers any shortfall) is "
-                "supported; 'strict_infeasible' is a plan §9.5 policy option not "
-                "yet built"
-            )
         if not (0.0 <= self.minimum_auxiliary_circulation_fraction < 1.0):
             errors.append(
                 "minimum_auxiliary_circulation_fraction must be in [0, 1), got "
                 f"{self.minimum_auxiliary_circulation_fraction!r}"
+            )
+        if not (0.0 <= self.heat_delivery_tolerance_fraction < 1.0):
+            errors.append(
+                "heat_delivery_tolerance_fraction must be in [0, 1), got "
+                f"{self.heat_delivery_tolerance_fraction!r}"
             )
         if errors:
             raise ValueError("; ".join(errors))
@@ -288,10 +321,12 @@ class GeothermalInjectionPolicy(BaseModel):
         """Pure function -- no file I/O, mirrors GateTolerances/
         CouplingAssumptions' established pattern."""
         coupling = config["coupling_assumptions"]
+        gates = config["gates"]
         return cls(
             curtailment_allowed=coupling["curtailment_allowed"],
             auxiliary_policy=coupling["auxiliary_policy"],
             minimum_auxiliary_circulation_fraction=coupling["minimum_auxiliary_circulation_fraction"],
+            heat_delivery_tolerance_fraction=gates["heat_delivery_tolerance_fraction"],
         )
 
 
@@ -318,7 +353,7 @@ class CandidateEvaluationResult(BaseModel):
     uses -- a hand-tampered payload is rejected, not silently accepted."""
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
-    contract_schema_version: Literal["1.0.0"] = CANDIDATE_CONTRACT_SCHEMA_VERSION
+    contract_schema_version: Literal["1.1.0"] = CANDIDATE_CONTRACT_SCHEMA_VERSION
     status: Literal["success"] = "success"
 
     candidate: BlueprintCandidate
@@ -635,7 +670,7 @@ class CandidateEvaluationFailure(BaseModel):
     auditable, same rule as every earlier layer."""
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
-    contract_schema_version: Literal["1.0.0"] = CANDIDATE_CONTRACT_SCHEMA_VERSION
+    contract_schema_version: Literal["1.1.0"] = CANDIDATE_CONTRACT_SCHEMA_VERSION
     status: Literal["failure"] = "failure"
     failure_code: CandidateFailureCode
     message: str
@@ -825,6 +860,36 @@ def evaluate_candidate(
             details={}, candidate=candidate, coupling_input=coupling_result, created_at=created_at,
         )
 
+    # ── Delivered-heat/capacity gate (CFG-004 gate 8, DSP-003): a genuine
+    # RESOURCE shortfall -- deliverable geothermal heat below total demand
+    # by more than the configured tolerance -- is infeasible ONLY under the
+    # "strict_infeasible" policy. Checked against the raw
+    # deliverable_geothermal_heat_kw (never the curtailed injected_kw), so
+    # this stays independent of the surplus-curtailment/stabilization-margin
+    # bookkeeping above (DSP-004's required separation) -- a surplus case
+    # can never trigger this by construction (deliverable >= demand implies
+    # no shortfall). Under the default "cost_shortfall" policy a shortfall
+    # is instead covered by auxiliary_heat_kw below, never gated here. ──
+    if injection_policy.auxiliary_policy == "strict_infeasible":
+        required_minimum_kw = baseline.total_heat_delivered_kw * (1.0 - injection_policy.heat_delivery_tolerance_fraction)
+        if coupling_result.deliverable_geothermal_heat_kw.value < required_minimum_kw:
+            return CandidateEvaluationFailure(
+                failure_code=CandidateFailureCode.GEOTHERMAL_HEAT_SHORTFALL,
+                message=(
+                    "deliverable_geothermal_heat_kw falls short of "
+                    "baseline_total_heat_delivered_kw by more than "
+                    "heat_delivery_tolerance_fraction under the "
+                    "strict_infeasible policy."
+                ),
+                details={
+                    "deliverable_geothermal_heat_kw": coupling_result.deliverable_geothermal_heat_kw.value,
+                    "baseline_total_heat_delivered_kw": baseline.total_heat_delivered_kw,
+                    "heat_delivery_tolerance_fraction": injection_policy.heat_delivery_tolerance_fraction,
+                    "required_minimum_kw": required_minimum_kw,
+                },
+                candidate=candidate, coupling_input=coupling_result, created_at=created_at,
+            )
+
     fluid = get_fluid(net)
     junction_idx = {name: idx for idx, name in enumerate(net.junction["name"])}
     pipe_idx = {name: idx for idx, name in enumerate(net.pipe["name"])}
@@ -876,26 +941,9 @@ def evaluate_candidate(
             candidate=candidate, coupling_input=coupling_result, created_at=created_at,
         )
 
-    # ── Velocity: EVERY pipe in the candidate net (blueprint's own plus
-    # the two new connection pipes). ──
-    pipe_velocities_m_s = {
-        name: abs(net.res_pipe.loc[idx, "v_mean_m_per_s"]) for name, idx in pipe_idx.items()
-    }
-    max_velocity_m_s = max(pipe_velocities_m_s.values())
-    if max_velocity_m_s > tolerances.max_pipe_velocity_m_s:
-        worst_pipe = max(pipe_velocities_m_s, key=pipe_velocities_m_s.get)
-        return CandidateEvaluationFailure(
-            failure_code=CandidateFailureCode.VELOCITY_LIMIT_EXCEEDED,
-            message=f"pipe {worst_pipe!r} velocity exceeds max_pipe_velocity_m_s.",
-            details={
-                "pipe": worst_pipe, "velocity_m_s": max_velocity_m_s,
-                "max_pipe_velocity_m_s": tolerances.max_pipe_velocity_m_s,
-            },
-            candidate=candidate, coupling_input=coupling_result, created_at=created_at,
-        )
-
     # ── Main plant pump (unchanged component, plan's "continued
-    # auxiliary-plant operation") ──
+    # auxiliary-plant operation"), moved ahead of velocity (CFG-004 gate
+    # order: pressure(10) -> pump differential-pressure(11) -> velocity(12)) ──
     pump_row = net.res_circ_pump_pressure.iloc[0]
     main_pump_mass_flow_kg_s = abs(pump_row["mdot_from_kg_per_s"])
     main_pump_pressure_lift_bar = pump_row["p_to_bar"] - pump_row["p_from_bar"]
@@ -915,6 +963,14 @@ def evaluate_candidate(
         (junction_pressures_bar_abs[candidate.return_junction] - junction_pressures_bar_abs[refs["geo_return"]])
         + (junction_pressures_bar_abs[refs["geo_supply"]] - junction_pressures_bar_abs[candidate.supply_junction])
     )
+    geo_injection_pump_pressure_lift_bar = (
+        junction_pressures_bar_abs[refs["geo_mid"]] - junction_pressures_bar_abs[refs["geo_return"]]
+    )
+    """Absolute-pressure difference across the geothermal injection pump
+    (geo_mid minus geo_return) -- the ABSOLUTE-reference difference equals
+    the GAUGE-reference difference (a constant atmospheric offset cancels
+    in a subtraction), so this is valid despite junction_pressures_bar_abs
+    itself being converted via to_absolute_bar()."""
 
     # ── Actual vs. design temperatures at the injection branch (module
     # docstring, "Curtailment" -- exposed as typed KPIs, not left only in
@@ -923,6 +979,47 @@ def evaluate_candidate(
     geo_inlet_design_c = coupling_result.assumptions.dh_return_temperature_c
     geo_outlet_actual_c = float(geo_hc_row["t_outlet_k"]) - 273.15
     geo_outlet_design_c = coupling_result.assumptions.dh_supply_temperature_c
+
+    # ── Pump differential-pressure gate (CFG-003/CFG-004 gate 11): applies
+    # to BOTH the main plant pump and the geothermal injection pump. ──
+    if circulation_pump.pressure_lift_bar > tolerances.max_pump_dp_bar:
+        return CandidateEvaluationFailure(
+            failure_code=CandidateFailureCode.PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED,
+            message="main plant circulation pump pressure_lift_bar exceeds max_pump_dp_bar.",
+            details={
+                "pump": "circulation_pump", "pressure_lift_bar": circulation_pump.pressure_lift_bar,
+                "max_pump_dp_bar": tolerances.max_pump_dp_bar,
+            },
+            candidate=candidate, coupling_input=coupling_result, created_at=created_at,
+        )
+    if geo_injection_pump_pressure_lift_bar > tolerances.max_pump_dp_bar:
+        return CandidateEvaluationFailure(
+            failure_code=CandidateFailureCode.PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED,
+            message="geothermal injection pump pressure lift exceeds max_pump_dp_bar.",
+            details={
+                "pump": refs["pump"], "pressure_lift_bar": geo_injection_pump_pressure_lift_bar,
+                "max_pump_dp_bar": tolerances.max_pump_dp_bar,
+            },
+            candidate=candidate, coupling_input=coupling_result, created_at=created_at,
+        )
+
+    # ── Velocity: EVERY pipe in the candidate net (blueprint's own plus
+    # the two new connection pipes). ──
+    pipe_velocities_m_s = {
+        name: abs(net.res_pipe.loc[idx, "v_mean_m_per_s"]) for name, idx in pipe_idx.items()
+    }
+    max_velocity_m_s = max(pipe_velocities_m_s.values())
+    if max_velocity_m_s > tolerances.max_pipe_velocity_m_s:
+        worst_pipe = max(pipe_velocities_m_s, key=pipe_velocities_m_s.get)
+        return CandidateEvaluationFailure(
+            failure_code=CandidateFailureCode.VELOCITY_LIMIT_EXCEEDED,
+            message=f"pipe {worst_pipe!r} velocity exceeds max_pipe_velocity_m_s.",
+            details={
+                "pipe": worst_pipe, "velocity_m_s": max_velocity_m_s,
+                "max_pipe_velocity_m_s": tolerances.max_pipe_velocity_m_s,
+            },
+            candidate=candidate, coupling_input=coupling_result, created_at=created_at,
+        )
 
     # ── Mass balance: COMBINED (main pump + geothermal injection) supply
     # vs. total consumer demand. ──

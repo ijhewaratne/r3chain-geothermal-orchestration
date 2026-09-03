@@ -94,8 +94,17 @@ from .builder import build_pandapipes_net
 from .errors import BaselineFailureCode
 from .pressure import to_absolute_bar
 
-BASELINE_CONTRACT_SCHEMA_VERSION: Literal["1.0.0"] = "1.0.0"
-"""Versioned independently of every other layer's own contract schema."""
+BASELINE_CONTRACT_SCHEMA_VERSION: Literal["1.1.0"] = "1.1.0"
+"""Versioned independently of every other layer's own contract schema.
+Bumped 1.0.0 -> 1.1.0 (CFG-003, decision-register.md IMPL-007): GateTolerances
+gained max_pump_dp_bar, a previously-declared-but-unenforced configuration
+field, now wired to a real gate (PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED). This
+changes bundle_scientific_sha256 for any bundle embedding this model (a new
+field in the audited schema) but not run_id (computed only from raw input,
+raw config bytes, source provenance and WORKFLOW_CONTRACT_SCHEMA_VERSION --
+see workflow/core.py::run_workflow) and not any C1-C4 canonical numeric
+KPI/feasibility/ranking value (the canonical circulation_pump.pressure_lift_bar
+is 3.0 bar, comfortably under the 6.0 bar gate -- CFG-006)."""
 
 ENTHALPY_INTEGRATION_METHOD: Literal["composite_trapezoidal"] = "composite_trapezoidal"
 ENTHALPY_INTEGRATION_SEGMENTS = 100
@@ -118,6 +127,13 @@ class GateTolerances(BaseModel):
     max_consumer_supply_drop_k: float
     min_pressure_bar_abs: float
     max_pipe_velocity_m_s: float
+    max_pump_dp_bar: float
+    """gates.max_pump_dp_bar (CFG-003, added schema 1.1.0). Previously
+    declared in config/demo_assumptions.json but never consumed by any
+    gate -- see decision-register.md IMPL-007. Applies to the main plant
+    circulation pump's measured pressure_lift_bar here, and additionally to
+    the geothermal injection pump's own lift on network/candidate.py's
+    CandidateEvaluationResult."""
     mass_balance_tolerance_fraction: float
     energy_balance_tolerance_fraction: float
 
@@ -126,7 +142,7 @@ class GateTolerances(BaseModel):
         errors: list[str] = []
         for name in (
             "max_consumer_supply_drop_k", "min_pressure_bar_abs", "max_pipe_velocity_m_s",
-            "mass_balance_tolerance_fraction", "energy_balance_tolerance_fraction",
+            "max_pump_dp_bar", "mass_balance_tolerance_fraction", "energy_balance_tolerance_fraction",
         ):
             if getattr(self, name) <= 0:
                 errors.append(f"{name} must be > 0, got {getattr(self, name)!r}")
@@ -143,6 +159,7 @@ class GateTolerances(BaseModel):
             max_consumer_supply_drop_k=gates["max_consumer_supply_drop_k"],
             min_pressure_bar_abs=gates["min_pressure_bar_abs"],
             max_pipe_velocity_m_s=gates["max_pipe_velocity_m_s"],
+            max_pump_dp_bar=gates["max_pump_dp_bar"],
             mass_balance_tolerance_fraction=gates["mass_balance_tolerance_fraction"],
             energy_balance_tolerance_fraction=gates["energy_balance_tolerance_fraction"],
         )
@@ -282,7 +299,7 @@ class BaselineNetworkResult(BaseModel):
     """
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
-    contract_schema_version: Literal["1.0.0"] = BASELINE_CONTRACT_SCHEMA_VERSION
+    contract_schema_version: Literal["1.1.0"] = BASELINE_CONTRACT_SCHEMA_VERSION
     status: Literal["success"] = "success"
 
     blueprint: NetworkBlueprint
@@ -414,7 +431,7 @@ class BaselineNetworkResult(BaseModel):
 class BaselineNetworkFailure(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
-    contract_schema_version: Literal["1.0.0"] = BASELINE_CONTRACT_SCHEMA_VERSION
+    contract_schema_version: Literal["1.1.0"] = BASELINE_CONTRACT_SCHEMA_VERSION
     status: Literal["failure"] = "failure"
     failure_code: BaselineFailureCode
     message: str
@@ -570,6 +587,30 @@ def run_baseline_evaluation(
             blueprint=blueprint, created_at=created_at,
         )
 
+    # ── Circulation pump (moved ahead of velocity, CFG-004 gate order:
+    # pressure(10) -> pump differential-pressure(11) -> velocity(12)) ──
+    pump_row = net.res_circ_pump_pressure.iloc[0]
+    pump_mass_flow_kg_s = abs(pump_row["mdot_from_kg_per_s"])
+    pressure_lift_bar = pump_row["p_to_bar"] - pump_row["p_from_bar"]
+    hydraulic_pumping_power_kw = (pressure_lift_bar * 1e5 * pump_row["vdot_m3_per_s"]) / 1000.0
+    circulation_pump = CirculationPumpResult(
+        mass_flow_kg_s=pump_mass_flow_kg_s, pressure_lift_bar=pressure_lift_bar,
+        flow_temperature_c=pump_row["t_outlet_k"] - 273.15, return_temperature_c=pump_row["t_from_k"] - 273.15,
+        hydraulic_pumping_power_kw=hydraulic_pumping_power_kw,
+    )
+
+    # ── Pump differential-pressure gate (CFG-003/CFG-004 gate 11) ──
+    if circulation_pump.pressure_lift_bar > tolerances.max_pump_dp_bar:
+        return BaselineNetworkFailure(
+            failure_code=BaselineFailureCode.PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED,
+            message="main plant circulation pump pressure_lift_bar exceeds max_pump_dp_bar.",
+            details={
+                "pressure_lift_bar": circulation_pump.pressure_lift_bar,
+                "max_pump_dp_bar": tolerances.max_pump_dp_bar,
+            },
+            blueprint=blueprint, created_at=created_at,
+        )
+
     # ── Velocity ──
     pipe_velocities_m_s = {
         name: abs(net.res_pipe.loc[idx, "v_mean_m_per_s"]) for name, idx in pipe_idx.items()
@@ -586,17 +627,6 @@ def run_baseline_evaluation(
             },
             blueprint=blueprint, created_at=created_at,
         )
-
-    # ── Circulation pump ──
-    pump_row = net.res_circ_pump_pressure.iloc[0]
-    pump_mass_flow_kg_s = abs(pump_row["mdot_from_kg_per_s"])
-    pressure_lift_bar = pump_row["p_to_bar"] - pump_row["p_from_bar"]
-    hydraulic_pumping_power_kw = (pressure_lift_bar * 1e5 * pump_row["vdot_m3_per_s"]) / 1000.0
-    circulation_pump = CirculationPumpResult(
-        mass_flow_kg_s=pump_mass_flow_kg_s, pressure_lift_bar=pressure_lift_bar,
-        flow_temperature_c=pump_row["t_outlet_k"] - 273.15, return_temperature_c=pump_row["t_from_k"] - 273.15,
-        hydraulic_pumping_power_kw=hydraulic_pumping_power_kw,
-    )
 
     # ── Mass balance: pump branch flow vs. sum of consumer branch flows ──
     total_consumer_mass_flow_kg_s = sum(c.mass_flow_kg_s for c in consumers.values())
