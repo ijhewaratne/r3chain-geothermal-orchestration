@@ -1,0 +1,53 @@
+# Path-redacted excerpt. This file is NOT byte-identical to the source log — the
+# personal home-directory prefix has been replaced with <USER_HOME>. All timestamps,
+# tool-call IDs, warnings, and process-lifecycle events are otherwise unmodified.
+# SHA-256 of the original, unredacted excerpt (privately retained): 6e0841e74268d224c8f960b9d9f7f5bcf33efb10dd5a521b431acf81c305c8f5
+#
+      '<USER_HOME>/.local/bin',
+      '/usr/bin',
+      '/bin',
+      '/usr/sbin',
+      '/sbin',
+      [length]: 7
+    ]
+  }
+} %o
+2026-08-30T18:24:22.953Z [r3chain-geothermal] [info] Server started and connected successfully { metadata: undefined }
+2026-08-30T18:24:23.048Z [r3chain-geothermal] [info] Message from client: method="initialize" id=0 params { metadata: undefined }
+<USER_HOME>/.local/share/r3chain-geothermal-mcp/venv/lib/python3.11/site-packages/pydantic_settings/sources/utils.py:47: IncompleteFieldDefinitionWarning: Field 'lifespan' has an incomplete definition: its annotation contains an unresolved forward reference, so settings sources may fail to correctly resolve its value. Call `model_rebuild()` on the model where the field is defined, once all the referenced types are defined.
+  warnings.warn(
+<USER_HOME>/.local/share/r3chain-geothermal-mcp/venv/lib/python3.11/site-packages/pydantic_settings/sources/utils.py:47: IncompleteFieldDefinitionWarning: Field 'lifespan' has an incomplete definition: its annotation contains an unresolved forward reference, so settings sources may fail to correctly resolve its value. Call `model_rebuild()` on the model where the field is defined, once all the referenced types are defined.
+  warnings.warn(
+2026-08-30T18:24:30.078Z [r3chain-geothermal] [info] Message from server: id=0 result { metadata: undefined }
+Processing request of type ListToolsRequest
+2026-08-30T18:24:30.084Z [r3chain-geothermal] [info] Message from client: method="notifications/initialized" { metadata: undefined }
+2026-08-30T18:24:30.110Z [r3chain-geothermal] [info] Message from client: method="tools/list" id=1 params { metadata: undefined }
+Processing request of type ListToolsRequest
+2026-08-30T18:24:30.112Z [r3chain-geothermal] [info] Message from client: method="prompts/list" id=2 params { metadata: undefined }
+2026-08-30T18:24:30.112Z [r3chain-geothermal] [info] Message from client: method="resources/list" id=3 { metadata: undefined }
+Processing request of type ListPromptsRequest
+Processing request of type ListResourcesRequest
+2026-08-30T18:24:30.143Z [r3chain-geothermal] [info] Message from server: id=1 result { metadata: undefined }
+2026-08-30T18:24:30.143Z [r3chain-geothermal] [info] Message from server: id=2 result { metadata: undefined }
+2026-08-30T18:24:30.143Z [r3chain-geothermal] [info] Message from server: id=3 result { metadata: undefined }
+Processing request of type CallToolRequest
+Processing request of type CallToolRequest
+Processing request of type CallToolRequest
+Processing request of type CallToolRequest
+The circulation pump's behaviour has changed. Rather than setting a slack temperature node, the outlet temperature of the circulation pump is now fixed. In most cases this does not change, the outcome, but be aware of the adaptations!
+numba is not installed. Install numba first before you set the 'use_numba' flag to True. The pipeflow will be performed without numba speedup.
+The circulation pump's behaviour has changed. Rather than setting a slack temperature node, the outlet temperature of the circulation pump is now fixed. In most cases this does not change, the outcome, but be aware of the adaptations!
+numba is not installed. Install numba first before you set the 'use_numba' flag to True. The pipeflow will be performed without numba speedup.
+The circulation pump's behaviour has changed. Rather than setting a slack temperature node, the outlet temperature of the circulation pump is now fixed. In most cases this does not change, the outcome, but be aware of the adaptations!
+numba is not installed. Install numba first before you set the 'use_numba' flag to True. The pipeflow will be performed without numba speedup.
+The circulation pump's behaviour has changed. Rather than setting a slack temperature node, the outlet temperature of the circulation pump is now fixed. In most cases this does not change, the outcome, but be aware of the adaptations!
+numba is not installed. Install numba first before you set the 'use_numba' flag to True. The pipeflow will be performed without numba speedup.
+The circulation pump's behaviour has changed. Rather than setting a slack temperature node, the outlet temperature of the circulation pump is now fixed. In most cases this does not change, the outcome, but be aware of the adaptations!
+numba is not installed. Install numba first before you set the 'use_numba' flag to True. The pipeflow will be performed without numba speedup.
+Processing request of type CallToolRequest
+Processing request of type CallToolRequest
+Processing request of type CallToolRequest
+Processing request of type CallToolRequest
+Processing request of type CallToolRequest
+Processing request of type CallToolRequest
+Processing request of type CallToolRequest

@@ -1,0 +1,354 @@
+{
+  "verification_step": "resolve_newly_discovered_consumed_pointer_difference",
+  "pointer": "/surface_installations/heat_exchanger/exit_temperature_c",
+  "extraction_mode": "primary (fixed pointer, no legacy/fallback path -- parser source comment: 'Remaining required quantities (all fixed pointers, no legacy path)')",
+  "fixture_raw_value": 35.0,
+  "fixture_raw_python_type": "float",
+  "run_input_raw_value": 35,
+  "run_input_raw_python_type": "int",
+  "parser_normalization": {
+    "mechanism": "parsers/pydoublet_parser.py:_require_finite_number() line 251: 'numeric = float(value)' -- explicit unconditional float() coercion before any Pydantic validation",
+    "fixture_normalized_value": 35.0,
+    "fixture_normalized_type": "float",
+    "run_input_normalized_value": 35.0,
+    "run_input_normalized_type": "float",
+    "normalized_values_equal": true,
+    "normalized_types_equal": true
+  },
+  "coupling_result_object_equality": {
+    "method": "parse_pydoublet_result() called directly on both raw inputs with identical SourceProvenance; resulting PyDoubletCouplingResult objects compared via model_dump(), excluding raw_result/raw_result_sha256/created_at/field_provenance (all definitionally tied to the differing raw bytes or wall-clock)",
+    "fields_compared": [
+      "actual_runs_completed",
+      "calculation_mode",
+      "contract_schema_version",
+      "doublet_pump_electric_power_kw",
+      "geothermal_brine_hx_outlet_temperature_c",
+      "geothermal_brine_mass_flow_kg_s",
+      "geothermal_brine_specific_heat_capacity_j_kg_k",
+      "producer_wellhead_temperature_c",
+      "raw_cop_dimensionless",
+      "raw_geothermal_thermal_power_kw",
+      "result_identifier",
+      "scenario_identifier",
+      "source_provenance",
+      "source_timestamp",
+      "status",
+      "warnings"
+    ],
+    "result": "EQUAL on every field except result_identifier",
+    "differing_field": "result_identifier",
+    "why_result_identifier_differs": "result_identifier is literally derived from raw_result_sha256 (a truncated hash of the raw bytes) -- it is a bookkeeping/provenance identifier, not a scientific quantity, so it is EXPECTED to differ whenever the raw byte hash differs, independent of whether any scientific value differs."
+  },
+  "downstream_full_workflow_equality": {
+    "method": "run_workflow() called directly (not via MCP) on both raw inputs with identical config and provenance; full WorkflowBoundaryResult compared via model_dump(), excluding only run_id/created_at/pydoublet_result at the top level",
+    "total_raw_diff_entries": 41,
+    "diff_classification_counts": {
+      "hash_identifier_bookkeeping": 12,
+      "timestamp": 24,
+      "known_unconsumed_array_length": 5
+    },
+    "unclassified_diff_count": 0,
+    "conclusion": "Every one of the diff entries is a timestamp (wall-clock, expected across two separate calls), a hash/identifier bookkeeping field directly derived from the differing raw bytes (expected), or the already-known unconsumed salinity-array-length difference surfacing inside the embedded raw_result copy (expected, not a computed result). Zero diffs touch any computed physics, heat-exchanger, network, economics, or ranking VALUE -- explicitly verified: per-candidate 'economics' sub-objects and 'feasible' flags are dict-equal for C1, C2, C3, C4.",
+    "per_candidate_economics_identical": {
+      "C1": true,
+      "C2": true,
+      "C3": true,
+      "C4": true
+    },
+    "per_candidate_feasible_identical": {
+      "C1": true,
+      "C2": true,
+      "C3": true,
+      "C4": true
+    }
+  },
+  "raw_diff_entries": [
+    {
+      "pointer": "/audit/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.282813+00:00",
+      "b": "2026-08-31 12:52:28.785938+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/audit/input_sha256",
+      "type": "val",
+      "a": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762",
+      "b": "34deec7c58480d59346adecfc15e17fd564c6648f6990843ebb6d5590caa11cf",
+      "classification": "hash_identifier_bookkeeping"
+    },
+    {
+      "pointer": "/audit/run_id",
+      "type": "val",
+      "a": "r3chain-run-93d41133daa11d1a",
+      "b": "r3chain-run-160ff2195378cdc4",
+      "classification": "hash_identifier_bookkeeping"
+    },
+    {
+      "pointer": "/baseline_result/blueprint/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.282813+00:00",
+      "b": "2026-08-31 12:52:28.785938+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/baseline_result/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.285478+00:00",
+      "b": "2026-08-31 12:52:28.788405+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/blueprint/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.282813+00:00",
+      "b": "2026-08-31 12:52:28.785938+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/candidate_results/C1/coupling_input/coupling_input/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.283530+00:00",
+      "b": "2026-08-31 12:52:28.786656+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/candidate_results/C1/coupling_input/coupling_input/raw_result/simulation_results/producer_well/salinity_profile_kg_per_kg",
+      "type": "len",
+      "a": 55,
+      "b": 54,
+      "classification": "known_unconsumed_array_length"
+    },
+    {
+      "pointer": "/candidate_results/C1/coupling_input/coupling_input/raw_result_sha256",
+      "type": "val",
+      "a": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762",
+      "b": "34deec7c58480d59346adecfc15e17fd564c6648f6990843ebb6d5590caa11cf",
+      "classification": "hash_identifier_bookkeeping"
+    },
+    {
+      "pointer": "/candidate_results/C1/coupling_input/coupling_input/result_identifier",
+      "type": "val",
+      "a": "pydoublet-result-6c42d3368883070c",
+      "b": "pydoublet-result-34deec7c58480d59",
+      "classification": "hash_identifier_bookkeeping"
+    },
+    {
+      "pointer": "/candidate_results/C1/coupling_input/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.284702+00:00",
+      "b": "2026-08-31 12:52:28.787811+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/candidate_results/C1/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.382392+00:00",
+      "b": "2026-08-31 12:52:28.865972+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/candidate_results/C2/coupling_input/coupling_input/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.283530+00:00",
+      "b": "2026-08-31 12:52:28.786656+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/candidate_results/C2/coupling_input/coupling_input/raw_result/simulation_results/producer_well/salinity_profile_kg_per_kg",
+      "type": "len",
+      "a": 55,
+      "b": 54,
+      "classification": "known_unconsumed_array_length"
+    },
+    {
+      "pointer": "/candidate_results/C2/coupling_input/coupling_input/raw_result_sha256",
+      "type": "val",
+      "a": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762",
+      "b": "34deec7c58480d59346adecfc15e17fd564c6648f6990843ebb6d5590caa11cf",
+      "classification": "hash_identifier_bookkeeping"
+    },
+    {
+      "pointer": "/candidate_results/C2/coupling_input/coupling_input/result_identifier",
+      "type": "val",
+      "a": "pydoublet-result-6c42d3368883070c",
+      "b": "pydoublet-result-34deec7c58480d59",
+      "classification": "hash_identifier_bookkeeping"
+    },
+    {
+      "pointer": "/candidate_results/C2/coupling_input/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.284702+00:00",
+      "b": "2026-08-31 12:52:28.787811+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/candidate_results/C2/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.470505+00:00",
+      "b": "2026-08-31 12:52:28.953342+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/candidate_results/C3/coupling_input/coupling_input/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.283530+00:00",
+      "b": "2026-08-31 12:52:28.786656+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/candidate_results/C3/coupling_input/coupling_input/raw_result/simulation_results/producer_well/salinity_profile_kg_per_kg",
+      "type": "len",
+      "a": 55,
+      "b": 54,
+      "classification": "known_unconsumed_array_length"
+    },
+    {
+      "pointer": "/candidate_results/C3/coupling_input/coupling_input/raw_result_sha256",
+      "type": "val",
+      "a": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762",
+      "b": "34deec7c58480d59346adecfc15e17fd564c6648f6990843ebb6d5590caa11cf",
+      "classification": "hash_identifier_bookkeeping"
+    },
+    {
+      "pointer": "/candidate_results/C3/coupling_input/coupling_input/result_identifier",
+      "type": "val",
+      "a": "pydoublet-result-6c42d3368883070c",
+      "b": "pydoublet-result-34deec7c58480d59",
+      "classification": "hash_identifier_bookkeeping"
+    },
+    {
+      "pointer": "/candidate_results/C3/coupling_input/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.284702+00:00",
+      "b": "2026-08-31 12:52:28.787811+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/candidate_results/C3/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.562282+00:00",
+      "b": "2026-08-31 12:52:29.045077+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/candidate_results/C4/coupling_input/coupling_input/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.283530+00:00",
+      "b": "2026-08-31 12:52:28.786656+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/candidate_results/C4/coupling_input/coupling_input/raw_result/simulation_results/producer_well/salinity_profile_kg_per_kg",
+      "type": "len",
+      "a": 55,
+      "b": 54,
+      "classification": "known_unconsumed_array_length"
+    },
+    {
+      "pointer": "/candidate_results/C4/coupling_input/coupling_input/raw_result_sha256",
+      "type": "val",
+      "a": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762",
+      "b": "34deec7c58480d59346adecfc15e17fd564c6648f6990843ebb6d5590caa11cf",
+      "classification": "hash_identifier_bookkeeping"
+    },
+    {
+      "pointer": "/candidate_results/C4/coupling_input/coupling_input/result_identifier",
+      "type": "val",
+      "a": "pydoublet-result-6c42d3368883070c",
+      "b": "pydoublet-result-34deec7c58480d59",
+      "classification": "hash_identifier_bookkeeping"
+    },
+    {
+      "pointer": "/candidate_results/C4/coupling_input/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.284702+00:00",
+      "b": "2026-08-31 12:52:28.787811+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/candidate_results/C4/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.654037+00:00",
+      "b": "2026-08-31 12:52:29.136996+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/coupling_result/coupling_input/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.283530+00:00",
+      "b": "2026-08-31 12:52:28.786656+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/coupling_result/coupling_input/raw_result/simulation_results/producer_well/salinity_profile_kg_per_kg",
+      "type": "len",
+      "a": 55,
+      "b": 54,
+      "classification": "known_unconsumed_array_length"
+    },
+    {
+      "pointer": "/coupling_result/coupling_input/raw_result_sha256",
+      "type": "val",
+      "a": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762",
+      "b": "34deec7c58480d59346adecfc15e17fd564c6648f6990843ebb6d5590caa11cf",
+      "classification": "hash_identifier_bookkeeping"
+    },
+    {
+      "pointer": "/coupling_result/coupling_input/result_identifier",
+      "type": "val",
+      "a": "pydoublet-result-6c42d3368883070c",
+      "b": "pydoublet-result-34deec7c58480d59",
+      "classification": "hash_identifier_bookkeeping"
+    },
+    {
+      "pointer": "/coupling_result/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.284702+00:00",
+      "b": "2026-08-31 12:52:28.787811+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/ranking/baseline_economics/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.784934+00:00",
+      "b": "2026-08-31 12:52:29.230274+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/ranking/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.784928+00:00",
+      "b": "2026-08-31 12:52:29.230268+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/ranking/ranked/0/economics/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.784955+00:00",
+      "b": "2026-08-31 12:52:29.230295+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/ranking/ranked/1/economics/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.784994+00:00",
+      "b": "2026-08-31 12:52:29.230332+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/ranking/ranked/2/economics/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.785027+00:00",
+      "b": "2026-08-31 12:52:29.230355+00:00",
+      "classification": "timestamp"
+    },
+    {
+      "pointer": "/ranking/ranked/3/economics/created_at",
+      "type": "val",
+      "a": "2026-08-31 12:52:28.785053+00:00",
+      "b": "2026-08-31 12:52:29.230376+00:00",
+      "classification": "timestamp"
+    }
+  ]
+}

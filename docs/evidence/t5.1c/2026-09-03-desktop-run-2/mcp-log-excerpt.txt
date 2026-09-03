@@ -1,0 +1,153 @@
+# Path-redacted excerpt. This file is NOT byte-identical to the source log — the
+# personal home-directory prefix has been replaced with <USER_HOME>. All timestamps,
+# tool-call IDs, warnings, and process-lifecycle events are otherwise unmodified.
+# SHA-256 of the original, unredacted excerpt (privately retained): 5d0f33032a927805ad5533ea40399c9871ad03c358a4c9f6649e1aa73b0adcb4
+#
+2026-09-03T08:56:18.655Z [r3chain-geothermal] [info] Shutting down server... { metadata: undefined }
+2026-09-03T08:56:18.656Z [r3chain-geothermal] [info] Client transport closed { metadata: undefined }
+2026-09-03T08:56:18.656Z [r3chain-geothermal] [info] Server transport closed (intentional shutdown) { metadata: undefined }
+2026-09-03T08:56:18.656Z [r3chain-geothermal] [info] Client transport closed { metadata: undefined }
+2026-09-03T08:56:19.464Z [r3chain-geothermal] [info] Server transport closed { metadata: undefined }
+2026-09-03T08:56:19.464Z [r3chain-geothermal] [info] Client transport closed { metadata: undefined }
+2026-09-03T08:56:41.824Z [r3chain-geothermal] [info] Initializing server... { metadata: undefined }
+2026-09-03T08:56:41.825Z [r3chain-geothermal] [info] Era probe verdict: legacy (exec lane pinned — no sibling probe) { metadata: undefined }
+2026-09-03T08:56:44.223Z [r3chain-geothermal] [info] Using MCP server command: <USER_HOME>/.local/share/r3chain-geothermal-mcp/venv/bin/r3chain-geothermal-mcp-server with path: {
+  metadata: {
+    paths: [
+      '/usr/local/bin',
+      '/opt/homebrew/bin',
+      '<USER_HOME>/.local/bin',
+      '/usr/bin',
+      '/bin',
+      '/usr/sbin',
+      '/sbin',
+      [length]: 7
+    ]
+  }
+} %o
+2026-09-03T08:56:44.228Z [r3chain-geothermal] [info] Server started and connected successfully { metadata: undefined }
+2026-09-03T08:56:44.241Z [r3chain-geothermal] [info] Shutting down server... { metadata: undefined }
+2026-09-03T08:56:44.241Z [r3chain-geothermal] [info] Client transport closed { metadata: undefined }
+2026-09-03T08:56:44.241Z [r3chain-geothermal] [info] Server transport closed (intentional shutdown) { metadata: undefined }
+2026-09-03T08:56:44.241Z [r3chain-geothermal] [info] Client transport closed { metadata: undefined }
+2026-09-03T08:56:46.249Z [r3chain-geothermal] [info] Server transport closed { metadata: undefined }
+2026-09-03T08:56:46.249Z [r3chain-geothermal] [info] Client transport closed { metadata: undefined }
+2026-09-03T08:56:46.249Z [r3chain-geothermal] [info] Initializing server... { metadata: undefined }
+2026-09-03T08:56:46.249Z [r3chain-geothermal] [info] Era probe verdict: legacy (exec lane pinned — no sibling probe) { metadata: undefined }
+2026-09-03T08:56:46.250Z [r3chain-geothermal] [info] Using MCP server command: <USER_HOME>/.local/share/r3chain-geothermal-mcp/venv/bin/r3chain-geothermal-mcp-server with path: {
+  metadata: {
+    paths: [
+      '/usr/local/bin',
+      '/opt/homebrew/bin',
+      '<USER_HOME>/.local/bin',
+      '/usr/bin',
+      '/bin',
+      '/usr/sbin',
+      '/sbin',
+      [length]: 7
+    ]
+  }
+} %o
+2026-09-03T08:56:46.251Z [r3chain-geothermal] [info] Server started and connected successfully { metadata: undefined }
+2026-09-03T08:56:46.254Z [r3chain-geothermal] [info] Message from client: method="initialize" id=0 params { metadata: undefined }
+<USER_HOME>/.local/share/r3chain-geothermal-mcp/venv/lib/python3.11/site-packages/pydantic_settings/sources/utils.py:47: IncompleteFieldDefinitionWarning: Field 'lifespan' has an incomplete definition: its annotation contains an unresolved forward reference, so settings sources may fail to correctly resolve its value. Call `model_rebuild()` on the model where the field is defined, once all the referenced types are defined.
+  warnings.warn(
+Processing request of type ListToolsRequest
+<USER_HOME>/.local/share/r3chain-geothermal-mcp/venv/lib/python3.11/site-packages/pydantic_settings/sources/utils.py:47: IncompleteFieldDefinitionWarning: Field 'lifespan' has an incomplete definition: its annotation contains an unresolved forward reference, so settings sources may fail to correctly resolve its value. Call `model_rebuild()` on the model where the field is defined, once all the referenced types are defined.
+  warnings.warn(
+2026-09-03T08:56:48.085Z [r3chain-geothermal] [info] Message from server: id=0 result { metadata: undefined }
+2026-09-03T08:56:48.086Z [r3chain-geothermal] [info] Message from client: method="notifications/initialized" { metadata: undefined }
+2026-09-03T08:56:48.088Z [r3chain-geothermal] [info] Message from client: method="tools/list" id=1 params { metadata: undefined }
+2026-09-03T08:56:48.088Z [r3chain-geothermal] [info] Message from client: method="prompts/list" id=2 params { metadata: undefined }
+2026-09-03T08:56:48.088Z [r3chain-geothermal] [info] Message from client: method="resources/list" id=3 { metadata: undefined }
+Processing request of type ListToolsRequest
+Processing request of type ListPromptsRequest
+Processing request of type ListResourcesRequest
+2026-09-03T08:56:48.090Z [r3chain-geothermal] [info] Message from server: id=1 result { metadata: undefined }
+2026-09-03T08:56:48.091Z [r3chain-geothermal] [info] Message from server: id=2 result { metadata: undefined }
+2026-09-03T08:56:48.091Z [r3chain-geothermal] [info] Message from server: id=3 result { metadata: undefined }
+2026-09-03T09:00:52.108Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=4 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:00:52.190Z [r3chain-geothermal] [info] Message from server: id=4 result(1 blocks) { metadata: undefined }
+2026-09-03T09:02:44.307Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=5 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:02:44.327Z [r3chain-geothermal] [info] Message from server: id=5 result(1 blocks) { metadata: undefined }
+2026-09-03T09:04:51.696Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=6 params { metadata: undefined }
+Processing request of type CallToolRequest
+The circulation pump's behaviour has changed. Rather than setting a slack temperature node, the outlet temperature of the circulation pump is now fixed. In most cases this does not change, the outcome, but be aware of the adaptations!
+numba is not installed. Install numba first before you set the 'use_numba' flag to True. The pipeflow will be performed without numba speedup.
+The circulation pump's behaviour has changed. Rather than setting a slack temperature node, the outlet temperature of the circulation pump is now fixed. In most cases this does not change, the outcome, but be aware of the adaptations!
+numba is not installed. Install numba first before you set the 'use_numba' flag to True. The pipeflow will be performed without numba speedup.
+The circulation pump's behaviour has changed. Rather than setting a slack temperature node, the outlet temperature of the circulation pump is now fixed. In most cases this does not change, the outcome, but be aware of the adaptations!
+numba is not installed. Install numba first before you set the 'use_numba' flag to True. The pipeflow will be performed without numba speedup.
+The circulation pump's behaviour has changed. Rather than setting a slack temperature node, the outlet temperature of the circulation pump is now fixed. In most cases this does not change, the outcome, but be aware of the adaptations!
+numba is not installed. Install numba first before you set the 'use_numba' flag to True. The pipeflow will be performed without numba speedup.
+The circulation pump's behaviour has changed. Rather than setting a slack temperature node, the outlet temperature of the circulation pump is now fixed. In most cases this does not change, the outcome, but be aware of the adaptations!
+numba is not installed. Install numba first before you set the 'use_numba' flag to True. The pipeflow will be performed without numba speedup.
+2026-09-03T09:04:52.265Z [r3chain-geothermal] [info] Message from server: id=6 result(1 blocks) { metadata: undefined }
+2026-09-03T09:04:54.995Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=7 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:04:55.008Z [r3chain-geothermal] [info] Message from server: id=7 result(1 blocks) { metadata: undefined }
+2026-09-03T09:04:59.115Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=8 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:04:59.139Z [r3chain-geothermal] [info] Message from server: id=8 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:05.154Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=9 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:05.161Z [r3chain-geothermal] [info] Message from server: id=9 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:08.880Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=10 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:08.890Z [r3chain-geothermal] [info] Message from server: id=10 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:10.760Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=11 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:10.768Z [r3chain-geothermal] [info] Message from server: id=11 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:13.431Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=12 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:13.439Z [r3chain-geothermal] [info] Message from server: id=12 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:20.792Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=13 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:20.800Z [r3chain-geothermal] [info] Message from server: id=13 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:25.070Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=14 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:25.079Z [r3chain-geothermal] [info] Message from server: id=14 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:32.850Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=15 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:32.857Z [r3chain-geothermal] [info] Message from server: id=15 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:36.670Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=16 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:36.678Z [r3chain-geothermal] [info] Message from server: id=16 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:40.011Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=17 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:40.019Z [r3chain-geothermal] [info] Message from server: id=17 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:42.467Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=18 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:42.474Z [r3chain-geothermal] [info] Message from server: id=18 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:47.324Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=19 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:47.332Z [r3chain-geothermal] [info] Message from server: id=19 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:49.883Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=20 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:49.890Z [r3chain-geothermal] [info] Message from server: id=20 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:53.700Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=21 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:53.707Z [r3chain-geothermal] [info] Message from server: id=21 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:56.431Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=22 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:56.440Z [r3chain-geothermal] [info] Message from server: id=22 result(1 blocks) { metadata: undefined }
+2026-09-03T09:05:59.112Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=23 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:05:59.119Z [r3chain-geothermal] [info] Message from server: id=23 result(1 blocks) { metadata: undefined }
+2026-09-03T09:06:03.627Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=24 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:06:03.637Z [r3chain-geothermal] [info] Message from server: id=24 result(1 blocks) { metadata: undefined }
+2026-09-03T09:06:06.072Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=25 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:06:06.080Z [r3chain-geothermal] [info] Message from server: id=25 result(1 blocks) { metadata: undefined }
+2026-09-03T09:06:08.360Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=26 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:06:08.369Z [r3chain-geothermal] [info] Message from server: id=26 result(1 blocks) { metadata: undefined }
+2026-09-03T09:06:12.512Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=27 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:06:12.520Z [r3chain-geothermal] [info] Message from server: id=27 result(1 blocks) { metadata: undefined }
+2026-09-03T09:06:15.193Z [r3chain-geothermal] [info] Message from client: method="tools/call" id=28 params { metadata: undefined }
+Processing request of type CallToolRequest
+2026-09-03T09:06:15.201Z [r3chain-geothermal] [info] Message from server: id=28 result(1 blocks) { metadata: undefined }

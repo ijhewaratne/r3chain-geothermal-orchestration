@@ -1,0 +1,37 @@
+{
+  "contract_schema_version": "2.0.0",
+  "scientific_normalization_rule_version": "1.0.0",
+  "run_id": "r3chain-run-160ff2195378cdc4",
+  "created_at": "2026-09-03T09:04:52.250827Z",
+  "files": {
+    "pydoublet_input.json": {
+      "byte_sha256": "34deec7c58480d59346adecfc15e17fd564c6648f6990843ebb6d5590caa11cf",
+      "scientific_sha256": "34deec7c58480d59346adecfc15e17fd564c6648f6990843ebb6d5590caa11cf"
+    },
+    "config_snapshot.json": {
+      "byte_sha256": "2bdfd11dc901c6bdaf68f3d23516d85919ffa3f7d440ddcec46d6918b3d6e0c1",
+      "scientific_sha256": "2bdfd11dc901c6bdaf68f3d23516d85919ffa3f7d440ddcec46d6918b3d6e0c1"
+    },
+    "workflow_result.json": {
+      "byte_sha256": "110729fe1671581e52c14b7a3247c88919a7aec92a4fb1d67fe4df4e106dd519",
+      "scientific_sha256": "435d9a821e1d084657c8a3de4326387530bba3d844d46bad8612069906d153f2"
+    },
+    "audit.json": {
+      "byte_sha256": "97d208e835718836b30235cbb25ad15f3b49666ca64ea6af404abd650b3715ec",
+      "scientific_sha256": "0c644b168b662b4a01ca1fb54dc3896bac9eaa77d444039a3adf148647a2ac27"
+    },
+    "candidate_comparison.csv": {
+      "byte_sha256": "5a7e501b309e85c0c07c1ed194947ae6fe83acbc72aa54c7b3cc2b00153ef377",
+      "scientific_sha256": "5a7e501b309e85c0c07c1ed194947ae6fe83acbc72aa54c7b3cc2b00153ef377"
+    },
+    "network_candidates.svg": {
+      "byte_sha256": "6f43c948cc871679f1d7e26bbc065f4ba2cbe6b280ac66b2e547629e308513f3",
+      "scientific_sha256": "6f43c948cc871679f1d7e26bbc065f4ba2cbe6b280ac66b2e547629e308513f3"
+    },
+    "recommendation.md": {
+      "byte_sha256": "fca5f78619877720144e509146a77c71bf807fe0f6d56af1a3dacc28966a5774",
+      "scientific_sha256": "fca5f78619877720144e509146a77c71bf807fe0f6d56af1a3dacc28966a5774"
+    }
+  },
+  "bundle_scientific_sha256": "e2f7ec8fa773d2f9bc14c58ec8d337b8dc793e2847d622f1b3a955a77c366f07"
+}

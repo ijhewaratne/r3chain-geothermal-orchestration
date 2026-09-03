@@ -1,0 +1,188 @@
+{
+  "run_id": "r3chain-run-160ff2195378cdc4",
+  "contract_schema_version": "1.0.0",
+  "created_at": "2026-08-31T07:51:38.522077Z",
+  "input_sha256": "34deec7c58480d59346adecfc15e17fd564c6648f6990843ebb6d5590caa11cf",
+  "config_sha256": "2bdfd11dc901c6bdaf68f3d23516d85919ffa3f7d440ddcec46d6918b3d6e0c1",
+  "source_provenance": {
+    "source_pydoublet_commit": "0d649c3e6930d342dac03654d57776e134c2d0b9",
+    "source_format_hint": "known_repaired",
+    "calculation_mode": "deterministic",
+    "scenario_identifier": null
+  },
+  "source_provenance_sha256": "58190a4afd4a4d54de7ca9e39c0178324ce5e5395ad00cfc826ef637956b790d",
+  "stage_calls": [
+    {
+      "order": 1,
+      "stage_name": "parse_pydoublet_result",
+      "status": "success",
+      "failure_code": null,
+      "message": null
+    },
+    {
+      "order": 2,
+      "stage_name": "evaluate_heat_exchanger_coupling",
+      "status": "success",
+      "failure_code": null,
+      "message": null
+    },
+    {
+      "order": 3,
+      "stage_name": "build_blueprint",
+      "status": "success",
+      "failure_code": null,
+      "message": null
+    },
+    {
+      "order": 4,
+      "stage_name": "run_baseline_evaluation",
+      "status": "success",
+      "failure_code": null,
+      "message": null
+    },
+    {
+      "order": 5,
+      "stage_name": "evaluate_candidate:C1",
+      "status": "success",
+      "failure_code": null,
+      "message": null
+    },
+    {
+      "order": 6,
+      "stage_name": "evaluate_candidate:C2",
+      "status": "success",
+      "failure_code": null,
+      "message": null
+    },
+    {
+      "order": 7,
+      "stage_name": "evaluate_candidate:C3",
+      "status": "success",
+      "failure_code": null,
+      "message": null
+    },
+    {
+      "order": 8,
+      "stage_name": "evaluate_candidate:C4",
+      "status": "success",
+      "failure_code": null,
+      "message": null
+    },
+    {
+      "order": 9,
+      "stage_name": "compute_candidate_economics:C1",
+      "status": "success",
+      "failure_code": null,
+      "message": null
+    },
+    {
+      "order": 10,
+      "stage_name": "compute_candidate_economics:C2",
+      "status": "success",
+      "failure_code": null,
+      "message": null
+    },
+    {
+      "order": 11,
+      "stage_name": "compute_candidate_economics:C3",
+      "status": "success",
+      "failure_code": null,
+      "message": null
+    },
+    {
+      "order": 12,
+      "stage_name": "compute_candidate_economics:C4",
+      "status": "success",
+      "failure_code": null,
+      "message": null
+    },
+    {
+      "order": 13,
+      "stage_name": "rank_candidates",
+      "status": "success",
+      "failure_code": null,
+      "message": null
+    }
+  ],
+  "coupling_assumptions": {
+    "dh_supply_temperature_c": 70.0,
+    "dh_return_temperature_c": 40.0,
+    "minimum_hx_approach_k": 5.0,
+    "hx_heat_delivery_factor": 0.98,
+    "reinjection_minimum_temperature_c": 35.0,
+    "dh_water_specific_heat_capacity_j_kg_k": 4180.0,
+    "energy_consistency_tolerance_fraction": 0.02
+  },
+  "gate_tolerances": {
+    "max_consumer_supply_drop_k": 5.0,
+    "min_pressure_bar_abs": 1.5,
+    "max_pipe_velocity_m_s": 1.5,
+    "mass_balance_tolerance_fraction": 0.005,
+    "energy_balance_tolerance_fraction": 0.02
+  },
+  "injection_policy": {
+    "curtailment_allowed": true,
+    "auxiliary_policy": "cost_shortfall",
+    "minimum_auxiliary_circulation_fraction": 0.01
+  },
+  "economic_assumptions": {
+    "interest_rate_real": 0.03,
+    "doublet_lifetime_years": 30.0,
+    "heat_exchanger_lifetime_years": 20.0,
+    "connection_pipes_lifetime_years": 30.0,
+    "doublet_capex_eur": 8000000.0,
+    "heat_exchanger_capex_eur": 150000.0,
+    "connection_pipe_capex_eur_per_m": 1000.0,
+    "fixed_om_fraction_of_capex_per_a": 0.02,
+    "electricity_price_eur_per_kwh": 0.25,
+    "auxiliary_heat_price_eur_per_kwh": 0.09,
+    "annual_full_load_hours": 5000.0,
+    "dh_pump_efficiency": 0.7
+  },
+  "warnings": [
+    {
+      "stage": "evaluate_candidate:C1",
+      "warning": {
+        "code": "PANDAPIPES_MINIMUM_AUXILIARY_FLOW_STABILIZATION_APPLIED",
+        "message": "Geothermal injection was capped below baseline demand for two independent reasons documented in docs/technical-observations/pandapipes-circulation-pump-direction-check.md: (1) it keeps the main plant pump's converged net mass flow safely clear of pandapipes 0.14.0's near-zero-tolerance direction-change check; (2) it keeps the main pump's own design-temperature flow large enough to anchor the network's thermal field, since the injection branch's own achieved outlet temperature undershoots the DH design supply temperature once the main pump's share of flow shrinks too far (see geothermal_injection_inlet_temperature_c/geothermal_injection_outlet_temperature_c and their _deviation_k fields on this result for the measured values). This is a numerical-stability margin, not a supply/demand-driven curtailment.",
+        "affects": [
+          "geothermal_injected_heat_kw",
+          "geothermal_curtailed_heat_kw"
+        ]
+      }
+    },
+    {
+      "stage": "evaluate_candidate:C2",
+      "warning": {
+        "code": "PANDAPIPES_MINIMUM_AUXILIARY_FLOW_STABILIZATION_APPLIED",
+        "message": "Geothermal injection was capped below baseline demand for two independent reasons documented in docs/technical-observations/pandapipes-circulation-pump-direction-check.md: (1) it keeps the main plant pump's converged net mass flow safely clear of pandapipes 0.14.0's near-zero-tolerance direction-change check; (2) it keeps the main pump's own design-temperature flow large enough to anchor the network's thermal field, since the injection branch's own achieved outlet temperature undershoots the DH design supply temperature once the main pump's share of flow shrinks too far (see geothermal_injection_inlet_temperature_c/geothermal_injection_outlet_temperature_c and their _deviation_k fields on this result for the measured values). This is a numerical-stability margin, not a supply/demand-driven curtailment.",
+        "affects": [
+          "geothermal_injected_heat_kw",
+          "geothermal_curtailed_heat_kw"
+        ]
+      }
+    },
+    {
+      "stage": "evaluate_candidate:C3",
+      "warning": {
+        "code": "PANDAPIPES_MINIMUM_AUXILIARY_FLOW_STABILIZATION_APPLIED",
+        "message": "Geothermal injection was capped below baseline demand for two independent reasons documented in docs/technical-observations/pandapipes-circulation-pump-direction-check.md: (1) it keeps the main plant pump's converged net mass flow safely clear of pandapipes 0.14.0's near-zero-tolerance direction-change check; (2) it keeps the main pump's own design-temperature flow large enough to anchor the network's thermal field, since the injection branch's own achieved outlet temperature undershoots the DH design supply temperature once the main pump's share of flow shrinks too far (see geothermal_injection_inlet_temperature_c/geothermal_injection_outlet_temperature_c and their _deviation_k fields on this result for the measured values). This is a numerical-stability margin, not a supply/demand-driven curtailment.",
+        "affects": [
+          "geothermal_injected_heat_kw",
+          "geothermal_curtailed_heat_kw"
+        ]
+      }
+    },
+    {
+      "stage": "evaluate_candidate:C4",
+      "warning": {
+        "code": "PANDAPIPES_MINIMUM_AUXILIARY_FLOW_STABILIZATION_APPLIED",
+        "message": "Geothermal injection was capped below baseline demand for two independent reasons documented in docs/technical-observations/pandapipes-circulation-pump-direction-check.md: (1) it keeps the main plant pump's converged net mass flow safely clear of pandapipes 0.14.0's near-zero-tolerance direction-change check; (2) it keeps the main pump's own design-temperature flow large enough to anchor the network's thermal field, since the injection branch's own achieved outlet temperature undershoots the DH design supply temperature once the main pump's share of flow shrinks too far (see geothermal_injection_inlet_temperature_c/geothermal_injection_outlet_temperature_c and their _deviation_k fields on this result for the measured values). This is a numerical-stability margin, not a supply/demand-driven curtailment.",
+        "affects": [
+          "geothermal_injected_heat_kw",
+          "geothermal_curtailed_heat_kw"
+        ]
+      }
+    }
+  ]
+}

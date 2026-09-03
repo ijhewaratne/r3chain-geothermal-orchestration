@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940.0 568.0" font-family="monospace" font-size="12">
+<rect x="0" y="0" width="940.0" height="568.0" fill="#ffffff"/>
+<text x="90.0" y="24" font-size="16" font-weight="bold" fill="#111111">Synthetic schematic — not geographical</text>
+<line x1="215.0" y1="110.0" x2="340.0" y2="110.0" stroke="#1b4f8c" stroke-width="3"/>
+<line x1="340.0" y1="110.0" x2="465.0" y2="110.0" stroke="#1b4f8c" stroke-width="3"/>
+<line x1="465.0" y1="110.0" x2="590.0" y2="110.0" stroke="#1b4f8c" stroke-width="3"/>
+<line x1="215.0" y1="260.0" x2="340.0" y2="260.0" stroke="#b3541e" stroke-width="3" stroke-dasharray="8,5"/>
+<line x1="340.0" y1="260.0" x2="465.0" y2="260.0" stroke="#b3541e" stroke-width="3" stroke-dasharray="8,5"/>
+<line x1="465.0" y1="260.0" x2="590.0" y2="260.0" stroke="#b3541e" stroke-width="3" stroke-dasharray="8,5"/>
+<line x1="215.0" y1="70.0" x2="215.0" y2="110.0" stroke="#1b4f8c" stroke-width="1.5"/>
+<line x1="215.0" y1="220.0" x2="215.0" y2="260.0" stroke="#b3541e" stroke-width="1.5" stroke-dasharray="6,4"/>
+<circle cx="215.0" cy="70.0" r="5" fill="#333333"/>
+<text x="215.0" y="60.0" text-anchor="middle" fill="#111111">consumer_1</text>
+<line x1="340.0" y1="70.0" x2="340.0" y2="110.0" stroke="#1b4f8c" stroke-width="1.5"/>
+<line x1="340.0" y1="220.0" x2="340.0" y2="260.0" stroke="#b3541e" stroke-width="1.5" stroke-dasharray="6,4"/>
+<circle cx="340.0" cy="70.0" r="5" fill="#333333"/>
+<text x="340.0" y="48.0" text-anchor="middle" fill="#111111">consumer_2</text>
+<line x1="465.0" y1="70.0" x2="465.0" y2="110.0" stroke="#1b4f8c" stroke-width="1.5"/>
+<line x1="465.0" y1="220.0" x2="465.0" y2="260.0" stroke="#b3541e" stroke-width="1.5" stroke-dasharray="6,4"/>
+<circle cx="465.0" cy="70.0" r="5" fill="#333333"/>
+<text x="465.0" y="60.0" text-anchor="middle" fill="#111111">consumer_3</text>
+<line x1="590.0" y1="70.0" x2="590.0" y2="110.0" stroke="#1b4f8c" stroke-width="1.5"/>
+<line x1="590.0" y1="220.0" x2="590.0" y2="260.0" stroke="#b3541e" stroke-width="1.5" stroke-dasharray="6,4"/>
+<circle cx="590.0" cy="70.0" r="5" fill="#333333"/>
+<text x="590.0" y="48.0" text-anchor="middle" fill="#111111">consumer_4</text>
+<line x1="215.0" y1="135.0" x2="215.0" y2="110.0" stroke="#888888" stroke-width="1.5" stroke-dasharray="2,3"/>
+<circle cx="215.0" cy="135.0" r="7" fill="#1a7a3c"/>
+<text x="215.0" y="155.0" text-anchor="middle" fill="#111111">C1</text>
+<line x1="340.0" y1="145.0" x2="340.0" y2="110.0" stroke="#888888" stroke-width="1.5" stroke-dasharray="2,3"/>
+<circle cx="340.0" cy="145.0" r="7" fill="#1a7a3c"/>
+<text x="340.0" y="165.0" text-anchor="middle" fill="#111111">C2</text>
+<line x1="465.0" y1="155.0" x2="465.0" y2="110.0" stroke="#888888" stroke-width="1.5" stroke-dasharray="2,3"/>
+<circle cx="465.0" cy="155.0" r="7" fill="#1a7a3c"/>
+<text x="465.0" y="175.0" text-anchor="middle" fill="#111111">C3</text>
+<line x1="590.0" y1="170.0" x2="590.0" y2="110.0" stroke="#888888" stroke-width="1.5" stroke-dasharray="2,3"/>
+<circle cx="590.0" cy="170.0" r="7" fill="#1a7a3c"/>
+<text x="590.0" y="190.0" text-anchor="middle" fill="#111111">C4</text>
+<line x1="90.0" y1="354.0" x2="120.0" y2="354.0" stroke="#1b4f8c" stroke-width="3"/>
+<text x="126.0" y="358.0" fill="#111111">supply network</text>
+<line x1="270.0" y1="354.0" x2="300.0" y2="354.0" stroke="#b3541e" stroke-width="3" stroke-dasharray="8,5"/>
+<text x="306.0" y="358.0" fill="#111111">return network (dashed)</text>
+<text x="90.0" y="378.0" font-weight="bold" fill="#111111">Consumers</text>
+<text x="90.0" y="394.0" fill="#111111">consumer_1: 650 kW demand</text>
+<text x="90.0" y="410.0" fill="#111111">consumer_2: 750 kW demand</text>
+<text x="90.0" y="426.0" fill="#111111">consumer_3: 850 kW demand</text>
+<text x="90.0" y="442.0" fill="#111111">consumer_4: 950 kW demand</text>
+<text x="90.0" y="466.0" font-weight="bold" fill="#111111">Candidates</text>
+<text x="90.0" y="482.0" fill="#111111">C1: feasible, rank 1, 50 m paired-trench, LCOH 52.17 EUR/MWh</text>
+<text x="90.0" y="498.0" fill="#111111">C2: feasible, rank 2, 70 m paired-trench, LCOH 52.26 EUR/MWh</text>
+<text x="90.0" y="514.0" fill="#111111">C3: feasible, rank 3, 90 m paired-trench, LCOH 52.35 EUR/MWh</text>
+<text x="90.0" y="530.0" fill="#111111">C4: feasible, rank 4, 120 m paired-trench, LCOH 52.48 EUR/MWh</text>
+</svg>

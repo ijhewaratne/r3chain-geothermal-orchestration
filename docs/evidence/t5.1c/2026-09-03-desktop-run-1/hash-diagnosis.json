@@ -1,0 +1,190 @@
+{
+  "run_id": "r3chain-run-efdb9cd8625c4b61",
+  "comparison": {
+    "a_file": "fixtures/pydoublet/repaired_result.json",
+    "b_file": "desktop run pydoublet_input.json"
+  },
+  "hashes": {
+    "canonical_raw_result_sha256_fixture": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762",
+    "canonical_raw_result_sha256_desktop_input": "02530b29259389cac96215f3c4947cb281b582ff008710cde61523bd392674e1",
+    "matches_manifest_byte_sha256": true
+  },
+  "pointer_level_diff_count": 20,
+  "pointer_level_diff": [
+    {
+      "pointer": "/simulation_results/producer_well/environment_temperature_c/0",
+      "type": "int_float_representation_diff",
+      "fixture_value": 10.0,
+      "desktop_value": 10
+    },
+    {
+      "pointer": "/simulation_results/producer_well/depth_profile_m/0",
+      "type": "int_float_representation_diff",
+      "fixture_value": 0.0,
+      "desktop_value": 0
+    },
+    {
+      "pointer": "/simulation_results/producer_well/salinity_profile_kg_per_kg",
+      "type": "length_mismatch",
+      "a_length": 55,
+      "b_length": 54
+    },
+    {
+      "pointer": "/simulation_results/temperature_profile_c/3",
+      "type": "int_float_representation_diff",
+      "fixture_value": 35.0,
+      "desktop_value": 35
+    },
+    {
+      "pointer": "/simulation_results/injector_well/environment_temperature_c",
+      "type": "length_mismatch",
+      "a_length": 54,
+      "b_length": 55
+    },
+    {
+      "pointer": "/simulation_results/injector_well/temperature_profile_c/0",
+      "type": "int_float_representation_diff",
+      "fixture_value": 35.0,
+      "desktop_value": 35
+    },
+    {
+      "pointer": "/simulation_results/injector_well/depth_profile_m/0",
+      "type": "int_float_representation_diff",
+      "fixture_value": 0.0,
+      "desktop_value": 0
+    },
+    {
+      "pointer": "/wells/injector/inner_diameters_inch/0",
+      "type": "int_float_representation_diff",
+      "fixture_value": 5.0,
+      "desktop_value": 5
+    },
+    {
+      "pointer": "/wells/producer/inner_diameters_inch/0",
+      "type": "int_float_representation_diff",
+      "fixture_value": 5.0,
+      "desktop_value": 5
+    },
+    {
+      "pointer": "/surface_installations/pump/depth_m",
+      "type": "int_float_representation_diff",
+      "fixture_value": 500.0,
+      "desktop_value": 500
+    },
+    {
+      "pointer": "/surface_installations/pump/pressure_difference_bar",
+      "type": "int_float_representation_diff",
+      "fixture_value": 40.0,
+      "desktop_value": 40
+    },
+    {
+      "pointer": "/surface_installations/heat_exchanger/exit_temperature_c",
+      "type": "int_float_representation_diff",
+      "fixture_value": 35.0,
+      "desktop_value": 35
+    },
+    {
+      "pointer": "/reservoir/thermal_properties/surface_temperature_c",
+      "type": "int_float_representation_diff",
+      "fixture_value": 10.0,
+      "desktop_value": 10
+    },
+    {
+      "pointer": "/reservoir/aquifer_properties/permeability_md",
+      "type": "int_float_representation_diff",
+      "fixture_value": 200.0,
+      "desktop_value": 200
+    },
+    {
+      "pointer": "/reservoir/aquifer_properties/top_depth_producer_m",
+      "type": "int_float_representation_diff",
+      "fixture_value": 2200.0,
+      "desktop_value": 2200
+    },
+    {
+      "pointer": "/reservoir/aquifer_properties/gross_thickness_m",
+      "type": "int_float_representation_diff",
+      "fixture_value": 90.0,
+      "desktop_value": 90
+    },
+    {
+      "pointer": "/reservoir/aquifer_properties/top_depth_injector_m",
+      "type": "int_float_representation_diff",
+      "fixture_value": 2150.0,
+      "desktop_value": 2150
+    },
+    {
+      "pointer": "/reservoir/geometry/max_depth_m",
+      "type": "int_float_representation_diff",
+      "fixture_value": 3500.0,
+      "desktop_value": 3500
+    },
+    {
+      "pointer": "/reservoir/geometry/discretization_dz_m",
+      "type": "int_float_representation_diff",
+      "fixture_value": 10.0,
+      "desktop_value": 10
+    },
+    {
+      "pointer": "/reservoir/geometry/distance_wells_at_aquifer_m",
+      "type": "int_float_representation_diff",
+      "fixture_value": 900.0,
+      "desktop_value": 900
+    }
+  ],
+  "consumed_pointers_checked": [
+    "/simulation_results/producer_wellhead_temperature_c",
+    "/simulation_results/temperature_profile_c/2",
+    "/surface_installations/heat_exchanger/exit_temperature_c",
+    "/simulation_results/mass_flow_rate_kg_per_s",
+    "/simulation_results/heat_capacity_j_per_kg_k",
+    "/simulation_results/geothermal_power_mw",
+    "/simulation_results/required_pump_power_kw",
+    "/simulation_results/cop_kw_per_kw",
+    "/simulation_parameters/actual_runs_completed",
+    "/simulation_parameters/monte_carlo_runs",
+    "/metadata/simulation_name",
+    "/metadata/timestamp"
+  ],
+  "consumed_pointer_diff_hits": [
+    {
+      "pointer": "/surface_installations/heat_exchanger/exit_temperature_c",
+      "type": "int_float_representation_diff",
+      "fixture_value": 35.0,
+      "desktop_value": 35
+    }
+  ],
+  "consumed_pointer_VALUE_CHANGING_diff_hits": [],
+  "scientifically_equivalent_under_current_parser": true,
+  "typed_coupling_result_field_diffs_excluding_bookkeeping": {
+    "result_identifier": [
+      "pydoublet-result-6c42d3368883070c",
+      "pydoublet-result-02530b29259389ca"
+    ]
+  },
+  "downstream_workflow_diff_count": 46,
+  "downstream_workflow_diff_classification_counts": {
+    "timestamp": 24,
+    "known_unconsumed_array_in_raw_copy": 10,
+    "hash_identifier_bookkeeping": 12
+  },
+  "downstream_unclassified_diff_count": 0,
+  "per_candidate_identity_check": {
+    "C1": {
+      "economics_identical": true,
+      "feasible_identical": true
+    },
+    "C2": {
+      "economics_identical": true,
+      "feasible_identical": true
+    },
+    "C3": {
+      "economics_identical": true,
+      "feasible_identical": true
+    },
+    "C4": {
+      "economics_identical": true,
+      "feasible_identical": true
+    }
+  }
+}

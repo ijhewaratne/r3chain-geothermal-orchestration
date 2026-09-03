@@ -1,0 +1,175 @@
+{
+  "generated_at_utc": "2026-08-31T08:29:00Z",
+  "comparison": {
+    "a_file": "fixtures/pydoublet/repaired_result.json",
+    "b_file": "preserved run r3chain-run-160ff2195378cdc4 / pydoublet_input.json"
+  },
+  "hashes": {
+    "canonical_raw_result_sha256_fixture": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762",
+    "canonical_raw_result_sha256_run_input": "34deec7c58480d59346adecfc15e17fd564c6648f6990843ebb6d5590caa11cf",
+    "scientific_normalized_sha256_fixture": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762",
+    "scientific_normalized_sha256_run_input": "34deec7c58480d59346adecfc15e17fd564c6648f6990843ebb6d5590caa11cf",
+    "normalization_changed_fixture_hash": false,
+    "normalization_changed_run_input_hash": false,
+    "matches_cited_pinned_fixture_canonical_hash_6c42d336": true,
+    "matches_observed_mcp_raw_result_sha256_34deec7c": true
+  },
+  "run_id_formula": "compute_run_id = canonical_raw_result_sha256({input_sha256, config_sha256, source_provenance_sha256, contract_schema_version})[:16], prefixed 'r3chain-run-' (workflow/core.py)",
+  "config_sha256_identical_between_runs": true,
+  "source_provenance_sha256_identical_between_runs": true,
+  "only_varying_input_to_run_id_formula": "input_sha256",
+  "pointer_level_diff_count": 20,
+  "pointer_level_diff": [
+    {
+      "pointer": "/wells/injector/inner_diameters_inch/0",
+      "type": "int_float_representation_diff",
+      "fixture_value": 5.0,
+      "run_input_value": 5
+    },
+    {
+      "pointer": "/wells/producer/inner_diameters_inch/0",
+      "type": "int_float_representation_diff",
+      "fixture_value": 5.0,
+      "run_input_value": 5
+    },
+    {
+      "pointer": "/simulation_results/injector_well/depth_profile_m/0",
+      "type": "int_float_representation_diff",
+      "fixture_value": 0.0,
+      "run_input_value": 0
+    },
+    {
+      "pointer": "/simulation_results/injector_well/temperature_profile_c/0",
+      "type": "int_float_representation_diff",
+      "fixture_value": 35.0,
+      "run_input_value": 35
+    },
+    {
+      "pointer": "/simulation_results/injector_well/environment_temperature_c/0",
+      "type": "int_float_representation_diff",
+      "fixture_value": 10.0,
+      "run_input_value": 10
+    },
+    {
+      "pointer": "/simulation_results/temperature_profile_c/3",
+      "type": "int_float_representation_diff",
+      "fixture_value": 35.0,
+      "run_input_value": 35
+    },
+    {
+      "pointer": "/simulation_results/producer_well/depth_profile_m/0",
+      "type": "int_float_representation_diff",
+      "fixture_value": 0.0,
+      "run_input_value": 0
+    },
+    {
+      "pointer": "/simulation_results/producer_well/environment_temperature_c/0",
+      "type": "int_float_representation_diff",
+      "fixture_value": 10.0,
+      "run_input_value": 10
+    },
+    {
+      "pointer": "/simulation_results/producer_well/salinity_profile_kg_per_kg",
+      "type": "length_mismatch",
+      "a_length": 55,
+      "b_length": 54
+    },
+    {
+      "pointer": "/surface_installations/heat_exchanger/exit_temperature_c",
+      "type": "int_float_representation_diff",
+      "fixture_value": 35.0,
+      "run_input_value": 35
+    },
+    {
+      "pointer": "/surface_installations/pump/depth_m",
+      "type": "int_float_representation_diff",
+      "fixture_value": 500.0,
+      "run_input_value": 500
+    },
+    {
+      "pointer": "/surface_installations/pump/pressure_difference_bar",
+      "type": "int_float_representation_diff",
+      "fixture_value": 40.0,
+      "run_input_value": 40
+    },
+    {
+      "pointer": "/reservoir/aquifer_properties/top_depth_producer_m",
+      "type": "int_float_representation_diff",
+      "fixture_value": 2200.0,
+      "run_input_value": 2200
+    },
+    {
+      "pointer": "/reservoir/aquifer_properties/gross_thickness_m",
+      "type": "int_float_representation_diff",
+      "fixture_value": 90.0,
+      "run_input_value": 90
+    },
+    {
+      "pointer": "/reservoir/aquifer_properties/permeability_md",
+      "type": "int_float_representation_diff",
+      "fixture_value": 200.0,
+      "run_input_value": 200
+    },
+    {
+      "pointer": "/reservoir/aquifer_properties/top_depth_injector_m",
+      "type": "int_float_representation_diff",
+      "fixture_value": 2150.0,
+      "run_input_value": 2150
+    },
+    {
+      "pointer": "/reservoir/geometry/discretization_dz_m",
+      "type": "int_float_representation_diff",
+      "fixture_value": 10.0,
+      "run_input_value": 10
+    },
+    {
+      "pointer": "/reservoir/geometry/distance_wells_at_aquifer_m",
+      "type": "int_float_representation_diff",
+      "fixture_value": 900.0,
+      "run_input_value": 900
+    },
+    {
+      "pointer": "/reservoir/geometry/max_depth_m",
+      "type": "int_float_representation_diff",
+      "fixture_value": 3500.0,
+      "run_input_value": 3500
+    },
+    {
+      "pointer": "/reservoir/thermal_properties/surface_temperature_c",
+      "type": "int_float_representation_diff",
+      "fixture_value": 10.0,
+      "run_input_value": 10
+    }
+  ],
+  "consumed_pointers_checked": [
+    "/simulation_results/producer_wellhead_temperature_c",
+    "/simulation_results/temperature_profile_c/2",
+    "/surface_installations/heat_exchanger/exit_temperature_c",
+    "/simulation_results/mass_flow_rate_kg_per_s",
+    "/simulation_results/heat_capacity_j_per_kg_k",
+    "/simulation_results/geothermal_power_mw",
+    "/simulation_results/required_pump_power_kw",
+    "/simulation_results/cop_kw_per_kw",
+    "/simulation_parameters/actual_runs_completed",
+    "/simulation_parameters/monte_carlo_runs",
+    "/metadata/simulation_name",
+    "/metadata/timestamp"
+  ],
+  "consumed_pointer_diff_hits": [
+    {
+      "pointer": "/surface_installations/heat_exchanger/exit_temperature_c",
+      "type": "int_float_representation_diff",
+      "fixture_value": 35.0,
+      "run_input_value": 35
+    }
+  ],
+  "consumed_pointer_VALUE_CHANGING_diff_hits": [],
+  "note_on_consumed_hit": "1 of 12 consumed pointers (/surface_installations/heat_exchanger/exit_temperature_c) differs by int-vs-float JSON representation only (35.0 vs 35) -- mathematically equal, and the adapter's own typed field coerces both to the same float value (confirmed: both live geo_validate_pydoublet_result calls returned geothermal_brine_hx_outlet_temperature_c=35.0 identically). This is a representation difference at a consumed pointer, not a value difference -- it does not affect any downstream physics/economics result. Full exhaustive resolution (parser-code coercion proof, typed-object equality, complete downstream run_workflow() equality with zero unexplained diffs) recorded separately in consumed-pointer-resolution.md / .json in this same directory.",
+  "scientifically_equivalent_under_current_parser": true,
+  "known_real_content_difference_outside_consumed_fields": {
+    "pointer": "/simulation_results/producer_well/salinity_profile_kg_per_kg",
+    "fixture_length": 55,
+    "run_input_length": 54,
+    "note": "One array element dropped during manual JSON transcription for the tool call; not a representation artifact, but falls outside every pointer the parser actually consumes."
+  }
+}
