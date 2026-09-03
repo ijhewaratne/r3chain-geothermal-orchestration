@@ -84,11 +84,13 @@ def test_run_workflow_tool_strict_provenance_reproduces_golden_run_id_and_bundle
     )
     assert isinstance(result, RunSummary)
     assert result.run_id == _GOLDEN_RUN_ID
-    # Rebaselined again (DSP-005, decision-register.md IMPL-008): schema
-    # 1.1.0 -> 1.2.0 added GeothermalInjectionPolicy.injection_sizing_policy
-    # and CandidateEvaluationResult.flow_solver -- new fields in
-    # workflow_result.json's hashed content. run_id (asserted above) is unaffected.
-    assert result.bundle_scientific_sha256 == "f85243d16a6e43365f12081a6af346d2ea1aa5bbb51a70f760404eb64a1188a1"
+    # Rebaselined again (Phase 2 of R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md,
+    # decision-register.md IMPL-015): normalize_for_scientific_hash() now
+    # quantizes every float to SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES
+    # (12) significant figures before hashing -- a cross-platform
+    # floating-point-noise fix, not a scientific-result change. run_id
+    # (asserted above) is unaffected.
+    assert result.bundle_scientific_sha256 == "d67cb2f32de228ee1a6b0ac8f4e9c7e05eb55ba2d49d6578ea79692f1a359f46"
 
 
 def test_run_workflow_tool_omitted_expected_hash_still_reproduces_golden_bundle_hash(registry, fixed_config):
@@ -98,11 +100,13 @@ def test_run_workflow_tool_omitted_expected_hash_still_reproduces_golden_bundle_
     result = tools.run_workflow_tool(_raw(), _provenance(), fixed_config=fixed_config, registry=reg)
     assert isinstance(result, RunSummary)
     assert result.run_id == _GOLDEN_RUN_ID
-    # Rebaselined again (DSP-005, decision-register.md IMPL-008): schema
-    # 1.1.0 -> 1.2.0 added GeothermalInjectionPolicy.injection_sizing_policy
-    # and CandidateEvaluationResult.flow_solver -- new fields in
-    # workflow_result.json's hashed content. run_id (asserted above) is unaffected.
-    assert result.bundle_scientific_sha256 == "f85243d16a6e43365f12081a6af346d2ea1aa5bbb51a70f760404eb64a1188a1"
+    # Rebaselined again (Phase 2 of R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md,
+    # decision-register.md IMPL-015): normalize_for_scientific_hash() now
+    # quantizes every float to SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES
+    # (12) significant figures before hashing -- a cross-platform
+    # floating-point-noise fix, not a scientific-result change. run_id
+    # (asserted above) is unaffected.
+    assert result.bundle_scientific_sha256 == "d67cb2f32de228ee1a6b0ac8f4e9c7e05eb55ba2d49d6578ea79692f1a359f46"
 
 
 # ── geo_run_workflow: IP-006, no artifact directory created on mismatch ─────

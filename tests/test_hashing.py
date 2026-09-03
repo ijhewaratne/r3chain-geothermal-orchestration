@@ -6,6 +6,7 @@ contracts/test_coupling_result.py."""
 from __future__ import annotations
 
 from r3chain_geothermal.hashing import (
+    SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES,
     SCIENTIFIC_NORMALIZATION_RULE_VERSION,
     canonical_raw_result_sha256,
     normalize_for_scientific_hash,
@@ -106,3 +107,60 @@ def test_changing_a_timestamp_field_not_named_created_at_changes_the_hash():
 def test_normalization_rule_version_is_a_non_empty_string_constant():
     assert isinstance(SCIENTIFIC_NORMALIZATION_RULE_VERSION, str)
     assert SCIENTIFIC_NORMALIZATION_RULE_VERSION
+
+
+# ── Phase 2 (R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md, release
+#    blocker): cross-platform floating-point-noise quantization. See
+#    SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES's own docstring for the
+#    full macOS/Linux diagnosis this addresses. ──
+def test_a_sub_ulp_scale_float_difference_produces_the_same_hash():
+    """Simulates the diagnosed macOS-vs-Linux BLAS/LAPACK noise directly:
+    two floats that are "the same" converged physical value but differ
+    far beyond SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES significant
+    figures (here, at the 15th) must hash identically after
+    normalization."""
+    value = 4345.417312083
+    noisy_value = value + 1e-9  # perturbs only the 13th+ significant figure
+    assert value != noisy_value  # the raw floats really are different
+    payload_1 = {"geothermal_thermal_power_kw": value}
+    payload_2 = {"geothermal_thermal_power_kw": noisy_value}
+    hash_1 = canonical_raw_result_sha256(normalize_for_scientific_hash(payload_1))
+    hash_2 = canonical_raw_result_sha256(normalize_for_scientific_hash(payload_2))
+    assert hash_1 == hash_2
+
+
+def test_a_genuinely_different_float_value_still_changes_the_hash():
+    """The quantization must never mask a REAL result change -- a
+    difference at the 5th significant figure (far coarser than even this
+    project's loosest 2% gate tolerance) must still change the hash."""
+    payload_1 = {"geothermal_thermal_power_kw": 4345.417312}
+    payload_2 = {"geothermal_thermal_power_kw": 4345.517312}
+    hash_1 = canonical_raw_result_sha256(normalize_for_scientific_hash(payload_1))
+    hash_2 = canonical_raw_result_sha256(normalize_for_scientific_hash(payload_2))
+    assert hash_1 != hash_2
+
+
+def test_float_quantization_never_touches_integers_or_booleans():
+    """Only `float` values are quantized -- `int` is always numerically
+    exact and `bool` (an `int` subclass in Python) must never be treated
+    as a float."""
+    payload = {"count": 5, "enabled": True, "disabled": False}
+    assert normalize_for_scientific_hash(payload) == payload
+    normalized = normalize_for_scientific_hash(payload)
+    assert type(normalized["count"]) is int
+    assert type(normalized["enabled"]) is bool
+
+
+def test_float_quantization_preserves_values_within_the_significant_figure_budget():
+    """A value with exactly SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES (or
+    fewer) significant figures must round-trip unchanged -- quantization
+    only ever discards noise beyond the budget, never legitimate
+    precision within it."""
+    assert SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES >= 10  # the budget this test relies on
+    payload = {"value": 4345.417312}  # exactly 10 significant figures
+    assert normalize_for_scientific_hash(payload) == payload
+
+
+def test_scientific_hash_float_significant_figures_is_documented_and_stable():
+    assert isinstance(SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES, int)
+    assert SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES == 12

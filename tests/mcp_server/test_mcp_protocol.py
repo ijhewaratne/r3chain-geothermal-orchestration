@@ -86,12 +86,14 @@ def test_tools_call_geo_run_workflow_worked_case_matches_the_cli():
     payload = call_result.structuredContent
     content = payload.get("result", payload)
     assert content["run_id"] == "r3chain-run-93d41133daa11d1a"
-    # Rebaselined again (DSP-005, decision-register.md IMPL-008): schema
-    # 1.1.0 -> 1.2.0 added GeothermalInjectionPolicy.injection_sizing_policy
-    # and CandidateEvaluationResult.flow_solver -- new fields in
-    # workflow_result.json's hashed content. run_id above is unaffected; the
-    # LCOH assertion below proves the actual canonical ranking is unchanged too.
-    assert content["bundle_scientific_sha256"] == "f85243d16a6e43365f12081a6af346d2ea1aa5bbb51a70f760404eb64a1188a1"
+    # Rebaselined again (Phase 2 of R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md,
+    # decision-register.md IMPL-015): normalize_for_scientific_hash() now
+    # quantizes every float to SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES
+    # (12) significant figures before hashing -- a cross-platform
+    # floating-point-noise fix, not a scientific-result change. run_id
+    # above is unaffected; the LCOH assertion below proves the actual
+    # canonical ranking is unchanged too.
+    assert content["bundle_scientific_sha256"] == "d67cb2f32de228ee1a6b0ac8f4e9c7e05eb55ba2d49d6578ea79692f1a359f46"
     lcoh_by_id = {r["candidate_id"]: round(r["indicative_lcoh_eur_per_mwh"], 4) for r in content["ranked"]}
     assert lcoh_by_id == {"C1": 52.1714, "C2": 52.2602, "C3": 52.3489, "C4": 52.4821}
 
