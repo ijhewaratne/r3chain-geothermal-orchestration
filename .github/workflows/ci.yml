@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "feature/**"]
+  pull_request:
+    branches: ["main", "feature/**"]
+  workflow_dispatch: {}
+
+# R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md Phase 1.2. This project
+# does not claim universal cross-platform bit-for-bit determinism -- it
+# claims the documented reproducibility boundary in
+# src/r3chain_geothermal/hashing.py::SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES's
+# own docstring. Running the full suite on both ubuntu-latest and
+# macos-latest here is exactly how that specific claim gets tested, not
+# merely asserted.
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.11"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Check the latest commit for merge-conflict markers and whitespace errors
+        # Deliberately scoped to HEAD's own diff (mirrors the "before each
+        # commit: git diff --check" discipline in CLAUDE.md/the commit
+        # strategy), not the whole repository history -- a full-history
+        # check would fail on pre-existing content unrelated to any given
+        # push and would not tell a contributor what THEY introduced.
+        run: |
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            git diff --check HEAD~1 HEAD
+          else
+            echo "HEAD has no parent in this shallow checkout -- skipping (nothing to diff against)."
+          fi
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Clean editable install (dev + mcp extras)
+        run: python -m pip install -e ".[dev,mcp]"
+
+      - name: Build the wheel
+        run: python -m build --wheel --outdir dist/
+
+      - name: Full offline test suite
+        run: python -m pytest -q
+        env:
+          # Belt-and-suspenders: the suite must never reach out to the
+          # network or require real Wuppertal data (NFR-002). Nothing in
+          # this project reads these variables; they exist only to make a
+          # future accidental network dependency fail loudly in CI rather
+          # than silently succeed off a cached response.
+          R3CHAIN_NO_NETWORK: "1"
+
+      - name: Wheel installation smoke test (fresh venv, outside the repo)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/r3chain-wheel-smoke-venv
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            source /tmp/r3chain-wheel-smoke-venv/Scripts/activate
+          else
+            source /tmp/r3chain-wheel-smoke-venv/bin/activate
+          fi
+          python -m pip install --upgrade pip
+          wheel_file="$(ls dist/*.whl)"
+          python -m pip install "${wheel_file}[mcp]"
+          mkdir -p /tmp/r3chain-wheel-smoke-run
+          cd /tmp/r3chain-wheel-smoke-run
+          r3chain-geothermal-demo \
+            --input "${GITHUB_WORKSPACE}/fixtures/pydoublet/repaired_result.json" \
+            --config "${GITHUB_WORKSPACE}/config/demo_assumptions.json" \
+            --provenance "${GITHUB_WORKSPACE}/config/demo_source_provenance.json" \
+            --output-dir output
+          test -f output/manifest.json
+          test -f output/workflow_result.json
+          python -c "
+          import json
+          record = json.load(open('output/manifest.json'))
+          assert record['run_id'] == 'r3chain-run-93d41133daa11d1a', record['run_id']
+          print('wheel smoke test OK, run_id =', record['run_id'])
+          "
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: r3chain-geothermal-wheel-${{ matrix.os }}
+          path: dist/*.whl
+          retention-days: 14
