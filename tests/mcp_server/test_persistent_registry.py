@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from datetime import datetime, timedelta, timezone
+
 from r3chain_geothermal.mcp_server import tools
 from r3chain_geothermal.mcp_server.config import load_fixed_server_config
 from r3chain_geothermal.mcp_server.errors import ToolErrorCode
@@ -25,6 +27,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 _REPAIRED_PATH = _ROOT / "fixtures" / "pydoublet" / "repaired_result.json"
 _KNOWN_REPAIRED_COMMIT = "0d649c3e6930d342dac03654d57776e134c2d0b9"
 _GOLDEN_RUN_ID = "r3chain-run-93d41133daa11d1a"
+_WORKSHOP_CONFIG_PATH = _ROOT / "config" / "demo_assumptions_workshop_negative.json"
 
 
 def _raw() -> dict:
@@ -240,3 +243,92 @@ def test_publish_refuses_a_staging_dir_with_no_manifest():
             reg.publish_artifact_dir(run_id, staging)
         assert not (root / run_id).exists()  # never published
         reg.close()
+
+
+# ── Phase 6 (RR-005): multiple stored runs survive restart independently ────
+def test_multiple_stored_runs_all_survive_restart(fixed_config):
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        reg1 = RunRegistry(root_dir=root, persistent=True)
+        canonical_result = tools.run_workflow_tool(_raw(), _provenance(), fixed_config=fixed_config, registry=reg1)
+        assert isinstance(canonical_result, RunSummary)
+        workshop_config = json.loads(_WORKSHOP_CONFIG_PATH.read_text())
+        workshop_result = tools.run_workflow_tool(_raw(), _provenance(), fixed_config=workshop_config, registry=reg1)
+        assert isinstance(workshop_result, RunSummary)
+        assert workshop_result.run_id != canonical_result.run_id
+        reg1.close()
+
+        reg2 = RunRegistry(root_dir=root, persistent=True)
+        assert reg2.rehydration_warnings == []
+        assert len(reg2) == 2
+        assert reg2.get(canonical_result.run_id) is not None
+        assert reg2.get(workshop_result.run_id) is not None
+        canonical_summary = tools.get_run_summary(canonical_result.run_id, registry=reg2)
+        workshop_summary = tools.get_run_summary(workshop_result.run_id, registry=reg2)
+        assert isinstance(canonical_summary, RunSummary) and isinstance(workshop_summary, RunSummary)
+        assert canonical_summary.bundle_scientific_sha256 == canonical_result.bundle_scientific_sha256
+        assert workshop_summary.bundle_scientific_sha256 == workshop_result.bundle_scientific_sha256
+        reg2.close()
+
+
+# ── Phase 6 (RR-005): max_age_days retention control ────────────────────────
+def test_max_age_days_none_by_default_never_prunes(fixed_config):
+    """The default (unset) must never destroy acceptance evidence --
+    every existing caller is completely unaffected."""
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        reg1 = RunRegistry(root_dir=root, persistent=True)
+        assert reg1.max_age_days is None
+        result = tools.run_workflow_tool(_raw(), _provenance(), fixed_config=fixed_config, registry=reg1)
+        assert isinstance(result, RunSummary)
+        reg1.close()
+
+        reg2 = RunRegistry(root_dir=root, persistent=True)
+        assert reg2.get(result.run_id) is not None
+        reg2.close()
+
+
+def test_max_age_days_rejects_a_non_positive_value():
+    with pytest.raises(ValueError):
+        RunRegistry(max_age_days=0)
+    with pytest.raises(ValueError):
+        RunRegistry(max_age_days=-1.0)
+
+
+def test_max_age_days_prunes_a_run_older_than_the_configured_age(fixed_config):
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        reg1 = RunRegistry(root_dir=root, persistent=True)
+        result = tools.run_workflow_tool(_raw(), _provenance(), fixed_config=fixed_config, registry=reg1)
+        assert isinstance(result, RunSummary)
+        reg1.close()
+
+        # Backdate the published manifest's own created_at (the field
+        # max_age_days compares against) well past the configured age --
+        # never sleeping in a test for real days to pass.
+        manifest_path = root / result.run_id / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        old_timestamp = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        manifest["created_at"] = old_timestamp
+        manifest_path.write_text(json.dumps(manifest))
+
+        reg2 = RunRegistry(root_dir=root, persistent=True, max_age_days=7.0)
+        assert reg2.get(result.run_id) is None
+        assert not (root / result.run_id).exists()  # pruned from disk, not merely un-registered
+        assert any("pruned during rehydration" in w for w in reg2.rehydration_warnings)
+        reg2.close()
+
+
+def test_max_age_days_does_not_prune_a_run_within_the_configured_age(fixed_config):
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        reg1 = RunRegistry(root_dir=root, persistent=True)
+        result = tools.run_workflow_tool(_raw(), _provenance(), fixed_config=fixed_config, registry=reg1)
+        assert isinstance(result, RunSummary)
+        reg1.close()
+
+        reg2 = RunRegistry(root_dir=root, persistent=True, max_age_days=30.0)
+        assert reg2.get(result.run_id) is not None
+        assert (root / result.run_id).exists()
+        assert reg2.rehydration_warnings == []
+        reg2.close()

@@ -66,7 +66,7 @@ import threading
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -163,6 +163,7 @@ class RunRegistry:
 
     def __init__(
         self, max_size: int = DEFAULT_MAX_REGISTRY_SIZE, root_dir: Path | None = None, *, persistent: bool = False,
+        max_age_days: float | None = None,
     ):
         """`persistent=False` (the default) is the ORIGINAL, unchanged
         behavior for every existing caller: an ephemeral root (a fresh
@@ -181,13 +182,37 @@ class RunRegistry:
           run bundles into `self._entries` (RR-003) -- see
           `_rehydrate` for the exact validation steps. Anything
           that fails validation is skipped, never raises, and is recorded
-          in `self.rehydration_warnings` (RR-003 point 6)."""
+          in `self.rehydration_warnings` (RR-003 point 6).
+
+        `max_age_days` (R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md
+        Phase 6, RR-005): an OPTIONAL age-based retention control,
+        orthogonal to `max_size`'s own count-based LRU bound (already the
+        registry's "max retained runs" control -- eviction under that
+        bound already removes the evicted run's on-disk directory too,
+        module docstring). `None` (the default) disables age-based
+        retention entirely -- every existing caller, and every run this
+        session has already produced, is completely unaffected; this
+        control MUST NOT unexpectedly destroy acceptance evidence, so it
+        never activates unless a caller explicitly opts in with a
+        positive value. When set, pruning happens ONLY during
+        `_rehydrate()` at startup (never a running background timer that
+        could delete a run out from under a concurrent reader): a
+        rehydration candidate whose OWN `manifest.created_at` is older
+        than `max_age_days` days (compared against `datetime.now(timezone
+        .utc)` at construction time) is deleted from disk and never
+        registered, rather than skipped-but-left-behind the way a
+        genuinely corrupt candidate is -- recorded in
+        `self.rehydration_warnings` all the same, so a caller can always
+        see what happened and why, never a silent deletion."""
         if max_size < 1:
             raise ValueError(f"max_size must be >= 1, got {max_size!r}")
         if persistent and root_dir is None:
             raise ValueError("persistent=True requires an explicit root_dir -- a stable location, not a temp path")
+        if max_age_days is not None and max_age_days <= 0:
+            raise ValueError(f"max_age_days must be > 0 when set, got {max_age_days!r}")
         self._max_size = max_size
         self._persistent = persistent
+        self._max_age_days = max_age_days
         self._root_dir = Path(root_dir) if root_dir is not None else Path(tempfile.mkdtemp(prefix="r3chain-mcp-"))
         self._root_dir.mkdir(parents=True, exist_ok=True)
         self._entries: "OrderedDict[str, RunEntry]" = OrderedDict()
@@ -209,6 +234,10 @@ class RunRegistry:
         previously empty. Never raises; a diagnostic, not an error."""
         if self._persistent:
             self._rehydrate()
+
+    @property
+    def max_age_days(self) -> float | None:
+        return self._max_age_days
 
     @property
     def persistent(self) -> bool:
@@ -249,6 +278,15 @@ class RunRegistry:
             except Exception as exc:  # noqa: BLE001 -- must never crash server startup
                 self.rehydration_warnings.append(f"{run_id}: skipped during rehydration ({exc})")
                 continue
+            if self._max_age_days is not None:
+                age_days = (datetime.now(timezone.utc) - entry.created_at).total_seconds() / 86400.0
+                if age_days > self._max_age_days:
+                    shutil.rmtree(child, ignore_errors=True)
+                    self.rehydration_warnings.append(
+                        f"{run_id}: pruned during rehydration (age {age_days:.2f} days exceeds "
+                        f"max_age_days={self._max_age_days!r})"
+                    )
+                    continue
             self._entries[run_id] = entry
             self._entries.move_to_end(run_id, last=True)
 
