@@ -172,7 +172,7 @@ from .builder import build_pandapipes_net
 from .errors import CandidateFailureCode
 from .pressure import to_absolute_bar
 
-CANDIDATE_CONTRACT_SCHEMA_VERSION: Literal["1.1.0"] = "1.1.0"
+CANDIDATE_CONTRACT_SCHEMA_VERSION: Literal["1.2.0"] = "1.2.0"
 """Versioned independently of every other layer's own contract schema.
 Bumped 1.0.0 -> 1.1.0 (Workstream D/E,
 R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md, decision-register.md
@@ -181,12 +181,21 @@ IMPL-007): GeothermalInjectionPolicy now accepts and enforces
 heat_delivery_tolerance_fraction field; GateTolerances (network/baseline.py)
 gained max_pump_dp_bar, now enforced against both the main plant pump and
 the geothermal injection pump here. Both are previously-declared-but-
-unenforced configuration fields (CFG-003) -- see that module's own
-docstring for the same note. Changes bundle_scientific_sha256 for any
-bundle embedding CandidateEvaluationResult (new fields in the audited
-schema) but not run_id, and not any C1-C4 canonical numeric KPI,
-feasibility, or candidate-ordering value under the canonical
-"cost_shortfall" policy and 3.0 bar canonical pump lift (CFG-006)."""
+unenforced configuration fields (CFG-003).
+Bumped 1.1.0 -> 1.2.0 (DSP-005, decision-register.md IMPL-008):
+GeothermalInjectionPolicy gained injection_sizing_policy (defaulting to
+"fixed_design_temperature", byte-for-byte the prior sole behavior), and
+CandidateEvaluationResult gained flow_solver
+(SelfConsistentFlowDiagnostics), an opt-in self-consistent mass-flow
+iteration -- see that class's own docstring. Every version bump here
+changes bundle_scientific_sha256 for any bundle embedding
+CandidateEvaluationResult (new fields in the audited schema) but not
+run_id, and not any C1-C4 canonical numeric KPI, feasibility, or
+candidate-ordering value under the canonical "cost_shortfall"/
+"fixed_design_temperature" policy and 3.0 bar canonical pump lift
+(CFG-006) -- the new policy value is opt-in only, absent from
+config/demo_assumptions.json, so the canonical config's raw bytes (and
+therefore config_sha256/run_id) are untouched by this change."""
 
 CONNECTION_PIPE_DN_MM = 200.0
 """Empirically sized (module docstring, "Selected topology") to keep both
@@ -194,6 +203,45 @@ geothermal connection pipes' velocity comfortably under
 gates.max_pipe_velocity_m_s at the worked case's near-full-scale injected
 flow. Fixed across all four candidates (plan §10.1's "fixed pipe diameters
 across candidate evaluations"), matching the already-approved trunk DN."""
+
+SELF_CONSISTENT_FLOW_MAX_ITERATIONS = 40
+"""DSP-005 point 7: a bounded deterministic iteration count, not an
+open-ended search. If _solve_self_consistent_injection() has not met both
+residual tolerances within this many pipeflow() solves, the candidate
+fails with SELF_CONSISTENT_FLOW_NOT_CONVERGED rather than looping
+indefinitely. Verified empirically (test_candidate.py,
+docs/issues/self-consistent-flow-solver.md) to be roughly 2.5x the ~16
+solves the golden worked case's bisection actually needs -- headroom, not
+a tight fit."""
+
+SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K = 0.05
+"""DSP-005's "heat residual" tolerance, expressed as an absolute
+temperature tolerance (matching this project's existing K-based gate
+convention, e.g. gates.max_consumer_supply_drop_k, rather than a
+fraction): how close the geothermal injection branch's ACHIEVED outlet
+temperature (heat_consumer t_outlet_k) must land to
+assumptions.dh_supply_temperature_c for the self-consistent sizing
+iteration to be considered converged."""
+
+SELF_CONSISTENT_FLOW_MASS_FLOW_RESIDUAL_TOLERANCE_FRACTION = 1e-4
+"""DSP-005's "flow residual" tolerance: the bisection bracket's remaining
+width, relative to the current midpoint mass flow, below which the root
+solve is considered to have stabilized (in addition to the temperature
+tolerance above -- both must hold)."""
+
+SELF_CONSISTENT_FLOW_BRACKET_SHRINK_FACTOR = 0.5
+"""_solve_self_consistent_injection()'s initial bracket search (see that
+function's own docstring for why a plain damped fixed-point iteration on
+the mass flow was tried first and rejected): starting from the
+design-temperature guess (always the upper bracket bound, empirically the
+edge of the hydraulically feasible range for this topology -- see
+docs/issues/self-consistent-flow-solver.md), the lower bound is found by
+repeatedly multiplying by this factor until the achieved-outlet-
+temperature deviation changes sign. 0.5 (halving) is a standard,
+unbiased bracket-expansion factor for a root solve; this is a
+numerical-method tuning constant, not a physical or cost assumption (same
+category as ENTHALPY_INTEGRATION_SEGMENTS in network/baseline.py), so it
+is a named Python constant, not a config/demo_assumptions.json value."""
 
 
 # ── Pure computation helpers -- the single source of truth, recomputed by
@@ -291,6 +339,22 @@ class GeothermalInjectionPolicy(BaseModel):
     baseline_total_heat_delivered_kw by more than this fraction. Never
     consulted under "cost_shortfall" (DSP-004: a genuine resource shortfall
     there is simply covered by auxiliary_heat_kw, not gated)."""
+    injection_sizing_policy: Literal["fixed_design_temperature", "self_consistent"] = "fixed_design_temperature"
+    """DSP-005 (added schema 1.2.0, decision-register.md IMPL-008).
+    "fixed_design_temperature" (the default, and the only behavior that
+    existed before this field) sizes the injection branch's mass flow ONCE
+    from assumptions.dh_return_temperature_c (the DESIGN return
+    temperature), exactly as _compute_injected_mass_flow_kg_s always did.
+    "self_consistent" instead resizes it iteratively against the branch's
+    own SOLVED return temperature (see
+    _solve_self_consistent_injection()) -- opt-in only: absent from
+    config/demo_assumptions.json's coupling_assumptions, so the canonical
+    config's raw bytes, config_sha256, and run_id are untouched by this
+    field's existence (DSP-006: "retain the existing... policy only as an
+    explicit, configurable fallback until the self-consistent method
+    proves it can safely reach higher geothermal fractions" -- this
+    project has not made that determination, so the canonical/default
+    value stays "fixed_design_temperature")."""
 
     @model_validator(mode="after")
     def _validate_policy(self) -> "GeothermalInjectionPolicy":
@@ -327,6 +391,13 @@ class GeothermalInjectionPolicy(BaseModel):
             auxiliary_policy=coupling["auxiliary_policy"],
             minimum_auxiliary_circulation_fraction=coupling["minimum_auxiliary_circulation_fraction"],
             heat_delivery_tolerance_fraction=gates["heat_delivery_tolerance_fraction"],
+            # .get(), not [...]: DSP-005/decision-register.md IMPL-008 --
+            # absent from the canonical config/demo_assumptions.json on
+            # purpose, so its raw bytes (and config_sha256/run_id) stay
+            # untouched. Only a config that explicitly opts in gets
+            # "self_consistent"; every existing config dict without this
+            # key reproduces today's sole behavior exactly.
+            injection_sizing_policy=coupling.get("injection_sizing_policy", "fixed_design_temperature"),
         )
 
 
@@ -345,6 +416,52 @@ class CandidateKpiDeltas(BaseModel):
     max_velocity_delta_m_s: float
 
 
+class SelfConsistentFlowDiagnostics(BaseModel):
+    """DSP-005's required iteration record ("record iteration count,
+    initial/final flow, heat residual and convergence status"). Present on
+    EVERY CandidateEvaluationResult regardless of
+    injection_policy.injection_sizing_policy -- under
+    "fixed_design_temperature" (the default), enabled=False and
+    iteration_count=1 record that exactly one solve occurred and no
+    resizing iteration was attempted, so the model shape never depends on
+    which policy produced a given result."""
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+
+    enabled: bool
+    """True iff injection_policy.injection_sizing_policy ==
+    "self_consistent" for this evaluation."""
+    converged: Literal[True] = True
+    """Always True on a CandidateEvaluationResult (a non-convergent
+    self-consistent iteration returns CandidateEvaluationFailure with
+    failure_code=SELF_CONSISTENT_FLOW_NOT_CONVERGED instead -- this field
+    is never False on a success result, mirroring
+    MassBalanceCheck.passed/EnergyBalanceCheck.passed's own convention)."""
+    iteration_count: int
+    """1 under "fixed_design_temperature" (one solve, no resizing).
+    Under "self_consistent", the number of pipeflow() solves performed,
+    always in [1, SELF_CONSISTENT_FLOW_MAX_ITERATIONS]."""
+    initial_mass_flow_kg_s: float
+    """The design-temperature-based FIRST guess
+    (_compute_injected_mass_flow_kg_s against
+    assumptions.dh_return_temperature_c) -- always computed and recorded,
+    even under "fixed_design_temperature" where it also equals
+    final_mass_flow_kg_s exactly (no resizing occurred)."""
+    final_mass_flow_kg_s: float
+    """The mass flow actually used to build the injection branch that
+    produced this result. Under "fixed_design_temperature" this equals
+    initial_mass_flow_kg_s exactly; under "self_consistent" it is the
+    converged fixed-point value."""
+    final_outlet_temperature_deviation_k: float
+    """Identical to (and cross-checked against)
+    CandidateEvaluationResult.geothermal_injection_outlet_temperature_deviation_k
+    -- repeated here so the solver's own convergence record is
+    self-contained without requiring a reader to cross-reference a
+    different field."""
+    outlet_temperature_tolerance_k: float
+    mass_flow_residual_tolerance_fraction: float
+    max_iterations: int
+
+
 class CandidateEvaluationResult(BaseModel):
     """A successful candidate evaluation. Model-level invariants recompute
     every summary figure from its own stored detail fields (mirroring
@@ -353,7 +470,7 @@ class CandidateEvaluationResult(BaseModel):
     uses -- a hand-tampered payload is rejected, not silently accepted."""
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
-    contract_schema_version: Literal["1.1.0"] = CANDIDATE_CONTRACT_SCHEMA_VERSION
+    contract_schema_version: Literal["1.2.0"] = CANDIDATE_CONTRACT_SCHEMA_VERSION
     status: Literal["success"] = "success"
 
     candidate: BlueprintCandidate
@@ -476,6 +593,10 @@ class CandidateEvaluationResult(BaseModel):
     recomputable from this model alone."""
     kpi_deltas: CandidateKpiDeltas
 
+    flow_solver: SelfConsistentFlowDiagnostics
+    """DSP-005's required iteration record -- see that model's own
+    docstring. Present regardless of injection_policy.injection_sizing_policy."""
+
     warnings: list[CouplingWarning] = Field(default_factory=list)
     created_at: datetime
 
@@ -583,17 +704,33 @@ class CandidateEvaluationResult(BaseModel):
                 "coupling_input.deliverable_geothermal_heat_kw exactly"
             )
 
-        expected_mass_flow = _compute_injected_mass_flow_kg_s(
-            self.geothermal_injected_heat_kw,
-            self.coupling_input.assumptions.dh_supply_temperature_c,
-            self.coupling_input.assumptions.dh_return_temperature_c,
-            self.coupling_input.assumptions.dh_water_specific_heat_capacity_j_kg_k,
-        )
-        if not math.isclose(expected_mass_flow, self.district_heating_water_mass_flow_injected_kg_s, rel_tol=1e-6):
-            errors.append(
-                "district_heating_water_mass_flow_injected_kg_s does not match the "
-                "requested-injection recomputation within solver precision"
+        # DSP-005: under "fixed_design_temperature" the injected mass flow
+        # is always exactly the design-temperature formula's result (as it
+        # always was, pre-DSP-005); under "self_consistent" it is instead
+        # exactly flow_solver's own converged value -- checking the WRONG
+        # one of these two would defeat the entire purpose of self-
+        # consistent sizing, which by design resizes away from the design
+        # formula's result.
+        if self.injection_policy.injection_sizing_policy == "self_consistent":
+            if not math.isclose(
+                self.flow_solver.final_mass_flow_kg_s, self.district_heating_water_mass_flow_injected_kg_s, rel_tol=1e-9,
+            ):
+                errors.append(
+                    "district_heating_water_mass_flow_injected_kg_s does not match "
+                    "flow_solver.final_mass_flow_kg_s under injection_sizing_policy=='self_consistent'"
+                )
+        else:
+            expected_mass_flow = _compute_injected_mass_flow_kg_s(
+                self.geothermal_injected_heat_kw,
+                self.coupling_input.assumptions.dh_supply_temperature_c,
+                self.coupling_input.assumptions.dh_return_temperature_c,
+                self.coupling_input.assumptions.dh_water_specific_heat_capacity_j_kg_k,
             )
+            if not math.isclose(expected_mass_flow, self.district_heating_water_mass_flow_injected_kg_s, rel_tol=1e-6):
+                errors.append(
+                    "district_heating_water_mass_flow_injected_kg_s does not match the "
+                    "requested-injection recomputation within solver precision"
+                )
 
         # ── Geothermal-branch actual vs. design temperatures (deviation
         # figures must be pure arithmetic on the stored actual/design pair). ──
@@ -659,6 +796,43 @@ class CandidateEvaluationResult(BaseModel):
             if not math.isclose(expected_value, getattr(deltas, field_name), rel_tol=1e-9, abs_tol=1e-9):
                 errors.append(f"kpi_deltas.{field_name} does not match recomputation")
 
+        # ── DSP-005: flow_solver's own record must agree with the rest of
+        # this model, and its own convergence guarantee must actually hold. ──
+        fs = self.flow_solver
+        expected_enabled = self.injection_policy.injection_sizing_policy == "self_consistent"
+        if fs.enabled != expected_enabled:
+            errors.append("flow_solver.enabled does not match injection_policy.injection_sizing_policy")
+        expected_initial_mass_flow = _compute_injected_mass_flow_kg_s(
+            self.geothermal_injected_heat_kw,
+            self.coupling_input.assumptions.dh_supply_temperature_c,
+            self.coupling_input.assumptions.dh_return_temperature_c,
+            self.coupling_input.assumptions.dh_water_specific_heat_capacity_j_kg_k,
+        )
+        if not math.isclose(expected_initial_mass_flow, fs.initial_mass_flow_kg_s, rel_tol=1e-9):
+            errors.append("flow_solver.initial_mass_flow_kg_s does not match recomputation")
+        if not math.isclose(
+            fs.final_outlet_temperature_deviation_k, self.geothermal_injection_outlet_temperature_deviation_k,
+            rel_tol=1e-9, abs_tol=1e-9,
+        ):
+            errors.append(
+                "flow_solver.final_outlet_temperature_deviation_k does not match "
+                "geothermal_injection_outlet_temperature_deviation_k"
+            )
+        if not (1 <= fs.iteration_count <= fs.max_iterations):
+            errors.append("flow_solver.iteration_count must be in [1, flow_solver.max_iterations]")
+        if not fs.enabled:
+            if fs.iteration_count != 1:
+                errors.append("flow_solver.iteration_count must be 1 when disabled (exactly one solve, no resizing)")
+            if not math.isclose(fs.initial_mass_flow_kg_s, fs.final_mass_flow_kg_s, rel_tol=1e-9):
+                errors.append("flow_solver.initial_mass_flow_kg_s must equal final_mass_flow_kg_s when disabled")
+        else:
+            if abs(fs.final_outlet_temperature_deviation_k) > fs.outlet_temperature_tolerance_k:
+                errors.append(
+                    "flow_solver.final_outlet_temperature_deviation_k exceeds its own "
+                    "outlet_temperature_tolerance_k -- a converged self-consistent result "
+                    "must satisfy its own convergence guarantee"
+                )
+
         if errors:
             raise ValueError("; ".join(errors))
         return self
@@ -670,7 +844,7 @@ class CandidateEvaluationFailure(BaseModel):
     auditable, same rule as every earlier layer."""
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
-    contract_schema_version: Literal["1.1.0"] = CANDIDATE_CONTRACT_SCHEMA_VERSION
+    contract_schema_version: Literal["1.2.0"] = CANDIDATE_CONTRACT_SCHEMA_VERSION
     status: Literal["failure"] = "failure"
     failure_code: CandidateFailureCode
     message: str
@@ -778,6 +952,139 @@ def _add_geothermal_injection_branch(
     }
 
 
+class _SelfConsistentFlowNotConverged(Exception):
+    """Internal signal only (never a public contract type): raised by
+    _solve_self_consistent_injection() when
+    SELF_CONSISTENT_FLOW_MAX_ITERATIONS is exhausted without meeting both
+    residual tolerances. Caught by evaluate_candidate() and translated
+    into a typed CandidateEvaluationFailure
+    (SELF_CONSISTENT_FLOW_NOT_CONVERGED) -- never escapes this module."""
+
+    def __init__(self, iteration_count: int, final_mass_flow_kg_s: float, final_outlet_temperature_deviation_k: float):
+        self.iteration_count = iteration_count
+        self.final_mass_flow_kg_s = final_mass_flow_kg_s
+        self.final_outlet_temperature_deviation_k = final_outlet_temperature_deviation_k
+        super().__init__(
+            f"self-consistent flow sizing did not converge within {iteration_count} iterations "
+            f"(final_outlet_temperature_deviation_k={final_outlet_temperature_deviation_k!r})"
+        )
+
+
+def _solve_self_consistent_injection(
+    blueprint: NetworkBlueprint,
+    candidate: BlueprintCandidate,
+    injected_kw: float,
+    dh_supply_temperature_c: float,
+    dh_return_temperature_c: float,
+    dh_water_specific_heat_capacity_j_kg_k: float,
+) -> tuple["pandapipes.pandapipesNet", dict[str, str], int, float]:
+    """DSP-005's bounded deterministic root solve for the injection
+    branch's mass flow, against its own SOLVED return temperature (not the
+    design value).
+
+    **Method note, recorded here because it deviates from a literal
+    reading of DSP-005 point 5 ("apply relaxation if required"), per
+    GOV-004/Section 23 -- an engineering decision, not a silent
+    substitution:** a plain damped fixed-point iteration
+    (m_next = m + relax*(Q/(cp*(T_supply - T_return_solved(m))) - m)) was
+    implemented and tested FIRST. It diverges even at heavy damping
+    (relax=0.05), because T_return_solved(m) is extremely steep just below
+    the design-temperature guess for this topology -- empirically, at the
+    golden worked case, m=25.0 kg/s solves to a 54.3 degC return while
+    m=25.2632 kg/s (the design guess, ~1% higher) solves to 36.0 degC, and
+    m>25.2632 is hydraulically infeasible outright (the same main-pump
+    direction-change conflict GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT
+    already guards). The design guess sits essentially AT the edge of the
+    feasible range for this candidate/margin combination -- consistent
+    with minimum_auxiliary_circulation_fraction's own documented purpose
+    (module docstring, "Curtailment"). Full measurements are in
+    docs/issues/self-consistent-flow-solver.md.
+
+    DSP-005 itself permits this: point 5 is phrased as "a bounded
+    deterministic iteration OR root solve." Given the measured
+    steepness/near-boundary behavior, this function instead BISECTS on
+    f(m) = achieved_outlet_temperature_c(m) - dh_supply_temperature_c,
+    which is empirically monotonic (decreasing in m) across the feasible
+    range: (1) solve at the design-temperature guess (the upper bracket
+    bound -- always tried first, so a candidate needing no correction at
+    all costs exactly one solve, identical to "fixed_design_temperature");
+    if that alone already meets tolerance, return it immediately;
+    (2) otherwise repeatedly shrink a lower bound
+    (SELF_CONSISTENT_FLOW_BRACKET_SHRINK_FACTOR per step) until f changes
+    sign, bracketing a root; (3) bisect within that bracket until both the
+    temperature and (bracket-width-relative) flow tolerances are met.
+    Every step is one fresh, non-mutating pipeflow() solve -- the same
+    discipline evaluate_candidate() itself follows -- and the total solve
+    count (bracket search plus bisection) is bounded by
+    SELF_CONSISTENT_FLOW_MAX_ITERATIONS.
+
+    Returns (net, refs, iteration_count, final_mass_flow_kg_s) on
+    convergence -- the returned net is left in its SOLVED state, ready for
+    evaluate_candidate() to continue extracting KPIs from.
+
+    Propagates pandapipes.PipeflowNotConverged / UserWarning verbatim from
+    any solve (evaluate_candidate() catches these exactly as it already
+    does for the single-solve path) -- including from a bracket-search
+    step that shrinks into a hydraulically invalid region; a genuine
+    solver failure is never reinterpreted as a slow bracket search. Raises
+    _SelfConsistentFlowNotConverged (never returns a sentinel) if
+    SELF_CONSISTENT_FLOW_MAX_ITERATIONS is exhausted -- either without
+    ever finding a sign change (no root bracketed) or without the
+    bisection meeting both tolerances -- deterministic and bounded, never
+    an unbounded loop or a relaxed gate (Section 23 item 11)."""
+
+    def _solve_at(mass_flow_kg_s: float) -> tuple["pandapipes.pandapipesNet", dict[str, str], float]:
+        net = build_pandapipes_net(blueprint)
+        refs = _add_geothermal_injection_branch(
+            net, candidate, blueprint, injected_kw, mass_flow_kg_s,
+            dh_supply_temperature_c, dh_return_temperature_c,
+        )
+        pandapipes.pipeflow(net, mode="sequential")
+        hc_idx = {name: idx for idx, name in enumerate(net.heat_consumer["name"])}
+        geo_hc_row = net.res_heat_consumer.iloc[hc_idx[refs["heat_consumer"]]]
+        achieved_outlet_c = float(geo_hc_row["t_outlet_k"]) - 273.15
+        return net, refs, achieved_outlet_c - dh_supply_temperature_c
+
+    m_high = _compute_injected_mass_flow_kg_s(
+        injected_kw, dh_supply_temperature_c, dh_return_temperature_c, dh_water_specific_heat_capacity_j_kg_k,
+    )
+    solves = 0
+    net, refs, dev_high = _solve_at(m_high)
+    solves += 1
+    if abs(dev_high) <= SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K:
+        return net, refs, solves, m_high
+
+    m_low = m_high
+    dev_low = dev_high
+    while solves < SELF_CONSISTENT_FLOW_MAX_ITERATIONS:
+        m_low = m_low * SELF_CONSISTENT_FLOW_BRACKET_SHRINK_FACTOR
+        net, refs, dev_low = _solve_at(m_low)
+        solves += 1
+        if (dev_low >= 0) != (dev_high >= 0):
+            break
+    else:
+        raise _SelfConsistentFlowNotConverged(solves, m_low, dev_low)
+
+    lo, hi, dev_lo = m_low, m_high, dev_low
+    mid, dev_mid = lo, dev_lo
+    while solves < SELF_CONSISTENT_FLOW_MAX_ITERATIONS:
+        mid = (lo + hi) / 2.0
+        net, refs, dev_mid = _solve_at(mid)
+        solves += 1
+        flow_residual_fraction = (hi - lo) / mid
+        if (
+            abs(dev_mid) <= SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K
+            and flow_residual_fraction <= SELF_CONSISTENT_FLOW_MASS_FLOW_RESIDUAL_TOLERANCE_FRACTION
+        ):
+            return net, refs, solves, mid
+        if (dev_mid >= 0) == (dev_lo >= 0):
+            lo, dev_lo = mid, dev_mid
+        else:
+            hi = mid
+
+    raise _SelfConsistentFlowNotConverged(solves, mid, dev_mid)
+
+
 def evaluate_candidate(
     coupling_result: HeatExchangerCouplingResult,
     blueprint: NetworkBlueprint,
@@ -795,7 +1102,6 @@ def evaluate_candidate(
     gate, in order. Never raises for any of the seven recognized failure
     modes; never mutates `blueprint`, `coupling_result`, or `baseline`."""
     created_at = datetime.now(timezone.utc)
-    net = build_pandapipes_net(blueprint)
 
     injected_kw, curtailed_kw, stabilization_margin_applied = _compute_injected_heat_kw(
         coupling_result.deliverable_geothermal_heat_kw.value,
@@ -819,37 +1125,80 @@ def evaluate_candidate(
                 "flow shrinks too far (see geothermal_injection_inlet_temperature_c/"
                 "geothermal_injection_outlet_temperature_c and their _deviation_k "
                 "fields on this result for the measured values). This is a "
-                "numerical-stability margin, not a supply/demand-driven curtailment."
+                "numerical-stability margin, not a supply/demand-driven curtailment. "
+                "Under injection_policy.injection_sizing_policy=='self_consistent' "
+                "this margin still addresses the pandapipes main-pump direction-check "
+                "(reason 1) but reason 2 may no longer apply -- see "
+                "docs/issues/self-consistent-flow-solver.md's sensitivity findings."
             ),
             affects=["geothermal_injected_heat_kw", "geothermal_curtailed_heat_kw"],
         ))
-    injected_mass_flow_kg_s = _compute_injected_mass_flow_kg_s(
+
+    design_initial_mass_flow_kg_s = _compute_injected_mass_flow_kg_s(
         injected_kw,
         coupling_result.assumptions.dh_supply_temperature_c,
         coupling_result.assumptions.dh_return_temperature_c,
         coupling_result.assumptions.dh_water_specific_heat_capacity_j_kg_k,
     )
 
-    refs = _add_geothermal_injection_branch(
-        net, candidate, blueprint, injected_kw, injected_mass_flow_kg_s,
-        coupling_result.assumptions.dh_supply_temperature_c,
-        coupling_result.assumptions.dh_return_temperature_c,
-    )
-
-    try:
-        pandapipes.pipeflow(net, mode="sequential")
-    except pandapipes.PipeflowNotConverged as exc:
-        return CandidateEvaluationFailure(
-            failure_code=CandidateFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED,
-            message=f"pandapipes pipeflow(mode='sequential') did not converge: {exc}",
-            details={}, candidate=candidate, coupling_input=coupling_result, created_at=created_at,
+    self_consistent_enabled = injection_policy.injection_sizing_policy == "self_consistent"
+    if self_consistent_enabled:
+        try:
+            net, refs, flow_iteration_count, injected_mass_flow_kg_s = _solve_self_consistent_injection(
+                blueprint, candidate, injected_kw,
+                coupling_result.assumptions.dh_supply_temperature_c,
+                coupling_result.assumptions.dh_return_temperature_c,
+                coupling_result.assumptions.dh_water_specific_heat_capacity_j_kg_k,
+            )
+        except pandapipes.PipeflowNotConverged as exc:
+            return CandidateEvaluationFailure(
+                failure_code=CandidateFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED,
+                message=f"pandapipes pipeflow(mode='sequential') did not converge: {exc}",
+                details={}, candidate=candidate, coupling_input=coupling_result, created_at=created_at,
+            )
+        except UserWarning as exc:
+            return CandidateEvaluationFailure(
+                failure_code=CandidateFailureCode.GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT,
+                message=f"pandapipes raised UserWarning during pipeflow() (see module docstring, 'Curtailment'): {exc}",
+                details={}, candidate=candidate, coupling_input=coupling_result, created_at=created_at,
+            )
+        except _SelfConsistentFlowNotConverged as exc:
+            return CandidateEvaluationFailure(
+                failure_code=CandidateFailureCode.SELF_CONSISTENT_FLOW_NOT_CONVERGED,
+                message=str(exc),
+                details={
+                    "iteration_count": exc.iteration_count,
+                    "max_iterations": SELF_CONSISTENT_FLOW_MAX_ITERATIONS,
+                    "final_mass_flow_kg_s": exc.final_mass_flow_kg_s,
+                    "final_outlet_temperature_deviation_k": exc.final_outlet_temperature_deviation_k,
+                    "outlet_temperature_tolerance_k": SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K,
+                    "mass_flow_residual_tolerance_fraction": SELF_CONSISTENT_FLOW_MASS_FLOW_RESIDUAL_TOLERANCE_FRACTION,
+                },
+                candidate=candidate, coupling_input=coupling_result, created_at=created_at,
+            )
+    else:
+        injected_mass_flow_kg_s = design_initial_mass_flow_kg_s
+        flow_iteration_count = 1
+        net = build_pandapipes_net(blueprint)
+        refs = _add_geothermal_injection_branch(
+            net, candidate, blueprint, injected_kw, injected_mass_flow_kg_s,
+            coupling_result.assumptions.dh_supply_temperature_c,
+            coupling_result.assumptions.dh_return_temperature_c,
         )
-    except UserWarning as exc:
-        return CandidateEvaluationFailure(
-            failure_code=CandidateFailureCode.GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT,
-            message=f"pandapipes raised UserWarning during pipeflow() (see module docstring, 'Curtailment'): {exc}",
-            details={}, candidate=candidate, coupling_input=coupling_result, created_at=created_at,
-        )
+        try:
+            pandapipes.pipeflow(net, mode="sequential")
+        except pandapipes.PipeflowNotConverged as exc:
+            return CandidateEvaluationFailure(
+                failure_code=CandidateFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED,
+                message=f"pandapipes pipeflow(mode='sequential') did not converge: {exc}",
+                details={}, candidate=candidate, coupling_input=coupling_result, created_at=created_at,
+            )
+        except UserWarning as exc:
+            return CandidateEvaluationFailure(
+                failure_code=CandidateFailureCode.GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT,
+                message=f"pandapipes raised UserWarning during pipeflow() (see module docstring, 'Curtailment'): {exc}",
+                details={}, candidate=candidate, coupling_input=coupling_result, created_at=created_at,
+            )
 
     if not bool(net.converged):
         # Defensive: verified unreachable in pandapipes 0.14.0 (T2.2B),
@@ -1101,6 +1450,15 @@ def evaluate_candidate(
         max_velocity_delta_m_s=max_velocity_m_s - baseline.max_velocity_m_s,
     )
 
+    flow_solver = SelfConsistentFlowDiagnostics(
+        enabled=self_consistent_enabled, iteration_count=flow_iteration_count,
+        initial_mass_flow_kg_s=design_initial_mass_flow_kg_s, final_mass_flow_kg_s=injected_mass_flow_kg_s,
+        final_outlet_temperature_deviation_k=geo_outlet_actual_c - geo_outlet_design_c,
+        outlet_temperature_tolerance_k=SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K,
+        mass_flow_residual_tolerance_fraction=SELF_CONSISTENT_FLOW_MASS_FLOW_RESIDUAL_TOLERANCE_FRACTION,
+        max_iterations=SELF_CONSISTENT_FLOW_MAX_ITERATIONS,
+    )
+
     return CandidateEvaluationResult(
         candidate=candidate, coupling_input=coupling_result, injection_policy=injection_policy, tolerances=tolerances,
         consumers=consumers, total_heat_delivered_kw=total_heat_delivered_kw,
@@ -1126,5 +1484,5 @@ def evaluate_candidate(
         baseline_main_pump_hydraulic_power_kw=baseline.circulation_pump.hydraulic_pumping_power_kw,
         baseline_min_pressure_bar_abs=baseline.min_pressure_bar_abs,
         baseline_max_velocity_m_s=baseline.max_velocity_m_s,
-        kpi_deltas=kpi_deltas, warnings=warnings, created_at=created_at,
+        kpi_deltas=kpi_deltas, flow_solver=flow_solver, warnings=warnings, created_at=created_at,
     )

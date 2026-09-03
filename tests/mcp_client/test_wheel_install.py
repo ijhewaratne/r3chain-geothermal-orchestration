@@ -146,15 +146,15 @@ def test_mcp_demo_entry_point_runs_outside_the_repo_and_matches_in_repo_parity(m
     record = json.loads((output_dir / "session_record.json").read_text())
     assert record["execution_route"] == "mcp"
     assert record["run_id"] == "r3chain-run-93d41133daa11d1a"
-    # bundle_scientific_sha256 rebaselined (CFG-003, decision-register.md
-    # IMPL-007): CandidateEvaluationResult's embedded GateTolerances gained
-    # max_pump_dp_bar and GeothermalInjectionPolicy gained
-    # heat_delivery_tolerance_fraction (both schema 1.0.0 -> 1.1.0), new
-    # fields in workflow_result.json's own hashed content. run_id above is
-    # UNCHANGED (it never depends on these models) and the LCOH assertion
-    # below proves the actual canonical numeric ranking is also unchanged --
-    # only the artifact bundle's byte-shape hash moved, exactly as
-    # NFR-007/AUD-002 anticipate for a versioned schema addition.
-    assert record["bundle_scientific_sha256"] == "fd1e3408cbccfeb81d2847a60d809c2c8e407fb26de4738a624cb28ad00456f6"
+    # bundle_scientific_sha256 rebaselined again (DSP-005, decision-register.md
+    # IMPL-008): CandidateEvaluationResult gained flow_solver and
+    # GeothermalInjectionPolicy gained injection_sizing_policy (schema
+    # 1.1.0 -> 1.2.0), new fields in workflow_result.json's own hashed
+    # content. run_id above is UNCHANGED (it never depends on these models)
+    # and the LCOH assertion below proves the actual canonical numeric
+    # ranking is also unchanged -- only the artifact bundle's byte-shape
+    # hash moved, exactly as NFR-007/AUD-002 anticipate for a versioned
+    # schema addition.
+    assert record["bundle_scientific_sha256"] == "f85243d16a6e43365f12081a6af346d2ea1aa5bbb51a70f760404eb64a1188a1"
     lcoh_by_id = {r["candidate_id"]: round(r["indicative_lcoh_eur_per_mwh"], 4) for r in record["ranked"]}
     assert lcoh_by_id == {"C1": 52.1714, "C2": 52.2602, "C3": 52.3489, "C4": 52.4821}

@@ -84,11 +84,11 @@ def test_run_workflow_tool_strict_provenance_reproduces_golden_run_id_and_bundle
     )
     assert isinstance(result, RunSummary)
     assert result.run_id == _GOLDEN_RUN_ID
-    # Rebaselined (CFG-003, decision-register.md IMPL-007): schema 1.0.0 -> 1.1.0
-    # added GateTolerances.max_pump_dp_bar / GeothermalInjectionPolicy.
-    # heat_delivery_tolerance_fraction -- new fields in workflow_result.json's
-    # hashed content. run_id (asserted above) is unaffected.
-    assert result.bundle_scientific_sha256 == "fd1e3408cbccfeb81d2847a60d809c2c8e407fb26de4738a624cb28ad00456f6"
+    # Rebaselined again (DSP-005, decision-register.md IMPL-008): schema
+    # 1.1.0 -> 1.2.0 added GeothermalInjectionPolicy.injection_sizing_policy
+    # and CandidateEvaluationResult.flow_solver -- new fields in
+    # workflow_result.json's hashed content. run_id (asserted above) is unaffected.
+    assert result.bundle_scientific_sha256 == "f85243d16a6e43365f12081a6af346d2ea1aa5bbb51a70f760404eb64a1188a1"
 
 
 def test_run_workflow_tool_omitted_expected_hash_still_reproduces_golden_bundle_hash(registry, fixed_config):
@@ -98,11 +98,11 @@ def test_run_workflow_tool_omitted_expected_hash_still_reproduces_golden_bundle_
     result = tools.run_workflow_tool(_raw(), _provenance(), fixed_config=fixed_config, registry=reg)
     assert isinstance(result, RunSummary)
     assert result.run_id == _GOLDEN_RUN_ID
-    # Rebaselined (CFG-003, decision-register.md IMPL-007): schema 1.0.0 -> 1.1.0
-    # added GateTolerances.max_pump_dp_bar / GeothermalInjectionPolicy.
-    # heat_delivery_tolerance_fraction -- new fields in workflow_result.json's
-    # hashed content. run_id (asserted above) is unaffected.
-    assert result.bundle_scientific_sha256 == "fd1e3408cbccfeb81d2847a60d809c2c8e407fb26de4738a624cb28ad00456f6"
+    # Rebaselined again (DSP-005, decision-register.md IMPL-008): schema
+    # 1.1.0 -> 1.2.0 added GeothermalInjectionPolicy.injection_sizing_policy
+    # and CandidateEvaluationResult.flow_solver -- new fields in
+    # workflow_result.json's hashed content. run_id (asserted above) is unaffected.
+    assert result.bundle_scientific_sha256 == "f85243d16a6e43365f12081a6af346d2ea1aa5bbb51a70f760404eb64a1188a1"
 
 
 # ── geo_run_workflow: IP-006, no artifact directory created on mismatch ─────

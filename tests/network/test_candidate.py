@@ -17,6 +17,8 @@ from r3chain_geothermal.contracts import PyDoubletCouplingResult, SourceProvenan
 from r3chain_geothermal.network import (
     CONNECTION_PIPE_DN_MM,
     PANDAPIPES_MINIMUM_AUXILIARY_FLOW_STABILIZATION_APPLIED,
+    SELF_CONSISTENT_FLOW_MAX_ITERATIONS,
+    SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K,
     BaselineNetworkResult,
     BlueprintCandidate,
     CandidateEvaluationFailure,
@@ -534,14 +536,13 @@ def test_velocity_limit_exceeded_via_undersized_connection_pipe(monkeypatch):
     assert result.details["pipe"] == "geo_supply_connection_C1"
 
 
-def test_all_nine_failure_codes_reachable():
+def test_all_ten_failure_codes_reachable():
     """Enumerates CandidateFailureCode and cross-checks it against the
     dedicated failure-path tests above -- if a new code is ever added to
     the enum without a corresponding reachability test, this test's own
     membership assertion documents the gap explicitly rather than passing
-    silently. Was "all seven" prior to CFG-003/DSP-003
-    (decision-register.md IMPL-007), which added
-    PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED and GEOTHERMAL_HEAT_SHORTFALL."""
+    silently. Was "all nine" prior to DSP-005 (decision-register.md
+    IMPL-008), which added SELF_CONSISTENT_FLOW_NOT_CONVERGED."""
     covered = {
         CandidateFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED,
         CandidateFailureCode.CONSUMER_TEMPERATURE_NOT_MET,
@@ -552,9 +553,10 @@ def test_all_nine_failure_codes_reachable():
         CandidateFailureCode.GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT,
         CandidateFailureCode.PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED,
         CandidateFailureCode.GEOTHERMAL_HEAT_SHORTFALL,
+        CandidateFailureCode.SELF_CONSISTENT_FLOW_NOT_CONVERGED,
     }
     assert covered == set(CandidateFailureCode)
-    assert len(covered) == 9
+    assert len(covered) == 10
 
 
 def test_pump_differential_pressure_exceeded_via_tight_tolerance():
@@ -718,6 +720,11 @@ def test_policy_from_config_dict_reads_real_config():
     assert policy.auxiliary_policy == "cost_shortfall"
     assert math.isclose(policy.minimum_auxiliary_circulation_fraction, 0.01)
     assert math.isclose(policy.heat_delivery_tolerance_fraction, 0.01)
+    # DSP-005/decision-register.md IMPL-008: absent from
+    # config/demo_assumptions.json on purpose (opt-in only) -- must default
+    # to "fixed_design_temperature" (the historical sole behavior), never
+    # silently default to "self_consistent".
+    assert policy.injection_sizing_policy == "fixed_design_temperature"
 
 
 def test_policy_rejects_curtailment_disabled():
@@ -745,6 +752,140 @@ def test_policy_rejects_out_of_range_minimum_auxiliary_circulation_fraction(bad_
 def test_policy_rejects_out_of_range_heat_delivery_tolerance_fraction(bad_value):
     with pytest.raises(ValidationError):
         _policy(heat_delivery_tolerance_fraction=bad_value)
+
+
+def test_policy_accepts_self_consistent_injection_sizing_policy():
+    policy = _policy(injection_sizing_policy="self_consistent")
+    assert policy.injection_sizing_policy == "self_consistent"
+
+
+def test_policy_rejects_unknown_injection_sizing_policy():
+    with pytest.raises(ValidationError):
+        _policy(injection_sizing_policy="not_a_real_policy")
+
+
+# ── DSP-005: self-consistent flow solver ────────────────────────────────────
+# Full measurements (iteration counts, the map m -> T_return(m) that ruled
+# out a plain damped fixed-point iteration in favor of bisection) are in
+# docs/issues/self-consistent-flow-solver.md.
+def test_fixed_design_temperature_mode_has_trivial_flow_solver_diagnostics():
+    """The default policy's flow_solver record must show exactly one solve
+    and no resizing -- proving "fixed_design_temperature" costs nothing
+    extra and behaves byte-for-byte as it did before DSP-005 existed."""
+    bp = _blueprint()
+    coupling_result = _golden_coupling_result()
+    baseline = _baseline(bp)
+    result = evaluate_candidate(
+        coupling_result, bp, _candidate("C1"), baseline,
+        injection_policy=_policy(), tolerances=_tolerances(),
+    )
+    assert isinstance(result, CandidateEvaluationResult)
+    fs = result.flow_solver
+    assert fs.enabled is False
+    assert fs.iteration_count == 1
+    assert math.isclose(fs.initial_mass_flow_kg_s, fs.final_mass_flow_kg_s, rel_tol=1e-9)
+    # The historically-documented ~4 K undershoot (module docstring,
+    # "Curtailment") -- unresolved under this policy by design.
+    assert fs.final_outlet_temperature_deviation_k < -3.0
+
+
+@pytest.mark.parametrize("candidate_id", list(_CANDIDATES))
+def test_self_consistent_mode_converges_for_all_four_candidates(candidate_id):
+    bp = _blueprint()
+    coupling_result = _golden_coupling_result()
+    baseline = _baseline(bp)
+    result = evaluate_candidate(
+        coupling_result, bp, _candidate(candidate_id), baseline,
+        injection_policy=_policy(injection_sizing_policy="self_consistent"), tolerances=_tolerances(),
+    )
+    assert isinstance(result, CandidateEvaluationResult), result
+    fs = result.flow_solver
+    assert fs.enabled is True
+    assert 1 <= fs.iteration_count <= SELF_CONSISTENT_FLOW_MAX_ITERATIONS
+    assert abs(fs.final_outlet_temperature_deviation_k) <= SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K
+
+
+def test_self_consistent_mode_achieves_much_smaller_outlet_deviation_than_fixed_design_temperature():
+    """The direct, quantified proof DSP-005 exists to deliver: at the SAME
+    canonical margin, self-consistent sizing reaches the design supply
+    temperature far more precisely than sizing against the design return
+    temperature alone."""
+    bp = _blueprint()
+    coupling_result = _golden_coupling_result()
+    baseline = _baseline(bp)
+    fixed_result = evaluate_candidate(
+        coupling_result, bp, _candidate("C1"), baseline,
+        injection_policy=_policy(), tolerances=_tolerances(),
+    )
+    self_consistent_result = evaluate_candidate(
+        coupling_result, bp, _candidate("C1"), baseline,
+        injection_policy=_policy(injection_sizing_policy="self_consistent"), tolerances=_tolerances(),
+    )
+    assert isinstance(fixed_result, CandidateEvaluationResult)
+    assert isinstance(self_consistent_result, CandidateEvaluationResult)
+    assert (
+        abs(self_consistent_result.flow_solver.final_outlet_temperature_deviation_k)
+        < abs(fixed_result.flow_solver.final_outlet_temperature_deviation_k)
+    )
+
+
+def test_self_consistent_flow_not_converged_via_monkeypatched_max_iterations(monkeypatch):
+    """SELF_CONSISTENT_FLOW_NOT_CONVERGED's reachability test: rather than
+    hunting for a naturally slow-to-converge scenario, cap the iteration
+    budget below what even the FIRST solve's own tolerance check needs
+    (the golden case's initial guess alone is never within tolerance -- see
+    test_fixed_design_temperature_mode_has_trivial_flow_solver_diagnostics'
+    own ~-4 K assertion), forcing exhaustion deterministically."""
+    import r3chain_geothermal.network.candidate as candidate_module
+    monkeypatch.setattr(candidate_module, "SELF_CONSISTENT_FLOW_MAX_ITERATIONS", 1)
+
+    bp = _blueprint()
+    coupling_result = _golden_coupling_result()
+    baseline = _baseline(bp)
+    result = evaluate_candidate(
+        coupling_result, bp, _candidate("C1"), baseline,
+        injection_policy=_policy(injection_sizing_policy="self_consistent"), tolerances=_tolerances(),
+    )
+    assert isinstance(result, CandidateEvaluationFailure)
+    assert result.failure_code == CandidateFailureCode.SELF_CONSISTENT_FLOW_NOT_CONVERGED
+    assert result.details["iteration_count"] == 1
+    assert result.details["max_iterations"] == 1
+
+
+# ── DSP-006: stabilization-fraction sensitivity, fixed vs. self-consistent ──
+# Documents (does not silently act on) exactly which minimum_auxiliary_
+# circulation_fraction / injection_sizing_policy combinations are feasible.
+# Measured findings (docs/issues/self-consistent-flow-solver.md): self-
+# consistent sizing rescues the CONSUMER_TEMPERATURE_NOT_MET failure at
+# 0.5% margin (the module docstring's "reason 2"), but does NOT rescue the
+# GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT failure at 0% margin (reason 1,
+# the pandapipes main-pump direction-check, independent of injection
+# sizing accuracy) -- DSP-004's required separation of the two reasons,
+# now demonstrated empirically rather than only asserted in prose.
+@pytest.mark.parametrize("margin,mode,expected_outcome", [
+    (0.0, "fixed_design_temperature", CandidateFailureCode.GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT),
+    (0.0, "self_consistent", CandidateFailureCode.GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT),
+    (0.005, "fixed_design_temperature", CandidateFailureCode.CONSUMER_TEMPERATURE_NOT_MET),
+    (0.005, "self_consistent", None),
+    (0.01, "fixed_design_temperature", None),
+    (0.01, "self_consistent", None),
+    (0.02, "fixed_design_temperature", None),
+    (0.02, "self_consistent", None),
+])
+def test_dsp006_stabilization_margin_sensitivity(margin, mode, expected_outcome):
+    bp = _blueprint()
+    coupling_result = _golden_coupling_result()
+    baseline = _baseline(bp)
+    result = evaluate_candidate(
+        coupling_result, bp, _candidate("C1"), baseline,
+        injection_policy=_policy(minimum_auxiliary_circulation_fraction=margin, injection_sizing_policy=mode),
+        tolerances=_tolerances(),
+    )
+    if expected_outcome is None:
+        assert isinstance(result, CandidateEvaluationResult), (margin, mode, result)
+    else:
+        assert isinstance(result, CandidateEvaluationFailure), (margin, mode, result)
+        assert result.failure_code == expected_outcome
 
 
 # ── Determinism and independence across C1-C4 ───────────────────────────────
@@ -832,7 +973,7 @@ def test_strict_json_round_trip_for_success():
 
 @pytest.mark.parametrize("failure_code", list(CandidateFailureCode))
 def test_strict_json_round_trip_for_failure_codes(failure_code, monkeypatch):
-    """Covers all nine CandidateFailureCode values -- one dedicated,
+    """Covers all ten CandidateFailureCode values -- one dedicated,
     independently-verified scenario per code, matching the scenario used
     in that code's own dedicated failure test above."""
     import r3chain_geothermal.network.candidate as candidate_module
@@ -861,6 +1002,9 @@ def test_strict_json_round_trip_for_failure_codes(failure_code, monkeypatch):
     elif failure_code == CandidateFailureCode.GEOTHERMAL_HEAT_SHORTFALL:
         policy = _policy(auxiliary_policy="strict_infeasible")
         coupling_result = _golden_coupling_result(hx_heat_delivery_factor=0.3)
+    elif failure_code == CandidateFailureCode.SELF_CONSISTENT_FLOW_NOT_CONVERGED:
+        policy = _policy(injection_sizing_policy="self_consistent")
+        monkeypatch.setattr(candidate_module, "SELF_CONSISTENT_FLOW_MAX_ITERATIONS", 1)
 
     baseline = _baseline(bp)
     result = evaluate_candidate(

@@ -122,3 +122,15 @@ class CandidateFailureCode(str, Enum):
     raised under the default "cost_shortfall" policy, which instead covers
     any shortfall from the auxiliary source (auxiliary_heat_kw) -- see
     GeothermalInjectionPolicy's own docstring."""
+
+    SELF_CONSISTENT_FLOW_NOT_CONVERGED = "SELF_CONSISTENT_FLOW_NOT_CONVERGED"
+    """Under injection_policy.injection_sizing_policy == "self_consistent"
+    only (DSP-005): the bounded fixed-point iteration that resizes the
+    injection branch's mass flow against its own SOLVED (not design)
+    return temperature did not meet both the outlet-temperature and
+    mass-flow residual tolerances within
+    SELF_CONSISTENT_FLOW_MAX_ITERATIONS pipeflow() solves. Distinct from
+    THERMAL_PIPEFLOW_NOT_CONVERGED (which is pandapipes itself failing to
+    solve one candidate iteration -- still raised, unchanged, if any single
+    iteration's own pipeflow() call fails). Never raised under the default
+    "fixed_design_temperature" policy, which performs exactly one solve."""
