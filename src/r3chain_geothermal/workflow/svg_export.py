@@ -21,7 +21,7 @@ from __future__ import annotations
 import html
 
 from ..network import CandidateEvaluationFailure, CandidateEvaluationResult
-from ..network.geometry import CANDIDATE_SITE_COORDINATES, ret_coordinate
+from ..network.geometry import CANDIDATE_SITE_COORDINATES, Coordinate, ret_coordinate
 from .core import WorkflowResult
 
 SCHEMATIC_LABEL = "Synthetic schematic — not geographical"
@@ -145,8 +145,15 @@ def render_network_candidates_svg(result: WorkflowResult) -> bytes:
     for candidate_id in sorted(blueprint.candidates):
         candidate = blueprint.candidates[candidate_id]
         candidate_result = result.candidate_results[candidate_id]
-        site = CANDIDATE_SITE_COORDINATES[candidate_id]
         trunk_j = junctions_by_id[candidate.supply_junction]
+        site = CANDIDATE_SITE_COORDINATES.get(candidate_id)
+        if site is None:
+            # FAIL-001 (workshop/negative-demo candidates, e.g. C5_negative):
+            # not part of the mapped C1-C4 site set in geometry.py -- render
+            # its marker at a small fixed offset from its own trunk junction
+            # rather than crashing. A presentation-layer fallback only,
+            # never a scientific value.
+            site = Coordinate(x_m=trunk_j.x_m + 15.0, y_m=trunk_j.y_m - 15.0)
 
         xc, yc = _svg_xy(site.x_m, site.y_m, y_origin_px)
         xt, yt = _svg_xy(trunk_j.x_m, trunk_j.y_m, y_origin_px)

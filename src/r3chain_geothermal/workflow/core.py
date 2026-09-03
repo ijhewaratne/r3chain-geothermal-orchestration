@@ -86,6 +86,7 @@ from ..hashing import canonical_raw_result_sha256
 from ..network import (
     BaselineNetworkFailure,
     BaselineNetworkResult,
+    BlueprintCandidate,
     CandidateEvaluationBoundaryResult,
     CandidateEvaluationFailure,
     CandidateEvaluationResult,
@@ -363,6 +364,46 @@ def _build_blueprint_kwargs(config: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _apply_workshop_negative_demo(blueprint: NetworkBlueprint, config: dict[str, Any]) -> NetworkBlueprint:
+    """FAIL-001 (R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md Workstream F,
+    decision-register.md IMPL-009): adds ONE additional, deliberately
+    infeasible candidate to `blueprint.candidates` when the config
+    explicitly opts in -- NEVER the canonical C1-C4 comparison, which this
+    function leaves byte-for-byte untouched whenever the opt-in key is
+    absent or false (both `.get()` calls below default to "off").
+
+    `config["candidates"]["include_workshop_negative_demo"]` (bool,
+    default False) and `config["candidates"]["workshop_negative_demo"]`
+    (the candidate's own id/label/supply_junction/return_junction/
+    surface_connection_length_m) are both absent from the canonical
+    config/demo_assumptions.json -- so for the canonical config this
+    function is a pure no-op, returning `blueprint` completely unchanged
+    (not even a `model_copy` -- identity-preserving), and
+    config_sha256/run_id/bundle_scientific_sha256 are all untouched.
+
+    Reconstructs `NetworkBlueprint` via its own constructor (not
+    `model_copy(update=...)`, which bypasses validation) so the injected
+    candidate's junction references and positive length are validated by
+    the SAME model-level invariant every other candidate is validated by
+    -- a malformed workshop config fails loudly here, not with a bare
+    KeyError deep inside evaluate_candidate()."""
+    candidates_cfg = config.get("candidates", {})
+    if not candidates_cfg.get("include_workshop_negative_demo", False):
+        return blueprint
+    spec = candidates_cfg["workshop_negative_demo"]
+    negative_candidate = BlueprintCandidate(
+        id=spec["id"], label=spec["label"],
+        supply_junction=spec["supply_junction"], return_junction=spec["return_junction"],
+        surface_connection_length_m=spec["surface_connection_length_m"],
+    )
+    return NetworkBlueprint(
+        junctions=blueprint.junctions, pipes=blueprint.pipes, consumers=blueprint.consumers,
+        candidates={**blueprint.candidates, negative_candidate.id: negative_candidate},
+        circulation_pump=blueprint.circulation_pump, build_parameters=blueprint.build_parameters,
+        created_at=blueprint.created_at,
+    )
+
+
 class WorkflowConfigurationError(Exception):
     """Raised ONLY by `validate_config_structure()` -- a `config` dict
     that is structurally invalid for `run_workflow()`: a missing section,
@@ -408,7 +449,8 @@ def validate_config_structure(config: dict[str, Any]) -> None:
         GateTolerances.from_config_dict(config)
         GeothermalInjectionPolicy.from_config_dict(config)
         EconomicAssumptions.from_config_dict(config)
-        _build_blueprint_kwargs(config)
+        blueprint = build_default_blueprint(created_at=_default_now(), **_build_blueprint_kwargs(config))
+        _apply_workshop_negative_demo(blueprint, config)
     except _CONFIG_STRUCTURE_ERRORS as exc:
         raise WorkflowConfigurationError(f"config is structurally invalid: {exc!r}") from exc
 
@@ -495,6 +537,7 @@ def run_workflow(
     # ── Stage 3: build the synthetic-network blueprint ──
     try:
         blueprint = build_default_blueprint(created_at=workflow_created_at, **_build_blueprint_kwargs(config))
+        blueprint = _apply_workshop_negative_demo(blueprint, config)
     except ValueError as exc:
         stage_calls.append(StageCallRecord(
             order=len(stage_calls) + 1, stage_name="build_blueprint", status="failure",

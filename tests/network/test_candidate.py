@@ -669,6 +669,32 @@ def test_pressure_limit_exceeded():
     assert math.isclose(result.details["pressure_bar_abs"], 1.4962070042036113, rel_tol=1e-9)
 
 
+def test_workshop_negative_demo_candidate_fails_pressure_gate_deterministically():
+    """FAIL-002 unit test (see tests/workflow/test_workshop_negative_demo.py
+    for the end-to-end counterpart): the EXACT candidate spec published in
+    config/demo_assumptions_workshop_negative.json -- reused here verbatim,
+    not a fresh invention, so the two test layers stay in sync -- fails
+    PRESSURE_LIMIT_EXCEEDED on the UNCHANGED canonical blueprint/baseline/
+    tolerances (i.e. this is not a baseline-config trick like
+    test_pressure_limit_exceeded above; the excessive
+    surface_connection_length_m alone is what fails it)."""
+    bp = _blueprint()
+    baseline = _baseline(bp)
+    coupling_result = _golden_coupling_result()
+    negative_candidate = BlueprintCandidate(
+        id="C5_negative", label="Workshop negative demo: excessive connection length",
+        supply_junction="trunk_1", return_junction="ret_trunk_1", surface_connection_length_m=10000.0,
+    )
+    result = evaluate_candidate(
+        coupling_result, bp, negative_candidate, baseline,
+        injection_policy=_policy(), tolerances=_tolerances(),
+    )
+    assert isinstance(result, CandidateEvaluationFailure)
+    assert result.failure_code == CandidateFailureCode.PRESSURE_LIMIT_EXCEEDED
+    assert result.details["min_pressure_bar_abs"] == 1.5
+    assert result.details["pressure_bar_abs"] < 0.5  # a clear, non-borderline margin
+
+
 def test_mass_balance_failed_via_artificially_tight_tolerance():
     bp = _blueprint()
     baseline = _baseline(bp)

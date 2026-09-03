@@ -1,0 +1,269 @@
+{
+  "_meta": {
+    "schema_version": "0.9-workshop-negative-demo",
+    "status": "demo_assumption",
+    "forked_from": "config/demo_assumptions.json schema 0.9, byte-for-byte identical except this file's own two additions below",
+    "purpose": "FAIL-001 (R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md Workstream F, decision-register.md IMPL-009): a SEPARATE, clearly-named workshop/negative-test configuration. config/demo_assumptions.json's own canonical C1-C4 comparison is NEVER modified to force a failure -- this is a deliberately distinct scenario/config identity (using it produces a different run_id than the canonical config, which is expected and intended, not a silent scientific change).",
+    "created": "2026-08-19",
+    "revised": "2026-09-03",
+    "changelog": {
+      "0.9-workshop-negative-demo": "Forked from schema 0.9 to add candidates.include_workshop_negative_demo=true and candidates.workshop_negative_demo (C5_negative) -- see the candidates section's own notes below for the full rationale and measured margin. No other value in this file differs from config/demo_assumptions.json schema 0.9.",
+      "0.9": "T2.4A: added economics.dh_pump_efficiency (0.70, demo_assumption_pending_Q7) -- no DH circulation-pump efficiency value existed anywhere in this project or in pandapipesAI's own KWW-Technikkatalog costing module (checked directly: repos/pandapipesAI/pandapipesai/special_modules/costing/*.py contains only substation and CHP efficiency figures, a different equipment class). Needed to convert CirculationPumpResult.hydraulic_pumping_power_kw (main plant pump) and CandidateEvaluationResult.connection_pumping_power_kw (T2.3's geothermal injection pump) into electrical power before costing via opex.electricity_price -- both are HYDRAULIC-only figures by explicit, documented T2.2B/T2.3 design (no pump-efficiency assumption existed at that point). 0.70 is a generic wire-to-water placeholder for a circulation pump of this size class, order-of-magnitude cross-checked against (not sourced from) PyDoublet's own downhole pump surface_installations.pump.system_efficiency=0.61 -- a physically different pump (downhole ESP vs. surface DH circulator), never reused directly. Does NOT apply to doublet_pump_electric_power_kw, which PyDoublet already reports as electrical power using its own internal efficiency. Also clarifies (no numeric change) economics.capex.connection_pipe_per_m's cost basis: PAIRED-TRENCH metre, i.e. applied once per candidate using surface_connection_length_m as-is, not doubled for the two physical connection pipes (return + supply) -- matching how DH connection costs are conventionally quoted in practice (supply and return normally share one excavated trench). Both resolutions and their full reasoning are in the T2.4A plan (economic ledger and feasibility-first candidate ranking) and in src/r3chain_geothermal/economics/*.py's module docstrings.",
+      "0.8": "T2.3: added coupling_assumptions.minimum_auxiliary_circulation_fraction (0.01) -- NOT a claim about real plant operation, but a numerical-stability margin, justified by TWO independently-discovered reasons (both found and verified before this schema version was committed). Reason 1: pandapipes 0.14.0's CirculationPump.extract_results() contains a hard-coded, near-zero-tolerance check (numpy.isclose(mdot, 0), default atol=1e-8) that raises UserWarning on the converged solution whenever the main plant pump's own net mass flow would go numerically negative. Curtailing geothermal injection to exactly 100% of baseline demand empirically lands in that failing band for every candidate (verified: converges cleanly through 99.8% coverage; fails from 99.9% up); there is no bypass option in pipeflow()'s kwargs. Reason 2: sweeping minimum_auxiliary_circulation_fraction below 0.01 also independently triggers a genuine CONSUMER_TEMPERATURE_NOT_MET failure at consumer_1 for ALL FOUR candidates (measured: 0.003->19.54 K drop, 0.005->9.27 K, 0.0075->5.58 K, all exceeding gates.max_consumer_supply_drop_k=5.0 K; 0.01 itself passes with a thin ~0.8-1.0 K margin, ~17-20% of the gate's budget). Root cause (traced, not guessed): as the fraction shrinks, the main plant pump's own share of network flow shrinks toward zero, so the network's thermal field becomes dominated by the geothermal injection branch's own achieved outlet temperature, which undershoots the design 70 degC supply temperature because network/candidate.py::_compute_injected_mass_flow_kg_s() sizes injected mass flow assuming a fixed rise from the DESIGN return temperature (40 degC) rather than the network's actual solved return temperature (verified: ret_trunk_1 solves to 36.00 degC, not 40.00 degC, at the chosen 1% margin). Capping maximum curtailment at (1 - minimum_auxiliary_circulation_fraction) of baseline demand keeps the main pump's residual flow safely positive (empirically ~0.22 kg/s margin at 99% coverage) for both reasons simultaneously. Full evidence, the measured boundary tables, and a future-investigation path (self-consistent injection-temperature sizing) are in docs/technical-observations/pandapipes-circulation-pump-direction-check.md and src/r3chain_geothermal/network/candidate.py's module docstring, including the two alternatives that were tried and rejected (dropping the main pump entirely fails at the heat-transfer stage; treating near-100% coverage as a hard infeasibility was rejected because it would make the worked C1-C4 case report all four candidates infeasible). Also adds the PANDAPIPES_MINIMUM_AUXILIARY_FLOW_STABILIZATION_APPLIED warning code (network/candidate.py), appended to every CandidateEvaluationResult whose curtailment was bound by this margin rather than by true geothermal supply/demand surplus, and exposes the injection branch's actual vs. design inlet/outlet temperatures as typed KPIs (geothermal_injection_inlet_temperature_c / geothermal_injection_outlet_temperature_c and their _deviation_k fields) rather than leaving reason 2's evidence only in the technical-observation document.",
+      "0.7": "T2.2A: CORRECTED _meta.pressure_convention and gates._note, which incorrectly claimed pandapipes reports absolute pressure — verified directly against installed pandapipes 0.14.0 source and by experiment (tests/network/test_pressure_semantics.py) that pandapipes' res_junction.p_bar is GAUGE pressure. All _bar_abs config values are now converted to gauge before use and back to absolute for reporting (network/pressure.py); ATMOSPHERIC_PRESSURE_BAR=1.01325 matches pandapipes' own NORMAL_PRESSURE constant. Added network.geometry (single coordinate source for the synthetic four-consumer topology), network.pipe_sizing (trunk/branch DN, adiabatic-pipe simplification), network.circulation_pump (empirically-determined plift_bar), and populated candidates[].supply_junction/return_junction/surface_connection_length_m (previously null, pending this exact task).",
+      "0.6": "T2.1: relocated pydoublet.reinjection_temperature_c to coupling_assumptions.reinjection_minimum_temperature_c (same 35.0 degC value, unchanged meaning pending Q3 — moved because it is a coupling-boundary policy assumption the adapter consumes via max(T_reinj_min, T_DH_return+minimum_hx_approach_k), not a PyDoublet-contract fact); added coupling_assumptions.dh_water_specific_heat_capacity_j_kg_k (4180.0, standard reference value for water, kept in J/(kg*K) to match geothermal_brine_specific_heat_capacity_j_kg_k's unit convention) for the adapter's independent DH-mass-flow calculation.",
+      "0.5": "T1.5B second correction round: pydoublet.scenario_identity.scenario_identifier_fallback_policy corrected — the fallback is now a caller-supplied SourceProvenance.scenario_identifier (a real scenario identifier), never a source commit hash or format-hint string, which were never valid scenario identifiers. Also documents the new calculation_mode requirement (T1.5 supports only explicitly-confirmed deterministic results) and the model-level contract invariants now enforced on PyDoubletCouplingResult/PyDoubletCouplingFailure.",
+      "0.4": "T1.5B correction round: added pydoublet.scenario_identity (scenario-name/timestamp pointers and result-identifier convention — scenario identity must never be derived from a raw-result content hash), pydoublet.producer_wellhead_temperature.agreement_absolute_tolerance_c/agreement_relative_tolerance_fraction (temperature-agreement check now uses math.isclose with both an absolute-°C and a relative tolerance, not relative-only), and pydoublet.legacy_run_count_correction (documents the known actual_runs_completed==monte_carlo_runs legacy defect, its correction rule, and the ambiguous-case failure code). These are validation/audit-policy parameters, not physical or economic assumptions.",
+      "0.3": "pydoublet.producer_wellhead_temperature_source replaced by pydoublet.producer_wellhead_temperature (primary/legacy-fallback structured mapping) after the PyDoublet repair shipped an explicitly named field — see ADR-002.",
+      "0.2": "candidate connection lengths set to null pending Sprint-2 geometry; pressure fields switched to explicit absolute reference; economics values restructured with unit/currency/source_status."
+    },
+    "description": "Provisional configuration for the R3-CHAIN geothermal PoC. Every value here is a labelled demonstration assumption, NOT a claimed engineering standard. Each section carries _status and _question_refs pointing to docs/decisions/phase0-questions.md. Values are replaceable without code changes; changing one is an assumption change requiring approval (CLAUDE.md).",
+    "questions_document": "docs/decisions/phase0-questions.md",
+    "adr": "docs/decisions/ADR-001-geothermal-poc-scope.md",
+    "adr_temperature_source": "docs/decisions/ADR-002-pydoublet-temperature-source.md",
+    "source_plan_sections": ["8.2", "9.2", "10.1", "10.2", "11", "12.2"],
+    "pressure_convention": "All pressure fields in this project are ABSOLUTE pressures in bar (suffix _bar_abs) — this is a project-level reporting convention, not what pandapipes itself computes. VERIFIED (T2.2A, tests/network/test_pressure_semantics.py) against installed pandapipes 0.14.0: pandapipes' res_junction.p_bar is GAUGE pressure (relative to atmosphere), not absolute. Every _bar_abs config value is converted to gauge via network/pressure.py::to_gauge_bar() immediately before any pandapipes create_* call, and every res_junction.p_bar is converted back to absolute via to_absolute_bar() immediately before comparison against a _bar_abs gate or KPI reporting. Raw pandapipes gauge output must never be compared directly against a _bar_abs value anywhere in this project.",
+    "questions_without_config_impact": {
+      "Q9": "MCP server topology - governs architecture, recorded in ADR-001 D6/D7, no numeric config value.",
+      "Q10": "Hosting and PyDoublet licence - governs distribution, recorded in ADR-001 D7, no numeric config value."
+    }
+  },
+
+  "coupling_assumptions": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q3", "Q4", "Q5", "Q6"],
+    "dh_supply_temperature_c": 70.0,
+    "dh_return_temperature_c": 40.0,
+    "minimum_hx_approach_k": 5.0,
+    "hx_heat_delivery_factor": 0.98,
+    "reinjection_minimum_temperature_c": 35.0,
+    "reinjection_minimum_temperature_note": "Relocated from pydoublet.reinjection_temperature_c (T2.1) — same provisional value, unchanged meaning pending Q3 (is exit_temp_heat_exchanger a fixed input, a required reinjection limit, or a calculated result?). Used as the adapter's policy floor in max(T_reinj_min, T_DH_return+minimum_hx_approach_k) — independent of what any specific PyDoublet run itself assumed for its own heat-exchanger exit temperature (see coupling result field geothermal_brine_hx_outlet_temperature_c, a separate quantity used only for the raw energy-consistency check).",
+    "dh_water_specific_heat_capacity_j_kg_k": 4180.0,
+    "dh_water_specific_heat_capacity_note": "Standard reference specific heat capacity of water near typical DH operating temperatures; not tied to a pending phase-0 question. Used for district_heating_water_mass_flow_kg_s = deliverable_geothermal_heat_kw / (dh_water_specific_heat_capacity_j_kg_k/1000 * (dh_supply_temperature_c - dh_return_temperature_c)) — always computed independently from geothermal_brine_mass_flow_kg_s.",
+    "curtailment_allowed": true,
+    "auxiliary_policy": "cost_shortfall",
+    "auxiliary_policy_options": ["cost_shortfall", "strict_infeasible"],
+    "minimum_auxiliary_circulation_fraction": 0.01,
+    "minimum_auxiliary_circulation_fraction_note": "T2.3, added schema 0.8. A numerical-stability margin, not a physical-operation claim. Justified by TWO independently-discovered reasons, both required at this value: (1) keeps the main plant pump's converged net mass flow clear of pandapipes 0.14.0's CirculationPump.extract_results() zero-tolerance direction-change check; (2) keeps the network's thermal field sufficiently anchored by the main pump's own design-temperature flow that consumer_1 (the plant-nearest consumer) does not breach gates.max_consumer_supply_drop_k -- verified empirically infeasible below ~0.0075 for all four candidates. Full evidence, the measured boundary table, and a future-investigation path (a self-consistent injection-temperature sizing scheme that could reduce or remove reason 2) are in docs/technical-observations/pandapipes-circulation-pump-direction-check.md; see also this file's own changelog entry for 0.8 and network/candidate.py's module docstring ('Curtailment'). The injection branch's actual vs. design inlet/outlet temperatures (reason 2's evidence) are exposed as typed KPIs on every CandidateEvaluationResult -- geothermal_injection_inlet_temperature_c / geothermal_injection_outlet_temperature_c and their _deviation_k fields -- not only in this note or the technical-observation document.",
+    "velocity_limit_m_s": 1.5,
+    "pump_dp_limit_bar": 6.0,
+    "consumer_supply_drop_limit_k": 5.0,
+    "mass_balance_tolerance_fraction": 0.005,
+    "energy_balance_tolerance_fraction": 0.02
+  },
+
+  "pydoublet": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q1", "Q2", "Q3"],
+    "example_config": "examples/complete_example.json",
+    "energy_consistency_tolerance_fraction": 0.02,
+    "producer_wellhead_temperature": {
+      "path_format": "json_pointer",
+      "primary_field_path": "/simulation_results/producer_wellhead_temperature_c",
+      "legacy_fallback_field_path": "/simulation_results/temperature_profile_c/2",
+      "unit": "degC",
+      "mapping_status": "technically_resolved_from_source_pending_domain_owner_confirmation",
+      "evidence_pydoublet_commit": "4b29d1a0b37094543a436e33aba459558fbeb9eb",
+      "fallback_policy": "legacy_fallback_allowed_only_for_recognized_pristine_or_legacy_results; post_repair_result_missing_primary_field_is_a_validation_failure_not_a_fallback",
+      "audit_warning_code": "LEGACY_PYDOUBLET_TEMPERATURE_INDEX_FALLBACK",
+      "agreement_absolute_tolerance_c": 1e-6,
+      "agreement_relative_tolerance_fraction": 1e-9,
+      "agreement_tolerance_basis": "floating_point_safety_margin_not_a_physical_claim; primary and legacy fields are bit-identical by construction in every observed fixture. Checked via math.isclose(primary, legacy, rel_tol=agreement_relative_tolerance_fraction, abs_tol=agreement_absolute_tolerance_c) — the absolute tolerance is the binding term at this magnitude, the relative tolerance is supplementary.",
+      "question_ref": "Q2",
+      "note": "See ADR-002 for the full source evidence and policy. No longer an unsupported array-index assumption; Dr. Jan's domain-owner confirmation is still pending."
+    },
+    "reinjection_temperature_relocation_note": "reinjection_temperature_c moved to coupling_assumptions.reinjection_minimum_temperature_c as of schema 0.6 (T2.1) — see that field's note.",
+    "scenario_identity": {
+      "_note": "scenario_identifier identifies the SCENARIO (stable across repeated executions of the same PyDoublet configuration); result_identifier identifies THIS SPECIFIC raw result instance via its canonical content hash. Never conflate the two — the content hash changes on every execution because /metadata/timestamp changes, even when the scenario is identical.",
+      "path_format": "json_pointer",
+      "scenario_name_field_path": "/metadata/simulation_name",
+      "timestamp_field_path": "/metadata/timestamp",
+      "result_identifier_prefix": "pydoublet-result-",
+      "result_identifier_hash_length": 16,
+      "scenario_identifier_fallback_policy": "when the scenario-name field is absent, scenario_identifier is derived from a caller-supplied SourceProvenance.scenario_identifier — a real scenario identifier the caller explicitly asserts. It is never derived from source_pydoublet_commit, source_format_hint, or a raw-result content hash — none of those are scenario identifiers."
+    },
+    "calculation_mode_policy": {
+      "_note": "T1.5 supports only deterministic PyDoublet coupling results. SourceProvenance.calculation_mode (Literal['deterministic','monte_carlo','unknown'], default 'unknown') must be explicitly 'deterministic' for parsing to proceed at all — a known source commit or known format hint alone must never imply calculation mode.",
+      "supported_calculation_mode": "deterministic",
+      "unsupported_calculation_mode_failure_code": "PYDOUBLET_UNSUPPORTED_CALCULATION_MODE"
+    },
+    "legacy_run_count_correction": {
+      "_note": "Corrects the known PyDoublet legacy defect where actual_runs_completed was copy-pasted from monte_carlo_runs despite exactly one deterministic run executing.",
+      "applies_when": "trusted_pristine_or_legacy_provenance_confirmed_and_actual_runs_completed_equals_monte_carlo_runs",
+      "normalized_value": 1,
+      "transformation_code": "legacy_deterministic_run_count_metadata_correction",
+      "audit_warning_code": "LEGACY_PYDOUBLET_RUN_COUNT_METADATA_CORRECTED",
+      "ambiguous_case_failure_code": "PYDOUBLET_LEGACY_RUN_COUNT_AMBIGUOUS",
+      "ambiguous_case_policy": "if the reported actual_runs_completed does not exactly match monte_carlo_runs under trusted legacy provenance, calculation mode is treated as uncertain and validation fails rather than guessing the true run count."
+    }
+  },
+
+  "network": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q4", "Q11"],
+    "consumers": [
+      { "id": "consumer_1", "demand_kw": 650.0 },
+      { "id": "consumer_2", "demand_kw": 750.0 },
+      { "id": "consumer_3", "demand_kw": 850.0 },
+      { "id": "consumer_4", "demand_kw": 950.0 }
+    ],
+    "total_demand_kw": 3200.0,
+    "design_delta_t_k": 30.0,
+    "mirrored_return_network": true,
+    "p_supply_bar_abs": 6.0,
+    "min_pressure_bar_abs": 1.5,
+    "pressure_reference": "absolute",
+    "min_pressure_note": "demo_assumption pending confirmation (Q11). Plan §11 gives 1.0-1.5 bar absolute with 'confirm'; 1.5 adopted provisionally as the stricter bound.",
+    "fluid": "water",
+    "pipe_roughness_mm": 0.1,
+    "ground_temperature_c": 10.0,
+    "geometry": {
+      "_status": "demo_assumption",
+      "_question_refs": [],
+      "_note": "T2.2A. The single geometry source (also implemented as network/geometry.py's coordinate table, which this section must stay consistent with — see tests/network/test_geometry.py). A straight 1000 m trunk main in 4x250 m segments; consumers on +80 m perpendicular branches; candidates on the opposite side at varying offsets from the SAME trunk junction as the co-located consumer, so each candidate's label matches its real topological position. Not tied to any Phase-0 question — a PoC geometry choice, not a physical/economic assumption.",
+      "trunk_segment_length_m": 250.0,
+      "trunk_segment_count": 4,
+      "consumer_branch_offset_m": 80.0,
+      "candidate_site_offsets_m": { "C1": 50.0, "C2": 70.0, "C3": 90.0, "C4": 120.0 },
+      "trunk_to_consumer_attachment": { "consumer_1": "trunk_1", "consumer_2": "trunk_2", "consumer_3": "trunk_3", "consumer_4": "trunk_4" },
+      "trunk_to_candidate_attachment": { "C1": "trunk_1", "C2": "trunk_2", "C3": "trunk_3", "C4": "trunk_4" }
+    },
+    "pipe_sizing": {
+      "_status": "demo_assumption",
+      "_question_refs": [],
+      "_note": "T2.2A, corrected: DN150 originally gave a worst-case trunk velocity of ~1.48 m/s — 98% of gates.max_pipe_velocity_m_s=1.5, not a comfortable margin for a baseline meant to stay clear of a hard gate. Upsized to DN200: real solved max velocity (verified via pipeflow, not estimated) is 0.9854 m/s, ~66% of the gate (>30% headroom), now the CONSUMER branch at DN100 (consumer_4, 950 kW) rather than the trunk. Worst consumer branch (consumer_4, 950 kW) computes to ~0.99 m/s at DN100 — kept unchanged, already comfortable. pipe_heat_transfer_coefficient_w_per_m2k=0.0 is an explicit adiabatic-pipe SIMPLIFICATION, not a researched insulation U-value — network_heat_loss_kw is therefore 0 in this baseline.",
+      "trunk_pipe_dn_mm": 200.0,
+      "branch_pipe_dn_mm": 100.0,
+      "pipe_heat_transfer_coefficient_w_per_m2k": 0.0
+    },
+    "circulation_pump": {
+      "_status": "demo_assumption",
+      "_question_refs": [],
+      "_note": "T2.2A. pressure_lift_bar determined empirically at implementation time (a deterministic hydraulic sizing pass, not an independently invented number): the smallest tested value keeping absolute pressure comfortably above gates.min_pressure_bar_abs=1.5 everywhere (verified minimum 3.0 bar_abs at the return-side plant boundary) while staying well under gates.max_pump_dp_bar=6.0. At this value the baseline converges and every consumer receives its exact design qext_w/deltat_k. OPEN FOR T2.2B, EXPLICITLY UNRESOLVED: res_circ_pump_pressure.qext_w (~3.289 MW at these settings) exceeds the sum of consumer qext_w (3.2 MW) by ~2.8% under adiabatic pipes (pipe_heat_transfer_coefficient_w_per_m2k=0.0, so pipe heat loss cannot explain the gap) — likely temperature-dependent water cp between the hot/cold legs, not yet reconciled against gates.energy_balance_tolerance_fraction=0.02. T2.2A does NOT claim the baseline passes the energy-balance gate; no energy-balance KPI or gate is implemented in T2.2A at all (network/baseline.py does not exist yet) — this is T2.2B's first task before any pass/fail claim is made.",
+      "pressure_lift_bar": 3.0
+    },
+    "atmospheric_pressure_bar": 1.01325
+  },
+
+  "candidates": {
+    "_status": "demo_assumption",
+    "_question_refs": [],
+    "_note": "T2.2A: supply_junction/return_junction/surface_connection_length_m populated from the single geometry source (network.geometry / network/geometry.py, cross-checked by tests/network/test_geometry.py). connection_dn stays null: sizing the candidate's own surface-connection pipe requires its actual flow rate, which depends on the geothermal evaluation (a later, separately-approved task — T2.2 creates valid junction pairs without evaluating a geothermal connection). The map, the pandapipes connection pipes and the economic calculation must all consume the SAME single length value per candidate.",
+    "list": [
+      {
+        "id": "C1",
+        "label": "Near network head",
+        "surface_connection_length_m": 50.0,
+        "supply_junction": "trunk_1",
+        "return_junction": "ret_trunk_1",
+        "connection_dn": null,
+        "construction_multiplier": 1.0
+      },
+      {
+        "id": "C2",
+        "label": "Near central trunk",
+        "surface_connection_length_m": 70.0,
+        "supply_junction": "trunk_2",
+        "return_junction": "ret_trunk_2",
+        "connection_dn": null,
+        "construction_multiplier": 1.0
+      },
+      {
+        "id": "C3",
+        "label": "Near branch intersection",
+        "surface_connection_length_m": 90.0,
+        "supply_junction": "trunk_3",
+        "return_junction": "ret_trunk_3",
+        "connection_dn": null,
+        "construction_multiplier": 1.0
+      },
+      {
+        "id": "C4",
+        "label": "Near remote/end section",
+        "surface_connection_length_m": 120.0,
+        "supply_junction": "trunk_4",
+        "return_junction": "ret_trunk_4",
+        "connection_dn": null,
+        "construction_multiplier": 1.0
+      }
+    ],
+    "include_workshop_negative_demo": true,
+    "workshop_negative_demo": {
+      "id": "C5_negative",
+      "label": "Workshop negative demo: excessive connection length",
+      "supply_junction": "trunk_1",
+      "return_junction": "ret_trunk_1",
+      "surface_connection_length_m": 10000.0,
+      "_note": "FAIL-002: deliberately excessive connection length (200x C1's own 50.0 m, same junction pair as C1) chosen to fail EXACTLY ONE primary gate deterministically -- PRESSURE_LIMIT_EXCEEDED via ordinary pipe-friction pressure loss under the canonical fixed_design_temperature injection-sizing policy, not a random or solver-dependent outcome. Verified empirically (docs/issues/workshop-negative-demo.md): 5000.0 m still passes (min_pressure_bar_abs~1.62 against the 1.5 threshold, an uncomfortably thin ~8% margin -- deliberately NOT chosen, to avoid a borderline/fragile negative case); 10000.0 m fails with min_pressure_bar_abs~0.24, a clear, non-borderline margin (~84% below the gates.min_pressure_bar_abs=1.5 threshold)."
+    }
+  },
+
+  "gates": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q4", "Q5", "Q6", "Q11"],
+    "_note": "Hard technical gates, applied in plan §11 order before any economic ranking. All pressure fields use the ABSOLUTE reference (see _meta.pressure_convention). pandapipes itself reports GAUGE pressure (verified, T2.2A) — every pressure gate must be evaluated against network/pressure.py::to_absolute_bar(res_junction.p_bar), never against the raw gauge value directly.",
+    "max_pipe_velocity_m_s": 1.5,
+    "max_pump_dp_bar": 6.0,
+    "min_pressure_bar_abs": 1.5,
+    "pressure_reference": "absolute",
+    "max_consumer_supply_drop_k": 5.0,
+    "heat_delivery_tolerance_fraction": 0.01,
+    "mass_balance_tolerance_fraction": 0.005,
+    "energy_balance_tolerance_fraction": 0.02,
+    "pydoublet_energy_consistency_tolerance_fraction": 0.02,
+    "require_sequential_thermal_convergence": true
+  },
+
+  "economics": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q7", "Q8"],
+    "_note": "Indicative prototype boundary only. All values are placeholders pending Q7; the workshop report MUST label all absolute cost and LCOH results as ILLUSTRATIVE. Identical doublet CAPEX does not affect the RELATIVE candidate ranking only while all candidates reuse the same PyDoublet scenario and the same cost boundary; if either differs between candidates, this statement no longer holds.",
+    "interest_rate_real": {
+      "value": 0.03,
+      "unit": "fraction/a (real)",
+      "source_status": "demo_assumption_pending_Q7",
+      "source_note": "Generic placeholder; matches pandapipesAI cm.economics.interest_rate default (not a catalog fact)."
+    },
+    "lifetime_years": {
+      "doublet": { "value": 30.0, "unit": "a", "source_status": "demo_assumption_pending_Q7" },
+      "heat_exchanger": { "value": 20.0, "unit": "a", "source_status": "demo_assumption_pending_Q7" },
+      "connection_pipes": { "value": 30.0, "unit": "a", "source_status": "demo_assumption_pending_Q7" }
+    },
+    "capex": {
+      "doublet_capex": { "value": 8000000.0, "unit": "EUR", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7" },
+      "heat_exchanger_capex": { "value": 150000.0, "unit": "EUR", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7" },
+      "connection_pipe_per_m": { "value": 1000.0, "unit": "EUR/m", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7" },
+      "connection_pipe_per_m_note": "T2.4A, schema 0.9: resolved cost basis -- PAIRED-TRENCH metre. Applied ONCE per candidate as connection_pipe_per_m * surface_connection_length_m, NOT doubled for the two physical connection pipes (T2.3's return + supply connection pipes, same length, same DN). Matches conventional DH connection-cost quoting practice, where supply and return normally share one excavated trench and a single EUR/m figure already represents the whole twin-pipe connection. See economics/costing.py for the implementation."
+    },
+    "opex": {
+      "fixed_om_fraction_of_capex_per_a": { "value": 0.02, "unit": "fraction/a", "source_status": "demo_assumption_pending_Q7" },
+      "electricity_price": { "value": 0.25, "unit": "EUR/kWh", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7" },
+      "auxiliary_heat_price": { "value": 0.09, "unit": "EUR/kWh", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7" },
+      "auxiliary_heat_price_note": "T2.4A audit correction: this is a per-kWh delivered-heat PRICE assumption, NOT confirmed to be all-inclusive of an auxiliary plant's own CAPEX and fixed O&M. BaselineEconomicResult.indicative_lcoh_eur_per_kwh (the 100%-auxiliary prototype-boundary counterfactual) therefore EXCLUDES auxiliary-plant CAPEX/fixed-O&M unless this price is explicitly redefined as all-inclusive -- see BaselineEconomicResult.scope_caveat (economics/costing.py) for the full statement, always present on that result and never to be omitted when reporting it."
+    },
+    "annual_full_load_hours": {
+      "value": 5000.0,
+      "unit": "h/a",
+      "source_status": "demo_assumption_pending_Q7",
+      "note": "T2.4A: applied uniformly to convert every kW-rate KPI (geothermal injected heat, auxiliary heat, doublet-pump electricity, DH pumping electricity) into an annual kWh/EUR figure -- annual_kwh = power_kw * annual_full_load_hours. This is a stated modeling simplification: T2.2/T2.3 evaluate one static operating point, not an hourly time series (deliberately deferred, implementation plan Section 2 'Annual or transient PyDoublet output')."
+    },
+    "dh_pump_efficiency": {
+      "value": 0.70,
+      "unit": "fraction (dimensionless, wire-to-water efficiency)",
+      "source_status": "demo_assumption_pending_Q7",
+      "source_note": "T2.4A, schema 0.9. NO circulation-pump efficiency value exists anywhere in this project or in pandapipesAI's own KWW-Technikkatalog costing module (checked directly -- only substation and CHP efficiencies exist there, a different equipment class). Generic placeholder for a modern wire-to-water DH circulation pump of this size class -- order-of-magnitude cross-checked against (NOT sourced from) PyDoublet's own downhole pump surface_installations.pump.system_efficiency=0.61, a physically different pump (downhole ESP vs. surface DH circulator). Converts CirculationPumpResult.hydraulic_pumping_power_kw and CandidateEvaluationResult.connection_pumping_power_kw into electrical power for opex.electricity_price costing: electrical_kw = hydraulic_kw / dh_pump_efficiency. Does NOT apply to doublet_pump_electric_power_kw, which PyDoublet already reports as electrical power computed via its own internal efficiency."
+    },
+    "ranking_rule": {
+      "value": "feasibility_first_then_lowest_annualised_cost",
+      "source_status": "demo_assumption_pending_Q8"
+    },
+    "tie_breakers": {
+      "value": [
+        "lower_dh_pumping_electricity",
+        "shorter_connection_length",
+        "greater_technical_margin"
+      ],
+      "source_status": "demo_assumption_pending_Q8"
+    }
+  }
+}
