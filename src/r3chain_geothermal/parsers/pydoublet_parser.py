@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -36,7 +37,17 @@ from ..errors import (
     LEGACY_PYDOUBLET_TEMPERATURE_INDEX_FALLBACK,
     FailureCode,
 )
-from ..hashing import canonical_raw_result_json_bytes, canonical_raw_result_sha256
+from ..hashing import (
+    CANONICAL_RAW_HASH_ALGORITHM_VERSION,
+    canonical_raw_result_json_bytes,
+    canonical_raw_result_sha256,
+)
+
+_EXPECTED_HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+"""Format check for expected_raw_sha256 -- a local copy of the same
+64-lowercase-hex rule contracts/coupling_result.py's own (private,
+module-internal) _HEX64_PATTERN enforces, since expected_raw_sha256 is a
+plain function parameter here, not a Pydantic-validated field."""
 
 # Re-exported for backward compatibility with existing call sites/tests that
 # import these two names directly from this module.
@@ -339,6 +350,7 @@ def parse_pydoublet_result(
     raw_result: dict[str, Any] | None,
     *,
     source_provenance: SourceProvenance,
+    expected_raw_sha256: str | None = None,
 ) -> PyDoubletBoundaryResult:
     """Parse a raw PyDoublet result dict into a typed PyDoubletBoundaryResult.
 
@@ -350,6 +362,18 @@ def parse_pydoublet_result(
             source_provenance.calculation_mode must be explicitly
             "deterministic" for parsing to proceed at all -- T1.5 supports
             only deterministic coupling results.
+        expected_raw_sha256: Optional exact-hash pin
+            (docs/issues/mcp-input-provenance-enforcement.md, IP-001) --
+            lowercase 64-hex-character SHA-256. When supplied, MUST equal
+            `canonical_raw_result_sha256(raw_result)` as independently
+            computed by this function -- never trusted from the caller.
+            A mismatch fails PYDOUBLET_RAW_HASH_MISMATCH before any
+            scientific parsing. `None` (the default) preserves the exact
+            pre-existing behavior for every caller that omits it --
+            deliberately NOT a field on `source_provenance` (see
+            SourceProvenance's own docstring for why: it would silently
+            change source_provenance_sha256/bundle_scientific_sha256 for
+            every caller, not just ones using this feature).
 
     Returns:
         PyDoubletCouplingResult on success, PyDoubletCouplingFailure
@@ -430,6 +454,50 @@ def parse_pydoublet_result(
             },
             source_provenance=source_provenance,
             raw_result_sha256=None,
+            raw_result=None,
+            created_at=created_at,
+        )
+
+    # ── Exact input-provenance check (IP-003) -- BEFORE any scientific
+    # parsing or network calculation, and before the deterministic-mode
+    # gate below, so a mismatched input never even reaches that far. The
+    # server independently computed raw_hash above from the complete
+    # received object; it never trusts a client-supplied "actual" hash --
+    # expected_raw_sha256 is only ever compared against, never assigned
+    # from. ──
+    if expected_raw_sha256 is not None and not _EXPECTED_HASH_PATTERN.match(expected_raw_sha256):
+        return PyDoubletCouplingFailure(
+            failure_code=FailureCode.PYDOUBLET_RESULT_VALIDATION_FAILED,
+            message=(
+                f"expected_raw_sha256 {expected_raw_sha256!r} is not a valid 64-lowercase-hex-"
+                "character SHA-256 -- cannot be checked against the calculated raw-result hash."
+            ),
+            details={"expected_raw_sha256": expected_raw_sha256},
+            source_provenance=source_provenance,
+            raw_result_sha256=raw_hash,
+            raw_result=None,
+            created_at=created_at,
+        )
+
+    if expected_raw_sha256 is not None and expected_raw_sha256 != raw_hash:
+        return PyDoubletCouplingFailure(
+            failure_code=FailureCode.PYDOUBLET_RAW_HASH_MISMATCH,
+            message=(
+                f"expected_raw_sha256 {expected_raw_sha256!r} does not match "
+                f"the calculated canonical raw-result hash {raw_hash!r}."
+            ),
+            details={
+                "expected_raw_sha256": expected_raw_sha256,
+                "calculated_raw_sha256": raw_hash,
+                "canonicalization_algorithm": "canonical_raw_result_sha256",
+                "canonicalization_algorithm_version": CANONICAL_RAW_HASH_ALGORITHM_VERSION,
+            },
+            source_provenance=source_provenance,
+            raw_result_sha256=raw_hash,
+            # raw_result deliberately withheld here (unlike the successful
+            # path, which retains it) -- IP-006: a provenance mismatch must
+            # be diagnosable from the two hashes alone, without exposing
+            # the entire raw input the caller sent.
             raw_result=None,
             created_at=created_at,
         )

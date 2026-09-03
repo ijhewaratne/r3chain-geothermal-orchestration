@@ -418,12 +418,22 @@ def run_workflow(
     config: dict[str, Any],
     *,
     source_provenance: SourceProvenance,
+    expected_raw_sha256: str | None = None,
     now: Callable[[], datetime] = _default_now,
 ) -> WorkflowBoundaryResult:
     """Run the fixed 7-step sequence (module docstring) once. Never
     raises for any of the 4 stopping-failure conditions or any
     per-candidate outcome; the one exception it catches itself is
-    build_default_blueprint()'s ValueError on a malformed config."""
+    build_default_blueprint()'s ValueError on a malformed config.
+
+    expected_raw_sha256: forwarded verbatim to parse_pydoublet_result() --
+    see that function's own docstring and
+    docs/issues/mcp-input-provenance-enforcement.md (IP-001). `None` (the
+    default) is byte-for-byte behaviorally identical to this parameter not
+    existing at all -- deliberately a plain keyword parameter here, not a
+    SourceProvenance field, so it can never affect
+    source_provenance_sha256, run_id, or bundle_scientific_sha256 (see
+    SourceProvenance's own docstring for the measured reason why)."""
     workflow_created_at = now()
     input_sha256 = canonical_raw_result_sha256(pydoublet_raw_result)
     config_sha256 = canonical_raw_result_sha256(config)
@@ -448,7 +458,9 @@ def run_workflow(
         )
 
     # ── Stage 1: parse and validate the raw PyDoublet result ──
-    pydoublet_boundary = parse_pydoublet_result(pydoublet_raw_result, source_provenance=source_provenance)
+    pydoublet_boundary = parse_pydoublet_result(
+        pydoublet_raw_result, source_provenance=source_provenance, expected_raw_sha256=expected_raw_sha256,
+    )
     if isinstance(pydoublet_boundary, PyDoubletCouplingFailure):
         stage_calls.append(StageCallRecord(
             order=len(stage_calls) + 1, stage_name="parse_pydoublet_result", status="failure",

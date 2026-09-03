@@ -34,6 +34,14 @@ class FailureCode(str, Enum):
     source_provenance.calculation_mode was not explicitly "deterministic"
     (i.e. it was "monte_carlo" or "unknown") -- a source commit or known
     format hint alone must never imply deterministic mode."""
+    PYDOUBLET_RAW_HASH_MISMATCH = "PYDOUBLET_RAW_HASH_MISMATCH"
+    """docs/issues/mcp-input-provenance-enforcement.md (IP-003). Raised
+    before any scientific parsing when source_provenance.expected_raw_sha256
+    is supplied and does not equal canonical_raw_result_sha256(raw_result)
+    as independently computed by the server -- never trusting a
+    client-supplied "actual" hash. Prevents a valid but unintended,
+    truncated, retyped, or previously-preserved raw result from being
+    accepted as if it were the specific file the caller meant to send."""
 
 
 LEGACY_PYDOUBLET_TEMPERATURE_INDEX_FALLBACK = "LEGACY_PYDOUBLET_TEMPERATURE_INDEX_FALLBACK"

@@ -29,6 +29,7 @@ from typing import Any
 
 from .. import __version__ as PACKAGE_VERSION
 from ..contracts import PyDoubletCouplingFailure, PyDoubletCouplingResult, SourceProvenance
+from ..errors import FailureCode
 from ..hashing import canonical_raw_result_sha256
 from ..parsers.pydoublet_parser import parse_pydoublet_result
 from ..workflow import (
@@ -106,6 +107,12 @@ REJECTED with a structured ToolError, never silently clamped."""
 
 
 def _source_provenance_from_input(source_provenance: SourceProvenanceInput) -> SourceProvenance:
+    # Deliberately does NOT carry expected_raw_sha256 across -- that field
+    # lives only on the tool-facing SourceProvenanceInput, never on the
+    # contracts.SourceProvenance that gets embedded verbatim into the
+    # audit record (see SourceProvenance's own docstring). Callers below
+    # read source_provenance.expected_raw_sha256 directly and pass it as
+    # its own keyword argument to parse_pydoublet_result()/run_workflow().
     return SourceProvenance(
         source_pydoublet_commit=source_provenance.source_pydoublet_commit,
         source_format_hint=source_provenance.source_format_hint,
@@ -146,6 +153,7 @@ def validate_pydoublet_result(
 ) -> PyDoubletValidationSummary | ToolError:
     boundary = parse_pydoublet_result(
         pydoublet_raw_result, source_provenance=_source_provenance_from_input(source_provenance),
+        expected_raw_sha256=source_provenance.expected_raw_sha256,
     )
     if isinstance(boundary, PyDoubletCouplingFailure):
         return _pydoublet_validation_failure_to_tool_error(boundary)
@@ -235,9 +243,29 @@ def run_workflow_tool(
 
     def _factory() -> RunEntry:
         try:
-            result = run_workflow(pydoublet_raw_result, fixed_config, source_provenance=provenance)
+            result = run_workflow(
+                pydoublet_raw_result, fixed_config, source_provenance=provenance,
+                expected_raw_sha256=source_provenance.expected_raw_sha256,
+            )
         except Exception as exc:  # noqa: BLE001 -- the narrow "unexpected" boundary, module docstring
             raise _UnexpectedWorkflowError(str(exc)) from exc
+
+        if (
+            isinstance(result, WorkflowFailure)
+            and result.details.get("failure_code") == FailureCode.PYDOUBLET_RAW_HASH_MISMATCH.value
+        ):
+            # IP-006: no workflow artifact directory is ever created for a
+            # provenance mismatch -- deliberately NOT the same path as every
+            # other stopping failure (parse/HX/blueprint/baseline), which DO
+            # get an audited "stopped" bundle by design (CLAUDE.md: a
+            # stopped workflow is a valid, honest outcome). A hash mismatch
+            # is different in kind: it means the caller did not send the
+            # input they believed they were sending, so there is nothing
+            # here worth persisting as an audited scientific attempt. This
+            # raise happens BEFORE registry.new_artifact_dir() below, so
+            # zero filesystem footprint results -- verified directly in
+            # tests/mcp_server/test_tools.py.
+            raise _ProvenanceMismatchError(result.message, result.details)
 
         run_dir = registry.new_artifact_dir(run_id)
         extra_artifacts: dict[str, bytes] | None = None
@@ -267,6 +295,16 @@ def run_workflow_tool(
         return ToolError(
             code=ToolErrorCode.UNEXPECTED_ERROR, message=str(exc), stage="run_workflow", recoverable=False,
         )
+    except _ProvenanceMismatchError as exc:
+        # exc.details is the upstream WorkflowFailure.details verbatim --
+        # already {"failure_code": "PYDOUBLET_RAW_HASH_MISMATCH",
+        # "upstream_details": {...expected/calculated hashes...}}, the same
+        # shape _pydoublet_validation_failure_to_tool_error() uses for
+        # geo_validate_pydoublet_result, never paraphrased here.
+        return ToolError(
+            code=ToolErrorCode.PYDOUBLET_VALIDATION_FAILED, message=exc.message,
+            stage="input_provenance_validation", recoverable=True, details=exc.details,
+        )
 
     if reused:
         return entry.summary.model_copy(update={"reused_existing_run": True})
@@ -277,6 +315,23 @@ class _UnexpectedWorkflowError(Exception):
     """Internal-only signal from run_workflow_tool()'s factory to its own
     caller -- never returned or serialized; converted to a ToolError
     immediately at the one call site above."""
+
+
+class _ProvenanceMismatchError(Exception):
+    """Internal-only signal, exactly like _UnexpectedWorkflowError above,
+    for the one other condition run_workflow_tool()'s factory must raise
+    rather than return normally: an expected_raw_sha256 mismatch (IP-003),
+    which must never reach registry.new_artifact_dir()/write_workflow_
+    artifacts() (IP-006 -- no artifact directory for a mismatch). Raising
+    achieves this "for free" via get_or_run()'s own generic
+    except-cache-reraise handling (registry.py) -- no registry.py change
+    needed; every concurrent waiter for this run_id observes the same
+    re-raised failure, exactly as for _UnexpectedWorkflowError."""
+
+    def __init__(self, message: str, details: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.message = message
+        self.details = details
 
 
 # ── 4. geo_get_run_summary ──────────────────────────────────────────────────

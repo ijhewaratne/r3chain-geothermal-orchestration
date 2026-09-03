@@ -36,6 +36,12 @@ class SourceProvenanceInput(BaseModel):
     source_format_hint: Literal["known_pristine", "known_repaired", "unknown"]
     calculation_mode: Literal["deterministic", "monte_carlo", "unknown"]
     scenario_identifier: str | None = None
+    expected_raw_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
+    """Optional exact-hash pin (IP-001,
+    docs/issues/mcp-input-provenance-enforcement.md). Omitted by default --
+    every existing caller is unaffected. When supplied, must be a lowercase
+    64-hex-character SHA-256; mirrors contracts.SourceProvenance's own field
+    exactly, see that field's docstring for the full semantics."""
 
 
 class CapabilitiesSummary(BaseModel):

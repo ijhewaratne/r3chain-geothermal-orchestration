@@ -1,7 +1,11 @@
 # Issue: enforce input provenance for `geo_validate_pydoublet_result` / `geo_run_workflow`
 
-**Status**: specification only, not implemented. Discovered during T5.1C acceptance evidence
-(`docs/evidence/t5.1c/T5.1C-FINAL-ACCEPTANCE.md`, "Remaining open item").
+**Status**: **implemented** (2026-09-03, `feature/mcp-input-provenance-enforcement`,
+`R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md` Phase 1 / Workstream B). Originally discovered
+during T5.1C acceptance evidence (`docs/evidence/t5.1c/T5.1C-FINAL-ACCEPTANCE.md`, "Remaining open
+item"). See `docs/decisions/decision-register.md` (IMPL-001..IMPL-003) for the specific design
+decisions made while implementing this, and the test files listed under "Required test coverage"
+below (now real, passing tests, not a plan) for executable evidence.
 
 ## Problem
 
@@ -117,6 +121,27 @@ an inline payload) but should be designed together if file-path input is ever pr
 - **End-to-end**: a full `geo_run_workflow` call with a deliberately mismatched
   `expected_raw_sha256` against the canonical fixture fails at the provenance-check stage before
   any pandapipes computation runs (no wasted solve, no partial run persisted).
+
+## Implementation record (2026-09-03)
+
+- `SourceProvenance.expected_raw_sha256` (`src/r3chain_geothermal/contracts/coupling_result.py`),
+  `SourceProvenanceInput.expected_raw_sha256` (`src/r3chain_geothermal/mcp_server/schemas.py`).
+- `FailureCode.PYDOUBLET_RAW_HASH_MISMATCH` (`src/r3chain_geothermal/errors.py`).
+- The check itself: `src/r3chain_geothermal/parsers/pydoublet_parser.py`, immediately after the
+  raw hash is computed, before any scientific parsing.
+- `compute_source_provenance_sha256` (`src/r3chain_geothermal/workflow/core.py`) explicitly
+  excludes the new field from the run-identity hash — see IMPL-001 in the decision register for
+  why, and `tests/workflow/test_input_provenance_run_id.py` for the executable proof that the
+  golden reference `r3chain-run-93d41133daa11d1a` is reproduced unchanged.
+- `geo_run_workflow`'s "no artifact directory on mismatch" behavior:
+  `src/r3chain_geothermal/mcp_server/tools.py` (`_ProvenanceMismatchError`) — see IMPL-003.
+- New fixture: `config/demo_source_provenance_strict.json` (IP-005), pinning
+  `6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762`. The historical
+  `config/demo_source_provenance.json` is untouched.
+- Tests: `tests/parsers/test_input_provenance_enforcement.py`,
+  `tests/workflow/test_input_provenance_run_id.py`, `tests/mcp_server/test_input_provenance_mcp.py`
+  — covering every IP-006 bullet above, including the two real, previously-hand-transcribed T5.1C
+  evidence artifacts (Code session and Desktop Run 1) as the "drifted input" negative case.
 
 ## Explicit non-goal
 

@@ -1,0 +1,7 @@
+{
+  "source_pydoublet_commit": "0d649c3e6930d342dac03654d57776e134c2d0b9",
+  "source_format_hint": "known_repaired",
+  "calculation_mode": "deterministic",
+  "scenario_identifier": null,
+  "expected_raw_sha256": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762"
+}

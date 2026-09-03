@@ -1,0 +1,31 @@
+# Decision register
+
+Per `R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md` GOV-003. Tracks each named
+domain-owner decision (Q4–Q9, Q11, Dr. Jan's PyDoublet semantic confirmations) plus
+implementation-scoped decisions made during the prototype-completion work itself.
+Source of truth for the *original* Q1–Q11 phase-0 questions remains
+`docs/decisions/phase0-questions.md` — this register does not duplicate their full text,
+only tracks status and rerun implications at a glance.
+
+| ID | Owner | Status | Chosen value/policy | Source & date | Affected code/config | Rerun implications |
+|---|---|---|---|---|---|---|
+| Q1 | Jan | approved | No separate PyDoublet-MCP server; one R3-CHAIN server | Session-level, 2026-08-22; `docs/decisions/phase0-questions.md` Q1 | `src/r3chain_geothermal/mcp_server/*` | None — already reflected in shipped architecture |
+| Q2 | Jan | provisional | Existing producer-wellhead temperature mapping accepted for the PoC | Session-level, 2026-08-22; ADR-002 | `parsers/pydoublet_parser.py` | Dr. Jan's domain-owner sign-off still outstanding |
+| Q4 | Tanja | provisional | DH supply/return 70/40 °C | `config/demo_assumptions.json` | `adapter/`, `network/` | Changing requires a new config identity + sensitivity comparison (GOV-004) |
+| Q5 | Tanja | provisional | Minimum HX approach 5 K | `config/demo_assumptions.json` | `adapter/heat_exchanger.py` | Same as Q4 |
+| Q6 | Tanja | provisional | `cost_shortfall`/`auxiliary_supply`-style dispatch is the default; `strict_infeasible` now implemented as of this spec's Workstream E (not yet built as of this register's creation) | `docs/decisions/phase0-questions.md` Q6 | `network/candidate.py` | Policy choice itself still Tanja's; only the *implementation* of both modes is an engineering task, not a domain decision |
+| Q7 | Tanja/partners | provisional | Placeholder CAPEX/OPEX values, no approved price year/source | `config/demo_assumptions.json`, Appendix A | `economics/costing.py` | Every economic output remains labelled illustrative until resolved |
+| Q8 | Tanja | approved (session-level) | Feasibility-first, then lowest annualised cost | `docs/decisions/phase0-questions.md` Q8 | `economics/ranking.py` | Tie-break *order* still hard-coded, not yet config-driven (CFG-003) |
+| Q9 | Tanja/architecture | approved | One-server integration; six-tool MCP boundary preserved | `docs/decisions/phase0-questions.md` Q9; MCP-001 | `mcp_server/*` | None |
+| Q11 | Tanja/network owner | provisional | Minimum pressure 1.5 bar absolute | `docs/decisions/phase0-questions.md` Q11 | `network/pressure.py` | Numeric threshold still pending confirmation |
+
+## Implementation-scoped decisions (this spec's own workstreams, not domain-owner questions)
+
+| ID | Owner | Status | Chosen value/policy | Source & date | Affected code/config | Rerun implications |
+|---|---|---|---|---|---|---|
+| IMPL-001 | Claude (engineering choice, documented per GOV-004) | approved (superseded once mid-implementation, see below) | `expected_raw_sha256` is a **keyword-only parameter** of `parse_pydoublet_result()`/`run_workflow()`, **not** a field on `SourceProvenance` at all | `docs/issues/mcp-input-provenance-enforcement.md` IP-001 ("...or the validation request"); 2026-09-03 | `parsers/pydoublet_parser.py`, `workflow/core.py`, `mcp_server/schemas.py` (field stays only on the tool-facing `SourceProvenanceInput`), `mcp_server/tools.py` | **None whatsoever** — not just `run_id`, but `bundle_scientific_sha256` too, since `SourceProvenance` (embedded verbatim in the audit) never changes shape. **First attempt superseded**: adding the field directly to `SourceProvenance` (excluding it only from `compute_source_provenance_sha256`) was tried first, kept `run_id` stable, but still changed `bundle_scientific_sha256` for every caller (an explicit `null` in the embedded audit's `source_provenance` still changes the canonical JSON bytes `normalize_for_scientific_hash` hashes) — caught by the full test suite (`tests/mcp_client/test_wheel_install.py`, `tests/mcp_server/test_mcp_protocol.py` both failed, before/after diff: `90f52416...` → `7ac12adb...`, identical between both failing tests confirming CLI/MCP parity was never broken, only the golden literal was stale). Rejected per GOV-004 rather than approved as a rebaseline; the parameter-not-field redesign avoids the problem instead of requiring one. |
+| IMPL-002 | Claude | approved | Provenance mismatch reuses the existing `ToolErrorCode.PYDOUBLET_VALIDATION_FAILED` MCP-level code (not a new 7th code) with `FailureCode.PYDOUBLET_RAW_HASH_MISMATCH` nested in `details.failure_code` | `docs/issues/mcp-input-provenance-enforcement.md` IP-003, 2026-09-03 | `mcp_server/errors.py` (unchanged — still exactly 6 codes), `errors.py` (new core `FailureCode` value) | None — `tests/mcp_server/test_errors.py`'s "exactly six codes" invariant stays true |
+| IMPL-003 | Claude | approved | A hash mismatch on `geo_run_workflow` never creates a run directory (unlike every other stopping failure, which does get an audited "stopped" bundle) | `docs/issues/mcp-input-provenance-enforcement.md` IP-006, 2026-09-03 | `mcp_server/tools.py` (`_ProvenanceMismatchError`) | None — new code path only |
+
+Dr. Jan's outstanding PyDoublet semantic confirmations (Q2/Q3 in `phase0-questions.md`) remain
+unresolved by this work and are not claimed to be resolved by it.

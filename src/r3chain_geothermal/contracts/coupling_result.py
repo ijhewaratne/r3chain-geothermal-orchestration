@@ -92,6 +92,26 @@ class SourceProvenance(BaseModel):
             /metadata/simulation_name field. Never a source commit hash or
             format-hint string -- see parsers/pydoublet_parser.py::
             _resolve_scenario_identifier.
+
+    Note (docs/issues/mcp-input-provenance-enforcement.md, IP-001):
+    exact-hash provenance enforcement ("expected_raw_sha256") is
+    deliberately NOT a field on this model. SourceProvenance is embedded
+    verbatim into WorkflowAuditRecord and therefore into every
+    workflow_result.json/audit.json's `normalize_for_scientific_hash`-based
+    bundle_scientific_sha256 -- adding any new field here, even an
+    optional one defaulting to `None`, changes that hash for EVERY
+    existing caller (an explicit `null` still changes the canonical JSON
+    bytes), which would have silently rebaselined
+    tests/mcp_client/test_wheel_install.py and
+    tests/mcp_server/test_mcp_protocol.py's pinned
+    `bundle_scientific_sha256` values with no scientific content actually
+    changing (confirmed by directly attempting this design first; see
+    docs/decisions/decision-register.md IMPL-001 for the measured before/
+    after). `expected_raw_sha256` is instead a keyword-only parameter on
+    `parse_pydoublet_result()`/`run_workflow()` themselves (IP-001's own
+    "or the validation request" alternative) -- a pure request-time gate,
+    never audited state, so it cannot affect any hash of previously-shaped
+    output.
     """
     model_config = ConfigDict(frozen=True, extra="forbid")
 

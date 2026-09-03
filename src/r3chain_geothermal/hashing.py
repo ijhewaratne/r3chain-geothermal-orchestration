@@ -10,6 +10,15 @@ import hashlib
 import json
 from typing import Any
 
+CANONICAL_RAW_HASH_ALGORITHM_VERSION = "1.0.0"
+"""Versioned independently of SCIENTIFIC_NORMALIZATION_RULE_VERSION below --
+this identifies canonical_raw_result_sha256()'s own encoding rule (sorted
+keys, no insignificant whitespace, UTF-8, non-finite numbers rejected). A
+future change to THIS encoding (e.g. adopting RFC 8785 numeric
+canonicalization) must bump this version, so any caller recording it
+(docs/issues/mcp-input-provenance-enforcement.md, IP-004) can tell which
+canonicalization rule an expected_raw_sha256 pin was computed under."""
+
 
 def canonical_raw_result_json_bytes(raw_result: dict[str, Any]) -> bytes:
     """Strict canonical-JSON encoding of raw_result, as UTF-8 bytes.
