@@ -89,12 +89,10 @@ import pandapipes
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from ..contracts import CouplingWarning
+from . import candidate as _candidate_module
 from .blueprint import BlueprintCandidate, NetworkBlueprint
 from .builder import build_pandapipes_net
 from .candidate import (
-    SELF_CONSISTENT_FLOW_MASS_FLOW_RESIDUAL_TOLERANCE_FRACTION,
-    SELF_CONSISTENT_FLOW_MAX_ITERATIONS,
-    SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K,
     CandidateFailureCode,
     SelfConsistentFlowDiagnostics,
     _add_geothermal_injection_branch,
@@ -103,6 +101,17 @@ from .candidate import (
     _solve_self_consistent_injection,
 )
 from .pressure import to_absolute_bar
+
+# `_candidate_module` (a module reference, not `from .candidate import NAME`)
+# is used for these three tolerance/iteration constants specifically so that
+# a test monkeypatching `network.candidate.SELF_CONSISTENT_FLOW_MAX_ITERATIONS`
+# (etc.) -- the same constant `_solve_self_consistent_injection` itself reads
+# at call time, since it is DEFINED in that module -- is also seen here. A
+# plain `from .candidate import SELF_CONSISTENT_FLOW_MAX_ITERATIONS` would
+# instead copy the value at THIS module's import time into a separate name,
+# permanently unaffected by any later monkeypatch of the source module's
+# attribute -- exactly the kind of silent divergence DLT-006 (parity) exists
+# to prevent.
 
 DOUBLET_COMPONENT_CONTRACT_SCHEMA_VERSION: Literal["1.0.0"] = "1.0.0"
 """Versioned independently of every other layer's own contract schema."""
@@ -207,9 +216,13 @@ class DoubletOperatingPolicy(BaseModel):
 
     accepted_heat_kw: float
     injection_sizing_policy: Literal["fixed_design_temperature", "self_consistent"] = "fixed_design_temperature"
-    outlet_temperature_tolerance_k: float = SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K
-    mass_flow_residual_tolerance_fraction: float = SELF_CONSISTENT_FLOW_MASS_FLOW_RESIDUAL_TOLERANCE_FRACTION
-    max_iterations: int = SELF_CONSISTENT_FLOW_MAX_ITERATIONS
+    outlet_temperature_tolerance_k: float = Field(
+        default_factory=lambda: _candidate_module.SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K
+    )
+    mass_flow_residual_tolerance_fraction: float = Field(
+        default_factory=lambda: _candidate_module.SELF_CONSISTENT_FLOW_MASS_FLOW_RESIDUAL_TOLERANCE_FRACTION
+    )
+    max_iterations: int = Field(default_factory=lambda: _candidate_module.SELF_CONSISTENT_FLOW_MAX_ITERATIONS)
     """Defaults reuse network/candidate.py's own named constants exactly --
     this component does not (yet) support overriding the solver's
     tolerances independently of network/candidate.py's own values; the
@@ -218,23 +231,32 @@ class DoubletOperatingPolicy(BaseModel):
     a currently-exercised extension point. Overriding them would call
     _solve_self_consistent_injection() with different module-level
     constants than the ones actually used -- not supported by this
-    version; validated below."""
+    version; validated below.
+
+    `default_factory` (not a plain `= _candidate_module.X` default), and the
+    validator below reading `_candidate_module.X` at validation time rather
+    than a copied module-level name, both exist so this stays correct even
+    when a test monkeypatches network.candidate's own constants -- see the
+    module-level comment by the `_candidate_module` import."""
 
     @model_validator(mode="after")
     def _validate(self) -> "DoubletOperatingPolicy":
         if self.accepted_heat_kw <= 0:
             raise ValueError("accepted_heat_kw must be > 0")
-        if self.outlet_temperature_tolerance_k != SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K:
+        if self.outlet_temperature_tolerance_k != _candidate_module.SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K:
             raise ValueError(
                 "outlet_temperature_tolerance_k must equal "
                 "network.candidate.SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K in this version"
             )
-        if self.mass_flow_residual_tolerance_fraction != SELF_CONSISTENT_FLOW_MASS_FLOW_RESIDUAL_TOLERANCE_FRACTION:
+        if (
+            self.mass_flow_residual_tolerance_fraction
+            != _candidate_module.SELF_CONSISTENT_FLOW_MASS_FLOW_RESIDUAL_TOLERANCE_FRACTION
+        ):
             raise ValueError(
                 "mass_flow_residual_tolerance_fraction must equal "
                 "network.candidate.SELF_CONSISTENT_FLOW_MASS_FLOW_RESIDUAL_TOLERANCE_FRACTION in this version"
             )
-        if self.max_iterations != SELF_CONSISTENT_FLOW_MAX_ITERATIONS:
+        if self.max_iterations != _candidate_module.SELF_CONSISTENT_FLOW_MAX_ITERATIONS:
             raise ValueError(
                 "max_iterations must equal network.candidate.SELF_CONSISTENT_FLOW_MAX_ITERATIONS in this version"
             )
@@ -384,13 +406,39 @@ def build_and_evaluate_geothermal_doublet(
     connection: DistrictHeatingConnectionSpec,
     policy: DoubletOperatingPolicy,
 ) -> GeothermalDoubletBoundaryResult:
-    """DLT-001's reusable construction+extraction entry point.
+    """DLT-001's reusable construction+extraction entry point -- the
+    typed-result-only convenience wrapper for standalone/library callers
+    who do not need the underlying solved `pandapipesNet` (most callers).
+    `network/candidate.py::evaluate_candidate()` -- the PRIMARY workflow's
+    own evaluator -- uses `build_and_evaluate_geothermal_doublet_with_net()`
+    below instead, precisely because it DOES still need the net (for its
+    own whole-network gates: consumer temperatures, every junction's
+    pressure, every pipe's velocity, mass/energy balance -- none of which
+    are this component's own concern, module docstring, "Scope
+    boundary"). Both functions share the exact same implementation; this
+    one simply discards the net.
 
     DLT-004 (isolation/idempotence): builds a FRESH net from `blueprint`
     on every call (never a shared/cached net, never mutating `blueprint`
     itself -- it is a frozen Pydantic model regardless); repeated calls
     with identical inputs produce identical scientific outputs (see
-    tests/network/test_doublet_component.py's own determinism test).
+    tests/network/test_doublet_component.py's own determinism test)."""
+    _net, boundary_result = build_and_evaluate_geothermal_doublet_with_net(blueprint, spec, boundary, connection, policy)
+    return boundary_result
+
+
+def build_and_evaluate_geothermal_doublet_with_net(
+    blueprint: NetworkBlueprint,
+    spec: GeothermalDoubletSpec,
+    boundary: HeatExchangerBoundary,
+    connection: DistrictHeatingConnectionSpec,
+    policy: DoubletOperatingPolicy,
+) -> tuple["pandapipes.pandapipesNet | None", GeothermalDoubletBoundaryResult]:
+    """The actual construction+extraction implementation, additionally
+    returning the solved `pandapipesNet` (or `None` on a failure that
+    never produced a solved net) for a caller that needs to keep
+    extracting whole-network KPIs from the SAME solve this component
+    already performed, rather than re-solving.
 
     Delegates topology construction and (when
     policy.injection_sizing_policy=="self_consistent") flow-sizing to
@@ -417,17 +465,17 @@ def build_and_evaluate_geothermal_doublet(
                 blueprint, candidate, policy.accepted_heat_kw, dh_supply_c, dh_return_c, cp_j_kg_k,
             )
         except pandapipes.PipeflowNotConverged as exc:
-            return _failure(
+            return None, _failure(
                 CandidateFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED,
                 f"pandapipes pipeflow(mode='sequential') did not converge: {exc}", {},
             )
         except UserWarning as exc:
-            return _failure(
+            return None, _failure(
                 CandidateFailureCode.GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT,
                 f"pandapipes raised UserWarning during pipeflow(): {exc}", {},
             )
         except _SelfConsistentFlowNotConverged as exc:
-            return _failure(
+            return None, _failure(
                 CandidateFailureCode.SELF_CONSISTENT_FLOW_NOT_CONVERGED, str(exc),
                 {
                     "iteration_count": exc.iteration_count, "max_iterations": policy.max_iterations,
@@ -445,12 +493,12 @@ def build_and_evaluate_geothermal_doublet(
         try:
             pandapipes.pipeflow(net, mode="sequential")
         except pandapipes.PipeflowNotConverged as exc:
-            return _failure(
+            return None, _failure(
                 CandidateFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED,
                 f"pandapipes pipeflow(mode='sequential') did not converge: {exc}", {},
             )
         except UserWarning as exc:
-            return _failure(
+            return None, _failure(
                 CandidateFailureCode.GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT,
                 f"pandapipes raised UserWarning during pipeflow(): {exc}", {},
             )
@@ -490,7 +538,7 @@ def build_and_evaluate_geothermal_doublet(
         pump_name=refs["pump"], heat_consumer_name=refs["heat_consumer"],
     )
 
-    return GeothermalDoubletResult(
+    return net, GeothermalDoubletResult(
         available_geothermal_heat_kw=boundary.deliverable_geothermal_heat_kw,
         accepted_heat_kw=policy.accepted_heat_kw,
         curtailed_heat_kw=boundary.deliverable_geothermal_heat_kw - policy.accepted_heat_kw,

@@ -54,6 +54,7 @@ from .doublet_component import (
     GeothermalDoubletSpec,
     HeatExchangerBoundary,
     build_and_evaluate_geothermal_doublet,
+    build_and_evaluate_geothermal_doublet_with_net,
     parse_doublet_component_result_json,
 )
 from .candidate_generation import (
@@ -132,6 +133,7 @@ __all__ = [
     "NetworkBlueprint",
     "NetworkBuildParameters",
     "build_and_evaluate_geothermal_doublet",
+    "build_and_evaluate_geothermal_doublet_with_net",
     "build_default_blueprint",
     "build_pandapipes_net",
     "eligible_attachments",

@@ -1134,71 +1134,55 @@ def evaluate_candidate(
             affects=["geothermal_injected_heat_kw", "geothermal_curtailed_heat_kw"],
         ))
 
-    design_initial_mass_flow_kg_s = _compute_injected_mass_flow_kg_s(
-        injected_kw,
-        coupling_result.assumptions.dh_supply_temperature_c,
-        coupling_result.assumptions.dh_return_temperature_c,
-        coupling_result.assumptions.dh_water_specific_heat_capacity_j_kg_k,
+    # ── Delegate topology construction, flow-sizing and the solve itself to
+    # network/doublet_component.py (Phase 3.1, R3CHAIN_GEOTHERMAL_PROTOTYPE_
+    # COMPLETION_SPEC.md): this evaluator no longer duplicates that physics
+    # inline -- it is the ONE authoritative implementation, used by both
+    # this primary workflow and any standalone/library caller of
+    # build_and_evaluate_geothermal_doublet[_with_net](). Imported locally
+    # to break the module cycle (doublet_component.py itself imports this
+    # module's own private helpers at its top level). ──
+    from .doublet_component import (
+        DistrictHeatingConnectionSpec,
+        DoubletOperatingPolicy,
+        GeothermalDoubletFailure,
+        GeothermalDoubletSpec,
+        HeatExchangerBoundary,
+        build_and_evaluate_geothermal_doublet_with_net,
     )
 
-    self_consistent_enabled = injection_policy.injection_sizing_policy == "self_consistent"
-    if self_consistent_enabled:
-        try:
-            net, refs, flow_iteration_count, injected_mass_flow_kg_s = _solve_self_consistent_injection(
-                blueprint, candidate, injected_kw,
-                coupling_result.assumptions.dh_supply_temperature_c,
-                coupling_result.assumptions.dh_return_temperature_c,
-                coupling_result.assumptions.dh_water_specific_heat_capacity_j_kg_k,
-            )
-        except pandapipes.PipeflowNotConverged as exc:
-            return CandidateEvaluationFailure(
-                failure_code=CandidateFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED,
-                message=f"pandapipes pipeflow(mode='sequential') did not converge: {exc}",
-                details={}, candidate=candidate, coupling_input=coupling_result, created_at=created_at,
-            )
-        except UserWarning as exc:
-            return CandidateEvaluationFailure(
-                failure_code=CandidateFailureCode.GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT,
-                message=f"pandapipes raised UserWarning during pipeflow() (see module docstring, 'Curtailment'): {exc}",
-                details={}, candidate=candidate, coupling_input=coupling_result, created_at=created_at,
-            )
-        except _SelfConsistentFlowNotConverged as exc:
-            return CandidateEvaluationFailure(
-                failure_code=CandidateFailureCode.SELF_CONSISTENT_FLOW_NOT_CONVERGED,
-                message=str(exc),
-                details={
-                    "iteration_count": exc.iteration_count,
-                    "max_iterations": SELF_CONSISTENT_FLOW_MAX_ITERATIONS,
-                    "final_mass_flow_kg_s": exc.final_mass_flow_kg_s,
-                    "final_outlet_temperature_deviation_k": exc.final_outlet_temperature_deviation_k,
-                    "outlet_temperature_tolerance_k": SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K,
-                    "mass_flow_residual_tolerance_fraction": SELF_CONSISTENT_FLOW_MASS_FLOW_RESIDUAL_TOLERANCE_FRACTION,
-                },
-                candidate=candidate, coupling_input=coupling_result, created_at=created_at,
-            )
-    else:
-        injected_mass_flow_kg_s = design_initial_mass_flow_kg_s
-        flow_iteration_count = 1
-        net = build_pandapipes_net(blueprint)
-        refs = _add_geothermal_injection_branch(
-            net, candidate, blueprint, injected_kw, injected_mass_flow_kg_s,
-            coupling_result.assumptions.dh_supply_temperature_c,
-            coupling_result.assumptions.dh_return_temperature_c,
+    coupling_input = coupling_result.coupling_input
+    doublet_spec = GeothermalDoubletSpec(
+        producer_wellhead_temperature_c=coupling_input.producer_wellhead_temperature_c.value,
+        brine_mass_flow_kg_s=coupling_input.geothermal_brine_mass_flow_kg_s.value,
+        brine_specific_heat_capacity_j_kg_k=coupling_input.geothermal_brine_specific_heat_capacity_j_kg_k.value,
+        raw_geothermal_thermal_power_kw=coupling_input.raw_geothermal_thermal_power_kw.value,
+        minimum_reinjection_temperature_c=coupling_result.assumptions.reinjection_minimum_temperature_c,
+        doublet_pump_electric_power_kw=coupling_input.doublet_pump_electric_power_kw.value,
+    )
+    doublet_boundary = HeatExchangerBoundary(
+        minimum_hx_approach_k=coupling_result.assumptions.minimum_hx_approach_k,
+        hx_heat_delivery_factor=coupling_result.assumptions.hx_heat_delivery_factor,
+        deliverable_geothermal_heat_kw=coupling_result.deliverable_geothermal_heat_kw.value,
+    )
+    doublet_connection = DistrictHeatingConnectionSpec(
+        candidate=candidate,
+        dh_supply_temperature_c=coupling_result.assumptions.dh_supply_temperature_c,
+        dh_return_temperature_c=coupling_result.assumptions.dh_return_temperature_c,
+        dh_water_specific_heat_capacity_j_kg_k=coupling_result.assumptions.dh_water_specific_heat_capacity_j_kg_k,
+    )
+    doublet_policy = DoubletOperatingPolicy(
+        accepted_heat_kw=injected_kw, injection_sizing_policy=injection_policy.injection_sizing_policy,
+    )
+
+    net, doublet_result = build_and_evaluate_geothermal_doublet_with_net(
+        blueprint, doublet_spec, doublet_boundary, doublet_connection, doublet_policy,
+    )
+    if isinstance(doublet_result, GeothermalDoubletFailure):
+        return CandidateEvaluationFailure(
+            failure_code=doublet_result.failure_code, message=doublet_result.message, details=doublet_result.details,
+            candidate=candidate, coupling_input=coupling_result, created_at=created_at,
         )
-        try:
-            pandapipes.pipeflow(net, mode="sequential")
-        except pandapipes.PipeflowNotConverged as exc:
-            return CandidateEvaluationFailure(
-                failure_code=CandidateFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED,
-                message=f"pandapipes pipeflow(mode='sequential') did not converge: {exc}",
-                details={}, candidate=candidate, coupling_input=coupling_result, created_at=created_at,
-            )
-        except UserWarning as exc:
-            return CandidateEvaluationFailure(
-                failure_code=CandidateFailureCode.GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT,
-                message=f"pandapipes raised UserWarning during pipeflow() (see module docstring, 'Curtailment'): {exc}",
-                details={}, candidate=candidate, coupling_input=coupling_result, created_at=created_at,
-            )
 
     if not bool(net.converged):
         # Defensive: verified unreachable in pandapipes 0.14.0 (T2.2B),
@@ -1243,7 +1227,6 @@ def evaluate_candidate(
     junction_idx = {name: idx for idx, name in enumerate(net.junction["name"])}
     pipe_idx = {name: idx for idx, name in enumerate(net.pipe["name"])}
     hc_idx = {name: idx for idx, name in enumerate(net.heat_consumer["name"])}
-    pump_idx = {name: idx for idx, name in enumerate(net.pump["name"])}
 
     # ── Per-consumer KPIs: ORIGINAL blueprint consumers only -- the geo
     # injection's own heat_consumer is a SOURCE, never mixed in here. ──
@@ -1303,17 +1286,15 @@ def evaluate_candidate(
         hydraulic_pumping_power_kw=main_pump_hydraulic_power_kw,
     )
 
-    # ── Geothermal injection branch's own solved results ──
-    geo_hc_row = net.res_heat_consumer.iloc[hc_idx[refs["heat_consumer"]]]
-    geo_mass_flow_kg_s = abs(geo_hc_row["mdot_from_kg_per_s"])
-    geo_pump_row = net.res_pump.iloc[pump_idx[refs["pump"]]]
-    connection_pumping_power_kw = float(geo_pump_row["compr_power_mw"]) * 1000.0
-    connection_pressure_drop_bar = (
-        (junction_pressures_bar_abs[candidate.return_junction] - junction_pressures_bar_abs[refs["geo_return"]])
-        + (junction_pressures_bar_abs[refs["geo_supply"]] - junction_pressures_bar_abs[candidate.supply_junction])
-    )
+    # ── Geothermal injection branch's own solved results -- read directly
+    # off `doublet_result` (the same solve; no re-extraction, no duplicate
+    # computation) rather than re-deriving them from `net` a second time. ──
+    handles = doublet_result.handles
+    geo_mass_flow_kg_s = doublet_result.district_heating_water_mass_flow_kg_s
+    connection_pumping_power_kw = doublet_result.circulation_pump_hydraulic_power_kw
+    connection_pressure_drop_bar = doublet_result.connection_differential_pressure_bar
     geo_injection_pump_pressure_lift_bar = (
-        junction_pressures_bar_abs[refs["geo_mid"]] - junction_pressures_bar_abs[refs["geo_return"]]
+        junction_pressures_bar_abs[handles.mid_junction_name] - junction_pressures_bar_abs[handles.return_junction_name]
     )
     """Absolute-pressure difference across the geothermal injection pump
     (geo_mid minus geo_return) -- the ABSOLUTE-reference difference equals
@@ -1324,10 +1305,10 @@ def evaluate_candidate(
     # ── Actual vs. design temperatures at the injection branch (module
     # docstring, "Curtailment" -- exposed as typed KPIs, not left only in
     # the technical-observation document). ──
-    geo_inlet_actual_c = float(geo_hc_row["t_from_k"]) - 273.15
-    geo_inlet_design_c = coupling_result.assumptions.dh_return_temperature_c
-    geo_outlet_actual_c = float(geo_hc_row["t_outlet_k"]) - 273.15
-    geo_outlet_design_c = coupling_result.assumptions.dh_supply_temperature_c
+    geo_inlet_actual_c = doublet_result.inlet_temperature_c
+    geo_inlet_design_c = doublet_result.inlet_design_temperature_c
+    geo_outlet_actual_c = doublet_result.outlet_temperature_c
+    geo_outlet_design_c = doublet_result.outlet_design_temperature_c
 
     # ── Pump differential-pressure gate (CFG-003/CFG-004 gate 11): applies
     # to BOTH the main plant pump and the geothermal injection pump. ──
@@ -1346,7 +1327,7 @@ def evaluate_candidate(
             failure_code=CandidateFailureCode.PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED,
             message="geothermal injection pump pressure lift exceeds max_pump_dp_bar.",
             details={
-                "pump": refs["pump"], "pressure_lift_bar": geo_injection_pump_pressure_lift_bar,
+                "pump": handles.pump_name, "pressure_lift_bar": geo_injection_pump_pressure_lift_bar,
                 "max_pump_dp_bar": tolerances.max_pump_dp_bar,
             },
             candidate=candidate, coupling_input=coupling_result, created_at=created_at,
@@ -1397,6 +1378,7 @@ def evaluate_candidate(
 
     # ── Energy balance: COMBINED (main pump + geothermal injection)
     # physical enthalpy -- true integral cp(T) dT, same method as T2.2B. ──
+    geo_hc_row = net.res_heat_consumer.iloc[hc_idx[handles.heat_consumer_name]]
     main_pump_physical_w = _physical_enthalpy_delta_w(fluid, main_pump_mass_flow_kg_s, pump_row["t_outlet_k"], pump_row["t_from_k"])
     geo_physical_w = _physical_enthalpy_delta_w(fluid, geo_mass_flow_kg_s, geo_hc_row["t_outlet_k"], geo_hc_row["t_from_k"])
     consumer_physical_w = sum(
@@ -1450,14 +1432,9 @@ def evaluate_candidate(
         max_velocity_delta_m_s=max_velocity_m_s - baseline.max_velocity_m_s,
     )
 
-    flow_solver = SelfConsistentFlowDiagnostics(
-        enabled=self_consistent_enabled, iteration_count=flow_iteration_count,
-        initial_mass_flow_kg_s=design_initial_mass_flow_kg_s, final_mass_flow_kg_s=injected_mass_flow_kg_s,
-        final_outlet_temperature_deviation_k=geo_outlet_actual_c - geo_outlet_design_c,
-        outlet_temperature_tolerance_k=SELF_CONSISTENT_FLOW_OUTLET_TEMPERATURE_TOLERANCE_K,
-        mass_flow_residual_tolerance_fraction=SELF_CONSISTENT_FLOW_MASS_FLOW_RESIDUAL_TOLERANCE_FRACTION,
-        max_iterations=SELF_CONSISTENT_FLOW_MAX_ITERATIONS,
-    )
+    # doublet_result.flow_solver was already built by the doublet component
+    # from the exact same solve -- reused directly rather than reconstructed.
+    flow_solver = doublet_result.flow_solver
 
     return CandidateEvaluationResult(
         candidate=candidate, coupling_input=coupling_result, injection_policy=injection_policy, tolerances=tolerances,

@@ -28,13 +28,56 @@ bit-identical (not merely within a declared tolerance), verified for all four ca
 ## Phase-4 exit gate, read literally
 
 "Component parity and isolation pass; legacy duplicate construction logic is removed only after
-parity is proven." Parity is proven (above). `evaluate_candidate()` is **not** retargeted to call
-the new component in this phase — a deliberately conservative choice: that function is one of the
-most heavily validated modules in this codebase, and there is in fact no *duplicate* physics to
-remove today, since both paths already share the same underlying calls. Retargeting
-`evaluate_candidate()` to construct its topology through this component (rather than calling the
-same private helpers directly) is left as a separate, later, independently-reviewable step, not
-bundled into this phase.
+parity is proven." Parity is proven (above).
+
+**Update (2026-09-03, `feature/complete-synthetic-prototype`,
+`R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md` Phase 3.1)**: `evaluate_candidate()` is now
+retargeted to call `build_and_evaluate_geothermal_doublet_with_net()` — the earlier entry below,
+which deferred this retargeting, is superseded. The prior reasoning ("no *duplicate* physics to
+remove today, since both paths already share the same underlying calls") was correct about the
+underlying private functions, but a second, independent audit judged the ORCHESTRATION/sequencing
+code around those calls — construction of the four typed inputs, the try/except dispatch on
+`injection_sizing_policy`, and result extraction — to itself be a duplicate worth eliminating in
+favor of one authoritative call path, per that specification's explicit instruction not to preserve
+duplicate implementations without a documented reason. `evaluate_candidate()` now:
+
+1. Builds `GeothermalDoubletSpec`/`HeatExchangerBoundary`/`DistrictHeatingConnectionSpec`/
+   `DoubletOperatingPolicy` from its own already-available `coupling_result`/`candidate`/
+   `injected_kw`/`injection_policy` inputs (mirroring exactly the construction
+   `tests/network/test_doublet_component.py`'s own `_spec()`/`_boundary()`/`_connection()` helpers
+   already used to prove parity).
+2. Calls `build_and_evaluate_geothermal_doublet_with_net(blueprint, spec, boundary, connection,
+   policy)` once, imported locally inside the function to break the module cycle (this module
+   already imports several of `network/candidate.py`'s own private helpers at its top level).
+3. Maps a `GeothermalDoubletFailure` directly onto `CandidateEvaluationFailure` (both share
+   `CandidateFailureCode` already, so no code-translation table is needed).
+4. On success, reads `district_heating_water_mass_flow_kg_s`, `connection_differential_pressure_bar`,
+   `circulation_pump_hydraulic_power_kw`, the inlet/outlet temperatures, and `flow_solver` directly
+   off the returned `GeothermalDoubletResult` instead of re-extracting them from `net` a second
+   time, and uses `handles.*` (not a locally-rebuilt `refs` dict) wherever it still needs a
+   pandapipes element name for its OWN whole-network gates (pump differential pressure, junction
+   pressure at `geo_mid`/`geo_return`) — the only computation genuinely outside this component's own
+   documented "Scope boundary" (consumer temperature, absolute pressure, pump differential pressure,
+   pipe velocity, mass balance, physical energy balance; module docstring above).
+
+One genuine cross-module subtlety surfaced and was fixed during this retargeting:
+`DoubletOperatingPolicy`'s three solver-tolerance fields previously defaulted from a
+`from .candidate import SELF_CONSISTENT_FLOW_MAX_ITERATIONS` (etc.) plain import — a value COPIED
+at this module's own import time. A monkeypatch-based reachability test
+(`test_self_consistent_flow_not_converged_via_monkeypatched_max_iterations`) patches
+`network.candidate`'s own module attribute directly; `_solve_self_consistent_injection()` (defined
+IN that module) correctly observes the patched value, but the doublet component's own copied-at-
+import-time default did not, producing a mismatched `details["max_iterations"]` in the returned
+failure. Fixed by referencing `network.candidate`'s constants through a module reference
+(`from . import candidate as _candidate_module`, then `_candidate_module.SELF_CONSISTENT_FLOW_MAX_ITERATIONS`)
+with `Field(default_factory=...)` instead of a plain default, in both the field defaults and the
+validator's equality check — both now re-read the live module attribute rather than a frozen
+snapshot. This is a test/constant-propagation correctness fix, not a scientific-default change: the
+value used in every non-monkeypatched execution (40 iterations, in `network/candidate.py`) is
+identical before and after.
+
+Full parity/candidate/baseline suite re-run after retargeting: all pre-existing tests pass unchanged
+(no test file was edited to accommodate this refactor, other than the one genuine bug fix above).
 
 ## The six DLT-001 models
 
@@ -68,8 +111,6 @@ Full offline suite: 938 passed (was 918), 0 failed.
 
 ## Not covered by this issue
 
-- `evaluate_candidate()` itself is not refactored to call this component (see "Phase-4 exit gate,
-  read literally" above).
 - `DoubletOperatingPolicy`'s solver tolerances remain fixed to `network.candidate`'s own constants
   — independent overriding is not yet supported.
 - Workstream H (CAN-001..007, deterministic candidate generation) is not part of this issue.
