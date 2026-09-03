@@ -63,10 +63,10 @@ RANKING_CONTRACT_SCHEMA_VERSION: Literal["1.0.0"] = "1.0.0"
 SHARED_CAPEX_STATEMENT = (
     "Every feasible candidate reuses the identical PyDoublet scenario and coupling "
     "result, so doublet and heat-exchanger CAPEX (and their annuities) are numerically "
-    "identical across C1-C4 and do not drive this ranking. This ranking evaluates "
-    "network-CONNECTION-location differences (connection length, DH pumping, technical "
-    "margin) only -- it is not, and must never be read as, a geological or drilling-"
-    "location recommendation."
+    "identical across every candidate evaluated in this run (predefined or generated) "
+    "and do not drive this ranking. This ranking evaluates network-CONNECTION-location "
+    "differences (connection length, DH pumping, technical margin) only -- it is not, "
+    "and must never be read as, a geological or drilling-location recommendation."
 )
 
 

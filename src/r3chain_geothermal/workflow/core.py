@@ -84,6 +84,7 @@ from ..contracts import CouplingWarning, PyDoubletCouplingFailure, PyDoubletCoup
 from ..economics import EconomicAssumptions, RankingResult, rank_candidates
 from ..hashing import canonical_raw_result_sha256
 from ..network import (
+    GENERATION_MAX_ROUTE_LENGTH_M,
     BaselineNetworkFailure,
     BaselineNetworkResult,
     BlueprintCandidate,
@@ -95,6 +96,7 @@ from ..network import (
     NetworkBlueprint,
     build_default_blueprint,
     evaluate_candidate,
+    generate_candidates,
     run_baseline_evaluation,
 )
 from ..parsers.pydoublet_parser import parse_pydoublet_result
@@ -364,6 +366,73 @@ def _build_blueprint_kwargs(config: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _apply_candidate_mode(blueprint: NetworkBlueprint, config: dict[str, Any]) -> NetworkBlueprint:
+    """CAN-001/CAN-007 (R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md
+    Phase 3.2): `config["candidates"]["mode"]` selects the SOURCE of
+    `blueprint.candidates` evaluated by this run.
+
+    "predefined" (the default whenever the key is absent) leaves the
+    fixed C1-C4 set `build_default_blueprint()` always produces completely
+    untouched -- absent from config/demo_assumptions.json, so the
+    canonical config's raw bytes/config_sha256/run_id are unaffected by
+    this function's existence, the same established pattern as DSP-005/
+    FAIL-001 (`_apply_workshop_negative_demo` below).
+
+    "generated" instead REPLACES `blueprint.candidates` with
+    network/candidate_generation.py's own deterministic
+    `generate_candidates()` output's ACCEPTED entries (CAN-001..007) --
+    an independently-produced candidate set, evaluated through the exact
+    same `evaluate_candidate()` pathway as every predefined candidate.
+    Applied BEFORE `_apply_workshop_negative_demo` so a generated-mode
+    config can still opt into that additional deliberately-infeasible
+    candidate on top of its own generated set.
+
+    Known, documented limitation (not silently glossed over): a generated
+    candidate's own `connection_pipe_dn_mm` design axis
+    (`network.candidate_generation.DesignOption`) is NOT YET consumed by
+    `evaluate_candidate()` -- that function's injection branch still uses
+    `network.candidate.CONNECTION_PIPE_DN_MM`'s own fixed module constant
+    regardless of which candidate is being evaluated. Only
+    `supply_junction`/`return_junction`/`surface_connection_length_m`
+    (fields `BlueprintCandidate` already had) reach the physics evaluator
+    for a generated candidate. Varying the connection pipe DN per
+    candidate would change a scientific assumption (plan section 10.1:
+    "fixed pipe diameters across candidate evaluations") and needs
+    separate approval, so it stays deliberately unwired -- see
+    `docs/issues/candidate-generation.md`."""
+    candidates_cfg = config.get("candidates", {})
+    mode = candidates_cfg.get("mode", "predefined")
+    if mode == "predefined":
+        return blueprint
+    if mode != "generated":
+        raise ValueError(f"candidates.mode must be 'predefined' or 'generated', got {mode!r}")
+
+    generated_cfg = candidates_cfg.get("generated", {})
+    connection_pipe_dn_mm = generated_cfg["connection_pipe_dn_mm"]
+    max_route_length_m = generated_cfg.get("max_route_length_m", GENERATION_MAX_ROUTE_LENGTH_M)
+    max_candidates = generated_cfg.get("max_candidates")
+
+    screened = generate_candidates(
+        blueprint, connection_pipe_dn_mm=connection_pipe_dn_mm, max_route_length_m=max_route_length_m,
+    )
+    accepted = [sc for sc in screened if sc.accepted]
+    if max_candidates is not None:
+        accepted = accepted[:max_candidates]
+    if not accepted:
+        raise ValueError(
+            f"candidates.mode=='generated' produced zero accepted candidates "
+            f"({len(screened)} screened, all rejected) -- check connection_pipe_dn_mm/max_route_length_m"
+        )
+
+    generated_candidates = {sc.spec.candidate_id: sc.spec.to_blueprint_candidate() for sc in accepted}
+    return NetworkBlueprint(
+        junctions=blueprint.junctions, pipes=blueprint.pipes, consumers=blueprint.consumers,
+        candidates=generated_candidates,
+        circulation_pump=blueprint.circulation_pump, build_parameters=blueprint.build_parameters,
+        created_at=blueprint.created_at,
+    )
+
+
 def _apply_workshop_negative_demo(blueprint: NetworkBlueprint, config: dict[str, Any]) -> NetworkBlueprint:
     """FAIL-001 (R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md Workstream F,
     decision-register.md IMPL-009): adds ONE additional, deliberately
@@ -450,6 +519,7 @@ def validate_config_structure(config: dict[str, Any]) -> None:
         GeothermalInjectionPolicy.from_config_dict(config)
         EconomicAssumptions.from_config_dict(config)
         blueprint = build_default_blueprint(created_at=_default_now(), **_build_blueprint_kwargs(config))
+        blueprint = _apply_candidate_mode(blueprint, config)
         _apply_workshop_negative_demo(blueprint, config)
     except _CONFIG_STRUCTURE_ERRORS as exc:
         raise WorkflowConfigurationError(f"config is structurally invalid: {exc!r}") from exc
@@ -537,6 +607,7 @@ def run_workflow(
     # ── Stage 3: build the synthetic-network blueprint ──
     try:
         blueprint = build_default_blueprint(created_at=workflow_created_at, **_build_blueprint_kwargs(config))
+        blueprint = _apply_candidate_mode(blueprint, config)
         blueprint = _apply_workshop_negative_demo(blueprint, config)
     except ValueError as exc:
         stage_calls.append(StageCallRecord(

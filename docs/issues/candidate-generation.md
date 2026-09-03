@@ -68,14 +68,34 @@ are declared enum members (the interface CAN-004 asks for) but `resolve_length_m
 routed construction length, and a routing graph or an approved external route reference is
 Workstream I's own concern, not fabricated here.
 
+## Update (2026-09-03, `feature/complete-synthetic-prototype`, Phase 3.2): wired into `run_workflow()`
+
+`workflow/core.py::_apply_candidate_mode()` now reads `config["candidates"]["mode"]` (default
+`"predefined"`, absent from the canonical config so its behavior/hashes are completely unaffected —
+same established pattern as the workshop-negative-demo feature) and, when set to `"generated"`,
+REPLACES `blueprint.candidates` with this module's own `generate_candidates()` ACCEPTED output,
+each converted via `GeneratedCandidateSpec.to_blueprint_candidate()`. Evaluated through the exact
+same `evaluate_candidate()` pathway as every predefined candidate — no new evaluation code. Reachable
+through `geo_run_workflow` by pointing the (one-server-architecture) MCP server's fixed config at a
+config file with `candidates.mode=="generated"` (`R3CHAIN_MCP_CONFIG_PATH`), exactly how the existing
+workshop-negative-demo config is exercised via MCP — no seventh tool, no new tool parameter.
+`config/demo_assumptions_generated_candidates.json` demonstrates this, reproducing the exact
+measured 11-accepted/8-feasible/3-`VELOCITY_LIMIT_EXCEEDED` breakdown above through the full
+workflow (`tests/workflow/test_generated_candidates.py`, 14 tests). Also adds
+`candidates.generated.max_candidates` (optional cap, deterministic — takes the first N by the
+already-sorted candidate-id order `generate_candidates()` itself returns) and a loud
+`ValueError`/`WorkflowConfigurationError` when generation accepts zero candidates, rather than
+silently producing an empty ranking.
+
 ## Not covered by this issue
 
-- `run_workflow()` is not extended with a "generated mode" — this is a standalone module,
-  independently testable; wiring it into the main orchestrator (a new workflow input selecting
-  predefined vs. generated candidates) is a separate, later step.
 - A second, differently-sized `DesignOption` is not constructable — `network/candidate.py`'s own
-  evaluator reads the project-wide `CONNECTION_PIPE_DN_MM` constant, not a per-candidate DN;
-  extending that was judged out of proportion to this workstream.
+  evaluator reads the project-wide `CONNECTION_PIPE_DN_MM` constant, not a per-candidate DN; a
+  generated candidate's own `connection_pipe_dn_mm` is recorded but not yet consumed by the physics
+  evaluator (documented explicitly in `_apply_candidate_mode`'s own docstring and in
+  `config/demo_assumptions_generated_candidates.json`'s own note). Extending that is a
+  scientific-assumption change (plan §10.1, "fixed pipe diameters across candidate evaluations")
+  requiring separate approval, out of proportion to this workstream.
 - Workstream I (DATA-001..009, real-data contracts and readiness) is not part of this issue.
 
 ## Tests

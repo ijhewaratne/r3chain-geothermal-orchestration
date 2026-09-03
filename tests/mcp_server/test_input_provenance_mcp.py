@@ -84,13 +84,15 @@ def test_run_workflow_tool_strict_provenance_reproduces_golden_run_id_and_bundle
     )
     assert isinstance(result, RunSummary)
     assert result.run_id == _GOLDEN_RUN_ID
-    # Rebaselined again (Phase 2 of R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md,
-    # decision-register.md IMPL-015): normalize_for_scientific_hash() now
-    # quantizes every float to SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES
-    # (12) significant figures before hashing -- a cross-platform
-    # floating-point-noise fix, not a scientific-result change. run_id
-    # (asserted above) is unaffected.
-    assert result.bundle_scientific_sha256 == "d67cb2f32de228ee1a6b0ac8f4e9c7e05eb55ba2d49d6578ea79692f1a359f46"
+    # Rebaselined again (Phase 3.2 of R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md,
+    # decision-register.md IMPL-017): economics/ranking.py::SHARED_CAPEX_STATEMENT
+    # (rendered verbatim into every bundle) was reworded away from hardcoding
+    # "identical across C1-C4" -- misleading for a generated-mode run's
+    # differently-named candidates -- to "identical across every candidate
+    # evaluated in this run (predefined or generated)". A presentation-text
+    # honesty fix, not a scientific-result change. run_id (asserted above)
+    # is unaffected.
+    assert result.bundle_scientific_sha256 == "ee76b2a626f57fd4825c554ac55e57e81e567f86c7bf4acd771cb23a4389f3c8"
 
 
 def test_run_workflow_tool_omitted_expected_hash_still_reproduces_golden_bundle_hash(registry, fixed_config):
@@ -100,13 +102,15 @@ def test_run_workflow_tool_omitted_expected_hash_still_reproduces_golden_bundle_
     result = tools.run_workflow_tool(_raw(), _provenance(), fixed_config=fixed_config, registry=reg)
     assert isinstance(result, RunSummary)
     assert result.run_id == _GOLDEN_RUN_ID
-    # Rebaselined again (Phase 2 of R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md,
-    # decision-register.md IMPL-015): normalize_for_scientific_hash() now
-    # quantizes every float to SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES
-    # (12) significant figures before hashing -- a cross-platform
-    # floating-point-noise fix, not a scientific-result change. run_id
-    # (asserted above) is unaffected.
-    assert result.bundle_scientific_sha256 == "d67cb2f32de228ee1a6b0ac8f4e9c7e05eb55ba2d49d6578ea79692f1a359f46"
+    # Rebaselined again (Phase 3.2 of R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md,
+    # decision-register.md IMPL-017): economics/ranking.py::SHARED_CAPEX_STATEMENT
+    # (rendered verbatim into every bundle) was reworded away from hardcoding
+    # "identical across C1-C4" -- misleading for a generated-mode run's
+    # differently-named candidates -- to "identical across every candidate
+    # evaluated in this run (predefined or generated)". A presentation-text
+    # honesty fix, not a scientific-result change. run_id (asserted above)
+    # is unaffected.
+    assert result.bundle_scientific_sha256 == "ee76b2a626f57fd4825c554ac55e57e81e567f86c7bf4acd771cb23a4389f3c8"
 
 
 # ── geo_run_workflow: IP-006, no artifact directory created on mismatch ─────

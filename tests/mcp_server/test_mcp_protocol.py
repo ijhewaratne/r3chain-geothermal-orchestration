@@ -86,14 +86,16 @@ def test_tools_call_geo_run_workflow_worked_case_matches_the_cli():
     payload = call_result.structuredContent
     content = payload.get("result", payload)
     assert content["run_id"] == "r3chain-run-93d41133daa11d1a"
-    # Rebaselined again (Phase 2 of R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md,
-    # decision-register.md IMPL-015): normalize_for_scientific_hash() now
-    # quantizes every float to SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES
-    # (12) significant figures before hashing -- a cross-platform
-    # floating-point-noise fix, not a scientific-result change. run_id
+    # Rebaselined again (Phase 3.2 of R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md,
+    # decision-register.md IMPL-017): economics/ranking.py::SHARED_CAPEX_STATEMENT
+    # (rendered verbatim into every bundle via RankingResult.shared_capex_statement)
+    # was reworded away from hardcoding "identical across C1-C4" -- misleading for
+    # a generated-mode run's differently-named candidates -- to "identical across
+    # every candidate evaluated in this run (predefined or generated)". A
+    # presentation-text honesty fix, not a scientific-result change. run_id
     # above is unaffected; the LCOH assertion below proves the actual
     # canonical ranking is unchanged too.
-    assert content["bundle_scientific_sha256"] == "d67cb2f32de228ee1a6b0ac8f4e9c7e05eb55ba2d49d6578ea79692f1a359f46"
+    assert content["bundle_scientific_sha256"] == "ee76b2a626f57fd4825c554ac55e57e81e567f86c7bf4acd771cb23a4389f3c8"
     lcoh_by_id = {r["candidate_id"]: round(r["indicative_lcoh_eur_per_mwh"], 4) for r in content["ranked"]}
     assert lcoh_by_id == {"C1": 52.1714, "C2": 52.2602, "C3": 52.3489, "C4": 52.4821}
 

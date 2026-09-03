@@ -148,13 +148,16 @@ def test_mcp_demo_entry_point_runs_outside_the_repo_and_matches_in_repo_parity(m
     assert record["run_id"] == "r3chain-run-93d41133daa11d1a"
     # bundle_scientific_sha256 rebaselined again (Phase 2 of
     # R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md, decision-register.md
-    # IMPL-015): normalize_for_scientific_hash() now quantizes every float
-    # to SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES (12) significant figures
-    # before hashing (schema 1.0.0 -> 1.1.0 of the normalization rule
-    # itself, hashing.py) -- a cross-platform floating-point-noise fix, not
-    # a scientific-result change. run_id above is UNCHANGED (it never
-    # depends on this normalization) and the LCOH assertion below proves
-    # the actual canonical numeric ranking is also unchanged.
-    assert record["bundle_scientific_sha256"] == "d67cb2f32de228ee1a6b0ac8f4e9c7e05eb55ba2d49d6578ea79692f1a359f46"
+    # IMPL-017): economics/ranking.py::SHARED_CAPEX_STATEMENT (rendered
+    # verbatim into RankingResult.shared_capex_statement, part of every
+    # bundle) was reworded from hardcoding "identical across C1-C4" (false
+    # for a generated-mode run, whose candidates carry different IDs
+    # entirely) to "identical across every candidate evaluated in this run
+    # (predefined or generated)" -- a presentation-text honesty fix with no
+    # numeric/scientific content, not a scientific-result change. run_id
+    # above is UNCHANGED (it never depends on this text) and the LCOH
+    # assertion below proves the actual canonical numeric ranking is also
+    # unchanged.
+    assert record["bundle_scientific_sha256"] == "ee76b2a626f57fd4825c554ac55e57e81e567f86c7bf4acd771cb23a4389f3c8"
     lcoh_by_id = {r["candidate_id"]: round(r["indicative_lcoh_eur_per_mwh"], 4) for r in record["ranked"]}
     assert lcoh_by_id == {"C1": 52.1714, "C2": 52.2602, "C3": 52.3489, "C4": 52.4821}

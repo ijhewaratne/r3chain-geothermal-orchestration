@@ -72,10 +72,21 @@ class CapabilitiesSummary(BaseModel):
     available_injection_sizing_policies: list[str]
     """DSP-005: GeothermalInjectionPolicy.injection_sizing_policy's accepted values."""
     candidate_generation_modes: list[str]
-    """CAN-001: "predefined" (config/demo_assumptions.json's own C1-C4,
-    the only mode geo_run_workflow itself currently drives) and
-    "generated" (network.candidate_generation.generate_candidates(),
-    available as a library call but not yet wired into geo_run_workflow)."""
+    """CAN-001 (R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md Phase
+    3.2): "predefined" (config/demo_assumptions.json's own fixed C1-C4)
+    and "generated" (network.candidate_generation.generate_candidates(),
+    workflow/core.py::_apply_candidate_mode) are BOTH genuinely reachable
+    through geo_run_workflow -- whichever this server's own fixed_config
+    (loaded once at server start from R3CHAIN_MCP_CONFIG_PATH or the
+    packaged default) sets under candidates.mode. This field lists modes
+    the SERVER IMPLEMENTATION supports, not which one the currently
+    loaded fixed_config happens to use (mirrors
+    available_shortfall_policies/available_injection_sizing_policies'
+    own convention below) -- see config/demo_assumptions_generated_candidates.json
+    for a config that exercises "generated" specifically, and that
+    function's own docstring for the one documented limitation (a
+    generated candidate's own connection_pipe_dn_mm design axis is not
+    yet consumed by the physics evaluator)."""
 
 
 class PyDoubletValidationSummary(BaseModel):
