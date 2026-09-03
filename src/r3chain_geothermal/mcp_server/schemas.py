@@ -14,7 +14,7 @@ from typing import Annotated, Literal, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..contracts import CouplingWarning
-from ..workflow import WorkflowAuditRecord
+from ..workflow import WorkflowAuditRecord, WorkflowFailure, WorkflowResult
 from .errors import ToolError
 
 _SOURCE_FORMAT_HINTS = ("known_pristine", "known_repaired", "unknown")
@@ -120,6 +120,66 @@ class RunSummary(BaseModel):
 
 RunWorkflowResult = Annotated[Union[RunSummary, ToolError], Field(discriminator="status")]
 RunSummaryResult = Annotated[Union[RunSummary, ToolError], Field(discriminator="status")]
+
+
+# ── shared: WorkflowResult/WorkflowFailure -> RunSummary ────────────────────
+def summarize_workflow_result(
+    result: WorkflowResult | WorkflowFailure, artifact_filenames: frozenset[str], *, reused_existing_run: bool,
+) -> RunSummary:
+    """Public (T5.1B, moved here from tools.py under RR-persistent-registry
+    to break a circular import -- registry.py's rehydration path needs this
+    same mapping, and tools.py already imports FROM registry.py): the ONE
+    place a `WorkflowResult`/`WorkflowFailure` is mapped to the compact
+    `RunSummary` shape every `geo_` tool, the scripted client's own
+    deterministic CLI-fallback path (`mcp_client.cli_fallback`), AND
+    registry.py's own startup rehydration all return. Reusing this function
+    directly from every caller -- rather than each maintaining its own copy
+    of this mapping -- is what makes "the fallback path (and a rehydrated
+    run) reproduces the same deterministic identifiers and ranking as a
+    live MCP run" a structural guarantee instead of something that could
+    silently drift between independently-written implementations.
+    `tools.summarize_workflow_result` and `mcp_server.summarize_workflow_
+    result` remain valid, identical references to this same function object
+    (tools.py imports it from here) -- see
+    tests/mcp_server/test_summarize_workflow_result.py's own identity
+    assertions, unaffected by this move."""
+    if isinstance(result, WorkflowFailure):
+        return RunSummary(
+            run_id=result.run_id,
+            workflow_status="stopped",
+            preferred_candidate_id=None,
+            ranked=[],
+            infeasible=[],
+            stopping_failure_code=result.failure_code.value,
+            warnings=[],
+            artifact_filenames=sorted(artifact_filenames),
+            bundle_scientific_sha256="",
+            reused_existing_run=reused_existing_run,
+        )
+    ranked = [
+        RankedCandidateSummary(
+            candidate_id=entry.candidate_id, rank=entry.rank,
+            indicative_lcoh_eur_per_mwh=entry.economics.indicative_lcoh_eur_per_kwh * 1000.0,
+        )
+        for entry in result.ranking.ranked
+    ]
+    infeasible = [
+        InfeasibleCandidateSummary(candidate_id=entry.candidate_id, failure_code=entry.failure_code.value)
+        for entry in result.ranking.infeasible
+    ]
+    return RunSummary(
+        run_id=result.run_id,
+        workflow_status="completed",
+        preferred_candidate_id=ranked[0].candidate_id if ranked else None,
+        ranked=ranked,
+        infeasible=infeasible,
+        stopping_failure_code=None,
+        warnings=[w.warning for w in result.audit.warnings],
+        artifact_filenames=sorted(artifact_filenames),
+        bundle_scientific_sha256="",  # filled in by the caller once known (a fresh run: after
+        # write_workflow_artifacts(); a rehydrated run: from the persisted manifest.json)
+        reused_existing_run=reused_existing_run,
+    )
 
 
 class AuditSummary(BaseModel):

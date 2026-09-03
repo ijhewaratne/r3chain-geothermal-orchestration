@@ -37,6 +37,21 @@ a Python package itself (no __init__.py needed) -- importlib.resources
 can still address it by navigating from the mcp_server package's own
 Traversable root."""
 
+RUN_ROOT_ENV_VAR = "R3CHAIN_RUN_ROOT"
+"""docs/issues/mcp-persistent-run-registry.md (RR-001) -- an operator
+launch-time override, exactly like CONFIG_PATH_ENV_VAR above, never a
+per-call tool argument. Unset by default: `resolve_run_root()` then
+returns `None`, and `server.py` falls back to the ORIGINAL
+ephemeral-temp-directory behavior (registry.py's own default when
+`root_dir` is omitted) -- this is a deliberate, safety-first choice, not
+an oversight: unconditionally defaulting to a fixed on-disk location
+would make every test that calls `build_server()` without its own
+`registry=` override silently start reading/writing a real directory on
+the machine running the tests, and would let stale state leak between
+independent test runs. Persistence is opt-in via this env var, exactly
+matching RR-001's own wording ("...MAY override the default'), not a
+forced migration of default behavior."""
+
 
 def resolve_fixed_config_path() -> Path | None:
     """The config path this server process will use -- `R3CHAIN_MCP_CONFIG_PATH`
@@ -45,6 +60,16 @@ def resolve_fixed_config_path() -> Path | None:
     that case via `importlib.resources`, not a plain `Path`, since a
     packaged resource is not guaranteed to be a real filesystem path)."""
     override = os.environ.get(CONFIG_PATH_ENV_VAR)
+    return Path(override) if override else None
+
+
+def resolve_run_root() -> Path | None:
+    """`R3CHAIN_RUN_ROOT` if set (an operator opting into a persistent,
+    restart-surviving run registry -- RR-001), otherwise `None`, meaning
+    "use the original ephemeral temp-directory behavior." Never creates
+    the directory itself -- `RunRegistry.__init__` does that (and
+    performs rehydration) once it actually builds the registry."""
+    override = os.environ.get(RUN_ROOT_ENV_VAR)
     return Path(override) if override else None
 
 

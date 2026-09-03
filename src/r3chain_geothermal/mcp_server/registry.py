@@ -57,19 +57,55 @@ closure. `close()` itself is idempotent: a second call is a no-op.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 import shutil
 import tempfile
 import threading
+import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from ..workflow import WorkflowAuditRecord
-from .schemas import RunSummary
+from ..workflow import (
+    MANIFEST_FILENAME,
+    WORKFLOW_RESULT_FILENAME,
+    ManifestRecord,
+    WorkflowAuditRecord,
+    parse_workflow_result_json,
+)
+from .schemas import RunSummary, summarize_workflow_result
 
 DEFAULT_MAX_REGISTRY_SIZE = 50
+
+_RUN_ID_PATTERN = re.compile(r"^r3chain-run-[0-9a-f]{16}$")
+"""The exact shape workflow.core.compute_run_id() always produces --
+docs/issues/mcp-persistent-run-registry.md (RR-003): the primary
+path-traversal defense during rehydration is that a directory name failing
+this pattern is never even considered a candidate run, let alone joined
+into a filesystem path. Also reused by new_artifact_dir()/publish_
+artifact_dir() as a defense-in-depth check on every run_id this class
+itself ever turns into a path, not just ones read back from disk."""
+
+_STAGING_DIR_PREFIX = ".staging-"
+
+
+def _is_traversal_safe_path_component(value: str) -> bool:
+    """A DELIBERATELY WEAKER check than `_RUN_ID_PATTERN` -- used by
+    `new_artifact_dir`/`publish_artifact_dir`, where `run_id` is always
+    either server-computed (`compute_run_id()`'s own real output) or, in
+    this project's own unit tests, a simple synthetic string exercising
+    the locking/eviction mechanics in isolation (e.g. `"x"`) -- neither
+    case is untrusted external input, so the FULL `_RUN_ID_PATTERN` shape
+    requirement would be needlessly restrictive here. What actually
+    matters at this boundary is that `run_id` can never escape
+    `root_dir` when joined into a path. `_rehydrate()` is the boundary
+    that reads directory names back from disk (genuinely arbitrary,
+    RR-003) and applies the FULL `_RUN_ID_PATTERN` there instead."""
+    return bool(value) and "/" not in value and "\\" not in value and value not in (".", "..") and not value.startswith(".")
 
 
 class RegistryClosedError(Exception):
@@ -125,10 +161,33 @@ class RunRegistry:
     file reads, both run OUTSIDE the master lock, guarded only by their
     own per-`run_id` coordination object."""
 
-    def __init__(self, max_size: int = DEFAULT_MAX_REGISTRY_SIZE, root_dir: Path | None = None):
+    def __init__(
+        self, max_size: int = DEFAULT_MAX_REGISTRY_SIZE, root_dir: Path | None = None, *, persistent: bool = False,
+    ):
+        """`persistent=False` (the default) is the ORIGINAL, unchanged
+        behavior for every existing caller: an ephemeral root (a fresh
+        `tempfile.mkdtemp()` if `root_dir` is omitted, or a caller-supplied
+        directory used for this process's lifetime only), deleted by
+        `close()`, no rehydration attempted.
+
+        `persistent=True` (docs/issues/mcp-persistent-run-registry.md,
+        RR-001..RR-003) requires an explicit `root_dir` (raises ValueError
+        otherwise -- a persistent registry needs a STABLE location, never
+        an auto-generated temp path) and:
+        - `close()` does NOT delete `root_dir` -- completed runs survive
+          the process.
+        - `__init__` scans `root_dir`'s existing children and rehydrates
+          any that validate as complete, correctly-named, hash-consistent
+          run bundles into `self._entries` (RR-003) -- see
+          `_rehydrate` for the exact validation steps. Anything
+          that fails validation is skipped, never raises, and is recorded
+          in `self.rehydration_warnings` (RR-003 point 6)."""
         if max_size < 1:
             raise ValueError(f"max_size must be >= 1, got {max_size!r}")
+        if persistent and root_dir is None:
+            raise ValueError("persistent=True requires an explicit root_dir -- a stable location, not a temp path")
         self._max_size = max_size
+        self._persistent = persistent
         self._root_dir = Path(root_dir) if root_dir is not None else Path(tempfile.mkdtemp(prefix="r3chain-mcp-"))
         self._root_dir.mkdir(parents=True, exist_ok=True)
         self._entries: "OrderedDict[str, RunEntry]" = OrderedDict()
@@ -143,6 +202,85 @@ class RunRegistry:
         currently blocked in `_make_room_for_new_entry_locked` waiting for
         an evictable (unpinned) entry to appear, or for shutdown."""
         self._closed = False
+        self.rehydration_warnings: list[str] = []
+        """One human-readable entry per skipped/corrupt candidate found
+        during startup rehydration (RR-003 point 6) -- empty for a
+        non-persistent registry, or a persistent one whose root_dir was
+        previously empty. Never raises; a diagnostic, not an error."""
+        if self._persistent:
+            self._rehydrate()
+
+    @property
+    def persistent(self) -> bool:
+        return self._persistent
+
+    def _rehydrate(self) -> None:
+        """Called exactly once, from `__init__`, before this instance is
+        ever shared with another thread -- no locking needed here (module
+        docstring's concurrency guarantees only apply once a registry is
+        actually in use). Scans `root_dir`'s immediate children (RR-003
+        point 1: ONLY direct children, never recursing) and:
+
+        - removes any leftover `.staging-*`-prefixed directory outright
+          (RR-004: identifiable, safely cleanable -- a staging directory
+          is by construction never a published run, whatever it contains).
+        - skips (silently, no warning -- not a candidate at all) anything
+          whose name does not match `_RUN_ID_PATTERN` exactly.
+        - for everything else, attempts full validation via
+          `_load_run_entry` (manifest schema + run_id match + per-file
+          hash verification + workflow_result.json parseability); any
+          failure is caught, recorded in `self.rehydration_warnings`, and
+          that directory is left untouched on disk (never deleted merely
+          for failing to rehydrate -- only `.staging-*` leftovers are
+          ever removed here) but never registered as a valid run.
+        Never raises -- a corrupt bundle must never crash server startup
+        (RR-003 point 5)."""
+        for child in sorted(self._root_dir.iterdir()):
+            if not child.is_dir():
+                continue
+            if child.name.startswith(_STAGING_DIR_PREFIX):
+                shutil.rmtree(child, ignore_errors=True)
+                continue
+            if not _RUN_ID_PATTERN.match(child.name):
+                continue
+            run_id = child.name
+            try:
+                entry = self._load_run_entry(run_id, child)
+            except Exception as exc:  # noqa: BLE001 -- must never crash server startup
+                self.rehydration_warnings.append(f"{run_id}: skipped during rehydration ({exc})")
+                continue
+            self._entries[run_id] = entry
+            self._entries.move_to_end(run_id, last=True)
+
+    def _load_run_entry(self, run_id: str, run_dir: Path) -> RunEntry:
+        """Raises (never caught here -- `_rehydrate` is the one caller
+        and does the catching) on any validation failure. Every raised
+        message is specific enough to be useful in
+        `self.rehydration_warnings` without ever including file content."""
+        manifest_path = run_dir / MANIFEST_FILENAME
+        if not manifest_path.is_file():
+            raise ValueError(f"missing {MANIFEST_FILENAME}")
+        manifest = ManifestRecord(**json.loads(manifest_path.read_text(encoding="utf-8")))
+        if manifest.run_id != run_id:
+            raise ValueError(f"manifest run_id {manifest.run_id!r} does not match directory name {run_id!r}")
+        for filename, record in manifest.files.items():
+            file_path = run_dir / filename
+            if not file_path.is_file():
+                raise ValueError(f"declared file {filename!r} is missing on disk")
+            actual_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+            if actual_hash != record.byte_sha256:
+                raise ValueError(f"{filename!r} on-disk byte hash does not match the manifest's own record")
+        workflow_result_path = run_dir / WORKFLOW_RESULT_FILENAME
+        if not workflow_result_path.is_file():
+            raise ValueError(f"missing {WORKFLOW_RESULT_FILENAME}")
+        boundary = parse_workflow_result_json(workflow_result_path.read_text(encoding="utf-8"))
+        artifact_filenames = frozenset(manifest.files) | {MANIFEST_FILENAME}
+        summary = summarize_workflow_result(boundary, artifact_filenames, reused_existing_run=True)
+        summary = summary.model_copy(update={"bundle_scientific_sha256": manifest.bundle_scientific_sha256})
+        return RunEntry(
+            run_id=run_id, summary=summary, audit=boundary.audit,
+            artifact_dir=run_dir, artifact_filenames=artifact_filenames, created_at=manifest.created_at,
+        )
 
     @property
     def max_size(self) -> int:
@@ -161,20 +299,72 @@ class RunRegistry:
             return self._entries.get(run_id)
 
     def new_artifact_dir(self, run_id: str) -> Path:
-        """Allocates (creates) this run's own artifact directory under the
+        """Allocates (creates) a STAGING directory for this run under the
         registry's root -- called by a tool's factory BEFORE running the
         workflow, so write_workflow_artifacts() always has somewhere valid
-        to write. Idempotent: safe to call again for a run_id whose
-        directory already exists (the concurrent-duplicate-call path).
+        to write. NOT the run's final, `run_id`-named directory (RR-002,
+        docs/issues/mcp-persistent-run-registry.md): the caller must call
+        `publish_artifact_dir(run_id, this_path)` once every file
+        (including manifest.json, written last by write_workflow_artifacts)
+        exists, to atomically rename staging -> final. A crash or
+        exception between this call and that one leaves only an orphaned
+        `.staging-*`-prefixed directory -- never anything visible under
+        the real `run_id` name, and never returned as a completed run by
+        rehydration (`_rehydrate` skips anything not matching
+        `_RUN_ID_PATTERN` outright).
+
+        Each call gets a fresh, uniquely-suffixed staging directory (even
+        for the same `run_id`) so a leftover staging directory from a
+        previous crashed attempt is never reused/collided with.
 
         Raises `RegistryClosedError` if the registry is already closed --
-        no artifact directory is ever created after `close()`."""
+        no artifact directory is ever created after `close()`. Raises
+        `ValueError` if `run_id` is not a safe single path component
+        (empty, contains a path separator, or is `.`/`..`/dotfile-shaped)
+        -- defense in depth, since this method turns `run_id` directly
+        into a path component."""
+        if not _is_traversal_safe_path_component(run_id):
+            raise ValueError(f"run_id {run_id!r} is not a safe path component")
         with self._master_lock:
             if self._closed:
                 raise RegistryClosedError("registry is closed")
-        run_dir = self._root_dir / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-        return run_dir
+        staging_dir = self._root_dir / f"{_STAGING_DIR_PREFIX}{run_id}-{uuid.uuid4().hex[:8]}"
+        staging_dir.mkdir(parents=True, exist_ok=False)
+        return staging_dir
+
+    def publish_artifact_dir(self, run_id: str, staging_dir: Path) -> Path:
+        """Validates `staging_dir` contains a complete, self-consistent
+        bundle (a real `manifest.json` whose own `ManifestRecord` model
+        validation passes, run_id matching, every declared file present)
+        and then ATOMICALLY renames it to `root_dir / run_id` (RR-002) --
+        a single filesystem rename on the same volume, so any observer
+        either sees no `run_id`-named directory at all, or the complete,
+        already-fully-written one; never a partial one. Returns the final
+        path.
+
+        Raises `ValueError` if `staging_dir` fails validation (never
+        renamed in that case -- the caller's own factory exception
+        propagates normally; the staging directory is left in place for
+        forensic inspection, exactly the "identifiable, safely cleanable"
+        abandoned-staging-directory case RR-004 describes). Raises
+        `RegistryClosedError` if the registry is already closed."""
+        if not _is_traversal_safe_path_component(run_id):
+            raise ValueError(f"run_id {run_id!r} is not a safe path component")
+        with self._master_lock:
+            if self._closed:
+                raise RegistryClosedError("registry is closed")
+        manifest_path = staging_dir / MANIFEST_FILENAME
+        if not manifest_path.is_file():
+            raise ValueError(f"staging directory for {run_id!r} has no {MANIFEST_FILENAME} -- refusing to publish")
+        manifest = ManifestRecord(**json.loads(manifest_path.read_text(encoding="utf-8")))
+        if manifest.run_id != run_id:
+            raise ValueError(f"manifest.json run_id {manifest.run_id!r} does not match expected {run_id!r}")
+        for filename in manifest.files:
+            if not (staging_dir / filename).is_file():
+                raise ValueError(f"staging directory for {run_id!r} is missing declared file {filename!r}")
+        final_dir = self._root_dir / run_id
+        staging_dir.rename(final_dir)
+        return final_dir
 
     def get_or_run(self, run_id: str, factory: Callable[[], RunEntry]) -> tuple[RunEntry, bool]:
         """Returns (entry, reused_existing_run). If `run_id` is already
@@ -346,11 +536,22 @@ class RunRegistry:
         `_make_room_for_new_entry_locked()` -- each observes `_closed` on
         its next wake and unwinds cleanly (`RegistryClosedError`, removing
         its own unregistered `artifact_dir`) rather than being deleted out
-        from under it. Only then removes `root_dir` itself. Idempotent: a
-        second call is a no-op (never raises, never double-removes)."""
+        from under it. Idempotent: a second call is a no-op (never raises,
+        never double-removes).
+
+        For a `persistent=False` registry (the original, unchanged
+        behavior): removes `root_dir` itself -- the ephemeral root belongs
+        entirely to this instance.
+
+        For `persistent=True` (RR-001): does NOT remove `root_dir` --
+        completed runs are meant to survive this process, that is the
+        entire point. Any per-run cleanup (retention/eviction) is handled
+        by `_make_room_for_new_entry_locked`'s existing bound, not by
+        `close()`."""
         with self._master_lock:
             if self._closed:
                 return
             self._closed = True
             self._room_available.notify_all()
-        shutil.rmtree(self._root_dir, ignore_errors=True)
+        if not self._persistent:
+            shutil.rmtree(self._root_dir, ignore_errors=True)

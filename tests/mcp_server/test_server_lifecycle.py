@@ -72,6 +72,37 @@ def test_build_server_creates_a_real_root_directory_that_atexit_would_clean_up()
     assert created_registries[0].root_dir.exists()
 
 
+def test_build_server_defaults_to_ephemeral_registry_without_the_env_var(monkeypatch):
+    """RR-001 (docs/issues/mcp-persistent-run-registry.md): the default
+    (R3CHAIN_RUN_ROOT unset) must be byte-for-byte the original ephemeral
+    behavior -- this is the regression guard for every other test in this
+    file and test_registry.py that calls build_server()/RunRegistry()
+    without expecting to touch a real, persistent filesystem location."""
+    monkeypatch.delenv("R3CHAIN_RUN_ROOT", raising=False)
+    with mock.patch("r3chain_geothermal.mcp_server.server.atexit.register") as mock_register:
+        build_server()
+    close_calls = _run_registry_close_calls(mock_register)
+    assert len(close_calls) == 1
+    registry_obj = close_calls[0].__self__
+    assert registry_obj.persistent is False
+    close_calls[0]()  # clean up the real tempdir this call created
+
+
+def test_build_server_builds_a_persistent_registry_when_env_var_is_set(monkeypatch):
+    with tempfile.TemporaryDirectory() as td:
+        run_root = Path(td) / "runs"
+        monkeypatch.setenv("R3CHAIN_RUN_ROOT", str(run_root))
+        with mock.patch("r3chain_geothermal.mcp_server.server.atexit.register") as mock_register:
+            build_server()
+        close_calls = _run_registry_close_calls(mock_register)
+        assert len(close_calls) == 1
+        registry_obj = close_calls[0].__self__
+        assert registry_obj.persistent is True
+        assert registry_obj.root_dir == run_root
+        close_calls[0]()
+        assert run_root.is_dir()  # persistent close() must NOT delete root_dir
+
+
 def test_real_server_process_cleans_up_its_temp_directory_on_sigterm():
     """The direct regression test for the actual leak this hardening round
     found: the MCP stdio client's own documented shutdown sequence closes

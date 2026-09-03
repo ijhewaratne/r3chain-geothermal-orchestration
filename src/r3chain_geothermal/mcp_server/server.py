@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from pydantic import Field
 
-from .config import load_fixed_server_config
+from .config import load_fixed_server_config, resolve_run_root
 from .registry import DEFAULT_MAX_REGISTRY_SIZE, RunRegistry
 from .schemas import (
     ArtifactResult,
@@ -93,11 +93,16 @@ def build_server(
     server always uses the one config resolved by
     `config.load_fixed_server_config()` at build time.
 
-    When `registry` is not supplied, this function creates a fresh
-    `RunRegistry` backed by its own `tempfile.mkdtemp()` root (registry.py's
-    own default) and registers `atexit.register(run_registry.close)` so
-    that root directory is actually removed on normal process exit --
-    `mkdtemp()` itself does NOT self-clean, unlike
+    When `registry` is not supplied: if `R3CHAIN_RUN_ROOT` is set
+    (`config.resolve_run_root()`), builds a PERSISTENT `RunRegistry`
+    rooted there (RR-001, docs/issues/mcp-persistent-run-registry.md) --
+    completed runs survive this process, and any pre-existing runs under
+    that root are rehydrated immediately. Otherwise (the original,
+    unchanged default), creates a fresh `RunRegistry` backed by its own
+    `tempfile.mkdtemp()` root (registry.py's own default) and registers
+    `atexit.register(run_registry.close)` so that root directory is
+    actually removed on normal process exit -- `mkdtemp()` itself does
+    NOT self-clean, unlike
     `tempfile.TemporaryDirectory()`. A CALLER-supplied `registry` (tests,
     or an embedding application managing its own lifecycle) is never
     auto-closed here -- its owner is responsible for calling `close()`.
@@ -128,7 +133,16 @@ def build_server(
     if registry is not None:
         run_registry = registry
     else:
-        run_registry = RunRegistry(max_size=max_registry_size)
+        run_root = resolve_run_root()
+        if run_root is not None:
+            # RR-001 (docs/issues/mcp-persistent-run-registry.md): an
+            # operator has opted into a persistent, restart-surviving
+            # registry via R3CHAIN_RUN_ROOT. Rehydration (any warnings
+            # recorded on run_registry.rehydration_warnings) happens
+            # inside this constructor call itself.
+            run_registry = RunRegistry(max_size=max_registry_size, root_dir=run_root, persistent=True)
+        else:
+            run_registry = RunRegistry(max_size=max_registry_size)
         atexit.register(run_registry.close)
         if _install_signal_handler:
             def _handle_sigterm(signum: int, frame: Any) -> None:

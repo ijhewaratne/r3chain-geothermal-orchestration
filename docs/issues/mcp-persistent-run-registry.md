@@ -1,7 +1,45 @@
 # Issue: persistent/rehydratable MCP run registry across server restarts
 
-**Status**: specification only, not implemented. Discovered during T5.1C acceptance evidence
-(`docs/evidence/t5.1c/2026-09-03-desktop-run-1/run-summary.md`, "Why the run disappeared").
+**Status**: **implemented** (2026-09-03, `feature/persistent-run-registry`,
+`R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md` Phase 2 / Workstream C). Originally discovered
+during T5.1C acceptance evidence (`docs/evidence/t5.1c/2026-09-03-desktop-run-1/run-summary.md`,
+"Why the run disappeared"). See `docs/decisions/decision-register.md` (IMPL-004..IMPL-006) for
+design decisions made while implementing this.
+
+## Implementation record (2026-09-03)
+
+- `RunRegistry(persistent=True, root_dir=...)` (`src/r3chain_geothermal/mcp_server/registry.py`):
+  requires an explicit `root_dir`; `close()` no longer deletes it; `__init__` rehydrates on
+  construction via `_rehydrate()`/`_load_run_entry()`.
+- Opt-in only: `build_server()` (`src/r3chain_geothermal/mcp_server/server.py`) builds a
+  persistent registry only when `R3CHAIN_RUN_ROOT` is set
+  (`config.resolve_run_root()`) — unset (the default) is byte-for-byte the original ephemeral
+  behavior, so the existing test suite and every caller that doesn't opt in is unaffected.
+- Atomic publication (RR-002): `new_artifact_dir()` now returns a `.staging-<run_id>-<uuid>`
+  directory; a new `publish_artifact_dir(run_id, staging_dir)` validates the staged
+  `manifest.json` (parses as `ManifestRecord`, run_id matches, every declared file present) and
+  then atomically renames staging → final. `mcp_server/tools.py`'s `run_workflow_tool` factory
+  updated to call both in sequence.
+- Rehydration validation (RR-003): re-parses each candidate's `manifest.json`, verifies the
+  directory name matches `manifest.run_id`, re-hashes every declared file against the manifest's
+  own `byte_sha256` claim (not just the manifest's internal self-consistency), and parses
+  `workflow_result.json` via the existing `parse_workflow_result_json()` to reconstruct a full
+  `RunSummary`/`WorkflowAuditRecord` — reusing `summarize_workflow_result()` (moved from
+  `tools.py` to `schemas.py` to avoid a circular import with `registry.py`, see IMPL-004). Any
+  failure is caught, recorded in `registry.rehydration_warnings`, never raised.
+- Path/traversal safety: rehydration only ever considers directory names matching
+  `_RUN_ID_PATTERN` (`compute_run_id()`'s exact shape); `new_artifact_dir`/`publish_artifact_dir`
+  use a deliberately weaker `_is_traversal_safe_path_component()` check instead (see IMPL-005 for
+  why the full pattern there broke ~18 pre-existing concurrency tests that use synthetic IDs).
+- Cleanup: an abandoned `.staging-*` directory found during rehydration (from a crash between
+  `new_artifact_dir` and `publish_artifact_dir`) is deleted silently — it was never a published
+  run by construction.
+- Retention (RR-006): reuses the existing FIFO/pinned-protection eviction bound (`max_size`) —
+  no separate TTL mechanism was added this phase; noted as a possible future enhancement, not a
+  gap in the acceptance criteria as specified.
+- Tests: `tests/mcp_server/test_persistent_registry.py` (RR-008's full restart-recovery
+  acceptance test plus corrupt-bundle/atomicity/traversal cases),
+  `tests/mcp_server/test_server_lifecycle.py` (env-var opt-in behavior, both directions).
 
 ## Problem
 

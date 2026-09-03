@@ -59,13 +59,12 @@ from .schemas import (
     ArtifactSlice,
     AuditSummary,
     CapabilitiesSummary,
-    InfeasibleCandidateSummary,
     PyDoubletValidationSummary,
-    RankedCandidateSummary,
     RunSummary,
     SourceProvenanceInput,
     _CALCULATION_MODES,
     _SOURCE_FORMAT_HINTS,
+    summarize_workflow_result,
 )
 
 INTERIM_ARCHITECTURE_DISCLAIMER = (
@@ -170,57 +169,6 @@ def validate_pydoublet_result(
     )
 
 
-# ── shared: WorkflowResult/WorkflowFailure -> RunSummary ────────────────────
-def summarize_workflow_result(
-    result: WorkflowResult | WorkflowFailure, artifact_filenames: frozenset[str], *, reused_existing_run: bool,
-) -> RunSummary:
-    """Public (T5.1B): the ONE place a `WorkflowResult`/`WorkflowFailure`
-    is mapped to the compact `RunSummary` shape every `geo_` tool and the
-    scripted client's own deterministic CLI-fallback path
-    (`mcp_client.cli_fallback`) both return. Reusing this function
-    directly from both callers -- rather than each maintaining its own
-    copy of this mapping -- is what makes "the fallback path reproduces
-    the same deterministic identifiers and ranking as the MCP path" a
-    structural guarantee instead of something that could silently drift
-    between two independently-written implementations."""
-    if isinstance(result, WorkflowFailure):
-        return RunSummary(
-            run_id=result.run_id,
-            workflow_status="stopped",
-            preferred_candidate_id=None,
-            ranked=[],
-            infeasible=[],
-            stopping_failure_code=result.failure_code.value,
-            warnings=[],
-            artifact_filenames=sorted(artifact_filenames),
-            bundle_scientific_sha256="",
-            reused_existing_run=reused_existing_run,
-        )
-    ranked = [
-        RankedCandidateSummary(
-            candidate_id=entry.candidate_id, rank=entry.rank,
-            indicative_lcoh_eur_per_mwh=entry.economics.indicative_lcoh_eur_per_kwh * 1000.0,
-        )
-        for entry in result.ranking.ranked
-    ]
-    infeasible = [
-        InfeasibleCandidateSummary(candidate_id=entry.candidate_id, failure_code=entry.failure_code.value)
-        for entry in result.ranking.infeasible
-    ]
-    return RunSummary(
-        run_id=result.run_id,
-        workflow_status="completed",
-        preferred_candidate_id=ranked[0].candidate_id if ranked else None,
-        ranked=ranked,
-        infeasible=infeasible,
-        stopping_failure_code=None,
-        warnings=[w.warning for w in result.audit.warnings],
-        artifact_filenames=sorted(artifact_filenames),
-        bundle_scientific_sha256="",  # filled in by run_workflow_tool() after write_workflow_artifacts()
-        reused_existing_run=reused_existing_run,
-    )
-
-
 # ── 3. geo_run_workflow ──────────────────────────────────────────────────────
 def run_workflow_tool(
     pydoublet_raw_result: dict[str, Any],
@@ -267,7 +215,10 @@ def run_workflow_tool(
             # tests/mcp_server/test_tools.py.
             raise _ProvenanceMismatchError(result.message, result.details)
 
-        run_dir = registry.new_artifact_dir(run_id)
+        # RR-002 (docs/issues/mcp-persistent-run-registry.md): write into a
+        # STAGING directory first, then atomically publish -- new_artifact_dir()
+        # no longer returns the final run_id-named directory directly.
+        staging_dir = registry.new_artifact_dir(run_id)
         extra_artifacts: dict[str, bytes] | None = None
         if isinstance(result, WorkflowResult):
             extra_artifacts = {
@@ -275,12 +226,15 @@ def run_workflow_tool(
                 NETWORK_CANDIDATES_SVG_FILENAME: render_network_candidates_svg(result),
                 RECOMMENDATION_MD_FILENAME: render_recommendation_markdown(result),
             }
-        manifest = write_workflow_artifacts(result, pydoublet_raw_result, fixed_config, run_dir, extra_artifacts=extra_artifacts)
+        manifest = write_workflow_artifacts(
+            result, pydoublet_raw_result, fixed_config, staging_dir, extra_artifacts=extra_artifacts,
+        )
         # manifest.files never lists manifest.json itself (ManifestRecord's
         # own invariant, workflow/artifacts.py) -- but the file genuinely
         # exists on disk (write_workflow_artifacts() always writes it last),
         # so it must still be a valid geo_get_artifact target.
         all_filenames = frozenset(manifest.files.keys()) | {MANIFEST_FILENAME}
+        run_dir = registry.publish_artifact_dir(run_id, staging_dir)
         summary = summarize_workflow_result(result, all_filenames, reused_existing_run=False)
         summary = summary.model_copy(update={"bundle_scientific_sha256": manifest.bundle_scientific_sha256})
         return RunEntry(
