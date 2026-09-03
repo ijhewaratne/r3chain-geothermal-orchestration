@@ -60,6 +60,22 @@ class CapabilitiesSummary(BaseModel):
     max_registry_size: int
     supported_source_format_hints: list[str]
     supported_calculation_modes: list[str]
+    provenance_hash_enforcement_supported: bool
+    """IP-001: expected_raw_sha256 is accepted by geo_validate_pydoublet_result
+    and geo_run_workflow."""
+    persistent_registry_enabled: bool
+    """RR-001: whether THIS running server instance was started with
+    R3CHAIN_RUN_ROOT set (runs survive a restart) -- reflects the actual
+    running registry, never a static capability claim."""
+    available_shortfall_policies: list[str]
+    """DSP-001: GeothermalInjectionPolicy.auxiliary_policy's accepted values."""
+    available_injection_sizing_policies: list[str]
+    """DSP-005: GeothermalInjectionPolicy.injection_sizing_policy's accepted values."""
+    candidate_generation_modes: list[str]
+    """CAN-001: "predefined" (config/demo_assumptions.json's own C1-C4,
+    the only mode geo_run_workflow itself currently drives) and
+    "generated" (network.candidate_generation.generate_candidates(),
+    available as a library call but not yet wired into geo_run_workflow)."""
 
 
 class PyDoubletValidationSummary(BaseModel):

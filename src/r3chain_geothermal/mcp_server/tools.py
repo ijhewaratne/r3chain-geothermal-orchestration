@@ -143,6 +143,11 @@ def get_capabilities(*, fixed_config: dict[str, Any], registry: RunRegistry) -> 
         max_registry_size=registry.max_size,
         supported_source_format_hints=list(_SOURCE_FORMAT_HINTS),
         supported_calculation_modes=list(_CALCULATION_MODES),
+        provenance_hash_enforcement_supported=True,
+        persistent_registry_enabled=registry.persistent,
+        available_shortfall_policies=["cost_shortfall", "strict_infeasible"],
+        available_injection_sizing_policies=["fixed_design_temperature", "self_consistent"],
+        candidate_generation_modes=["predefined", "generated"],
     )
 
 

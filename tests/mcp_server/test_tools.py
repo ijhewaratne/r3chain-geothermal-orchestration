@@ -81,6 +81,17 @@ def test_get_capabilities_never_touches_the_registry(fixed_config, registry):
     assert len(registry) == 0
 
 
+def test_get_capabilities_advertises_the_prototype_completion_spec_capabilities(fixed_config, registry):
+    """MCP-002: provenance-hash enforcement, persistent-registry status,
+    available shortfall policies, and candidate-generation modes."""
+    caps = tools.get_capabilities(fixed_config=fixed_config, registry=registry)
+    assert caps.provenance_hash_enforcement_supported is True
+    assert caps.persistent_registry_enabled == registry.persistent
+    assert set(caps.available_shortfall_policies) == {"cost_shortfall", "strict_infeasible"}
+    assert set(caps.available_injection_sizing_policies) == {"fixed_design_temperature", "self_consistent"}
+    assert set(caps.candidate_generation_modes) == {"predefined", "generated"}
+
+
 # ── 2. geo_validate_pydoublet_result ─────────────────────────────────────
 def test_validate_pydoublet_result_worked_case():
     result = tools.validate_pydoublet_result(_raw(), _provenance())
