@@ -4,6 +4,12 @@ Two gates. Every item is phrased so it can be checked by running a command or op
 an artifact — not by judgement. Provisional values are governed by
 `config/demo_assumptions.json` and ADR-001.
 
+**Scope note (added 2026-09-04):** the gates below are the original, connection-only
+Gate-1/Gate-2 criteria and are preserved here unedited. The synthetic joint
+site/connection-optimization extension (ADR-001 D9, `workflow/joint_optimization.py`)
+has its own acceptance record in `docs/issues/joint-location-optimization.md` and
+`docs/decisions/decision-register.md` — not retrofitted into this file.
+
 ## Gate 1 — Workshop vertical slice (due 2026-09-15)
 
 Deterministic slice (implementation plan, Week-4 exit gate):

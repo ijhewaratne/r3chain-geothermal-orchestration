@@ -125,6 +125,61 @@ def test_scenario_variants_satisfy_their_own_energy_consistency_by_construction(
             assert boundary.failure_code != AdapterFailureCode.UNIT_OR_SIGN_ERROR, scenario.scenario_id
 
 
+# ── Site-dependent drilling CAPEX and doublet-pump power ────────────────────
+def test_scenario_a_reproduces_golden_capex_and_pump_power_unchanged():
+    """Scenario A: drilling_capex_multiplier=1.0 and a mass-flow ratio of
+    1.0 must leave both the golden doublet CAPEX and doublet pump power
+    unchanged (regression safety for the CAPEX/pump-power extension)."""
+    golden = _golden_coupling_input()
+    scenarios = {s.scenario_id: s for s in build_synthetic_geothermal_scenarios(golden)}
+    scenario_a = scenarios["scenario_A"]
+    assert scenario_a.drilling_capex_multiplier == 1.0
+    assert scenario_a.coupling_input.doublet_pump_electric_power_kw.value == golden.doublet_pump_electric_power_kw.value
+
+
+def test_scenario_c_pump_power_scales_with_its_own_mass_flow_ratio():
+    """Scenario C's mass flow is scaled to 70% of golden (module docstring)
+    -- doublet_pump_electric_power_kw must scale by the exact same ratio,
+    reusing PyDoublet's own linear-in-flow pump-power formula rather than
+    staying at the golden value."""
+    golden = _golden_coupling_input()
+    scenarios = {s.scenario_id: s for s in build_synthetic_geothermal_scenarios(golden)}
+    scenario_c = scenarios["scenario_C"]
+    mass_flow_ratio = (
+        scenario_c.coupling_input.geothermal_brine_mass_flow_kg_s.value
+        / golden.geothermal_brine_mass_flow_kg_s.value
+    )
+    assert mass_flow_ratio == pytest.approx(0.7)
+    expected_pump_kw = golden.doublet_pump_electric_power_kw.value * mass_flow_ratio
+    assert scenario_c.coupling_input.doublet_pump_electric_power_kw.value == pytest.approx(expected_pump_kw)
+
+
+def test_scenario_drilling_capex_multiplier_flows_into_candidate_economics():
+    """Scenario C's declared drilling_capex_multiplier=1.15 must show up
+    as a scaled capex_doublet_eur on every feasible scenario_C alternative
+    -- not the raw shared golden CAPEX every scenario_A alternative still
+    uses. This closes the previously-flagged gap where drilling CAPEX
+    could not move the economic ranking at all."""
+    result, _ = _run_demo()
+    golden_doublet_capex = EconomicAssumptions.from_config_dict(_config()).doublet_capex_eur
+
+    scenario_c_feasible = [
+        a for a in result.alternatives if a.feasible and a.identity.geothermal_scenario_id == "scenario_C"
+    ]
+    scenario_a_feasible = [
+        a for a in result.alternatives if a.feasible and a.identity.geothermal_scenario_id == "scenario_A"
+    ]
+    assert len(scenario_c_feasible) >= 1
+    assert len(scenario_a_feasible) >= 1
+
+    for alt in scenario_c_feasible:
+        assert alt.economics.capex_doublet_eur == pytest.approx(golden_doublet_capex * 1.15)
+    for alt in scenario_a_feasible:
+        assert alt.economics.capex_doublet_eur == pytest.approx(golden_doublet_capex)
+
+    assert scenario_c_feasible[0].economics.capex_doublet_eur != scenario_a_feasible[0].economics.capex_doublet_eur
+
+
 # ── OPT-005/AC-10: the synthetic demonstration ──────────────────────────────
 def test_demonstration_satisfies_every_opt005_minimum():
     result, screened = _run_demo()

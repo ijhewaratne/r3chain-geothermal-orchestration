@@ -4,8 +4,27 @@
 
 ## Objective
 
-Implement the six-week deterministic proof of concept described in the imported
-implementation plan.
+This project has two scope layers, in order:
+
+1. **Original six-week PoC (complete).** Implement the deterministic proof of concept
+   described in the imported implementation plan: one fixed, already-computed
+   geothermal doublet result, ranking candidate district-heating network-connection
+   points only. Evidence of completion lives under `docs/evidence/`.
+2. **Synthetic joint site/connection-optimization extension (implemented).**
+   `workflow/joint_optimization.py` additionally varies a synthetic geothermal
+   scenario/site axis (`geothermal_scenario_id`/`surface_site_id`), independent of the
+   network-connection axis, producing a Pareto shortlist rather than a single invented
+   ranking. Every scenario is explicitly `synthetic=True`, derived from the one golden
+   PyDoublet result — never an independent real drilling-site claim. Current
+   limitations: no real per-site PyDoublet runs, no real geological/GIS data, and
+   drilling/well CAPEX and doublet-pump power vary only through declared synthetic
+   assumptions, not a depth-derived cost/physics model.
+
+Real drilling-location optimization against real data remains out of scope until
+`data_contracts.readiness.drilling_location_optimization_permitted` can be satisfied —
+never claimed or attempted in this prototype. `docs/decisions/ADR-001-geothermal-poc-scope.md`
+(including its D9 amendment) is the authoritative current scope record; consult it, not
+just the original implementation plan, when scope is ambiguous.
 
 ## Non-negotiable rules
 

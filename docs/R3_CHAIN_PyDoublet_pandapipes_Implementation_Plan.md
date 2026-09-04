@@ -1,3 +1,12 @@
+> **Status note (added 2026-09-04, historical baseline — body unedited below):** this is the
+> original six-week scoping plan for the connection-only PoC (D1: one fixed PyDoublet result,
+> candidate network-connection points only). It is preserved here unedited as the historical
+> record. The project has since implemented a synthetic joint site/connection-optimization
+> extension (`workflow/joint_optimization.py`) that additionally varies a synthetic geothermal
+> scenario/site axis, independent of the network-connection axis — see
+> `docs/decisions/ADR-001-geothermal-poc-scope.md` (amendment D9) and
+> `docs/issues/joint-location-optimization.md` for the current, authoritative scope.
+
 # R3-CHAIN PyDoublet–pandapipes Proof-of-Concept Implementation Plan
 
 **Prepared for:** Ishantha Hewaratne  

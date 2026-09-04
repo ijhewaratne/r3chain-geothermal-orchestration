@@ -108,6 +108,12 @@ def render_joint_recommendation_markdown(result: JointOptimizationResult) -> byt
     lines.append(RECOMMENDATION_SYNTHETIC_DISCLAIMER)
     lines.append("")
     lines.append(
+        "**Question this run answers:** Among the candidate geothermal doublet locations and "
+        "associated network connections, which candidate provides the technically feasible "
+        "minimum-cost/LCOH solution for supplying the four-consumer DH network?"
+    )
+    lines.append("")
+    lines.append(
         f"Scenarios evaluated: {', '.join(s.scenario_id for s in result.scenarios)}. "
         f"Alternatives evaluated: {len(result.alternatives)}."
     )

@@ -62,12 +62,41 @@ No approved multi-objective weighting policy exists for this prototype (only Q8'
 feasibility-first-then-lowest-cost rule was approved). `pareto_shortlist()` returns the non-dominated
 subset of feasible alternatives across six objectives that this prototype actually computes data
 for (annualised cost, indicative LCOH, geothermal heat delivered, auxiliary heat, total pumping
-electricity, connection length) — drilling/site cost (not yet differentiated per scenario in this
-economics module), risk/success-probability, and emissions are excluded, since no data/source for
-them exists (OPT-003's explicit instruction). Measured: of the four feasible alternatives, only the
-two `scenario_A` ones are non-dominated — `scenario_C`'s reduced brine flow makes its alternatives
-strictly worse on every considered objective, an interesting, real, unplanned finding kept and
-reported rather than adjusted away.
+electricity, connection length) — risk/success-probability and emissions are excluded, since no
+data/source for them exists (OPT-003's explicit instruction). Drilling/site cost is now
+differentiated per scenario (see "Update (2026-09-04)" below) and flows into the annualised-cost/LCOH
+objectives above; it has no separate objective entry only because it is not an independently
+reported KPI on `CandidateEconomicResult`.
+
+## Update (2026-09-04, `feature/complete-synthetic-prototype`): drilling CAPEX and pump power now vary per scenario
+
+Previously, `assumptions.doublet_capex_eur` and `doublet_pump_electric_power_kw` were identical
+across every synthetic scenario, so a scenario's economic consequence could only move through
+deliverable heat — the two real gaps a subsequent review of the joint-optimization module flagged.
+Both are now closed, without inventing new physics or a depth-to-cost model that does not exist
+anywhere in this codebase or in PyDoublet:
+
+- `GeothermalSiteScenario.drilling_capex_multiplier` — a DECLARED, illustrative synthetic assumption
+  (1.0 / 0.85 / 1.15 for scenario_A/B/C respectively), chosen before any alternative was evaluated,
+  applied to `EconomicAssumptions.doublet_capex_eur` only for that scenario's own alternatives in
+  `evaluate_alternative()`. Follows the same declared-multiplier pattern
+  `network/candidate_generation.py` (CAN-006) already uses for route/design options.
+- `doublet_pump_electric_power_kw` is now rescaled by each scenario's own mass-flow ratio relative to
+  the golden result, reusing PyDoublet's OWN pump-power formula (`repos/PyDoublet/pydoublet
+  /doublet_config/doublet.py::calc_power_data()`: linear in mass/volumetric flow, every other term
+  held fixed) — not a newly invented relationship.
+
+**Re-measured Pareto shortlist** (previously: "only the two `scenario_A` alternatives are
+non-dominated" — now stale). With `scenario_C`'s CAPEX raised to 9,200,000 EUR (1.15x the golden
+8,000,000 EUR) and its cost/LCOH rising accordingly (`trunk_3-direct`: 1,265,179 EUR/a, 79.074
+EUR/MWh; `trunk_4-diverted`: 1,271,571 EUR/a, 79.473 EUR/MWh, both up from `scenario_A`'s ~835-839k
+EUR/a, ~52.2-52.4 EUR/MWh), three of the four feasible alternatives are now non-dominated —
+`scenario_A|trunk_1-direct`, `scenario_A|trunk_2-diverted`, and `scenario_C|trunk_3-direct` — only
+`scenario_C|trunk_4-diverted` is dominated (by `scenario_C|trunk_3-direct`, which is at least as good
+on every objective and strictly better on connection length). `scenario_C` is no longer dominated on
+every objective simply by having lower deliverable heat; its higher CAPEX changes cost/LCOH, but it
+still is not strictly worse than both `scenario_A` alternatives on every one of the six considered
+objectives. Genuine, measured, unplanned — reported as-is, not adjusted to match the prior text.
 
 ## Real-mode safeguard (OPT-006): documented deferral, not implemented
 

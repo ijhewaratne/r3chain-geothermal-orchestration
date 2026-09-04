@@ -1,12 +1,23 @@
 # R3-CHAIN PyDoublet–pandapipes proof of concept
 
-Deterministic, auditable evaluation of candidate district-heating network
-connection points for one already-computed geothermal doublet result. See
-`docs/R3_CHAIN_PyDoublet_pandapipes_Implementation_Plan.md` for the full
-scope, boundary, and six-week plan this package implements.
+Deterministic, auditable evaluation of a geothermal doublet's connection to a
+district-heating network. Two modes exist, kept clearly distinct throughout every
+artifact this package produces:
 
-This package does **not** determine where to drill. It ranks network
-**connection** locations for one fixed PyDoublet scenario.
+- **Canonical single-scenario mode** (`workflow/core.py`): ranks candidate DH
+  network-**connection** points for **one** already-computed, fixed geothermal
+  doublet result. Does **not** determine where to drill.
+- **Synthetic joint site/connection-optimization mode** (`workflow/joint_optimization.py`,
+  see "A joint-optimization run" below): additionally varies a synthetic
+  geothermal scenario/site axis, independently of the connection axis, and returns
+  a Pareto shortlist rather than a single ranking. Every scenario is explicitly
+  `synthetic=True` — it demonstrates the *methodology* for comparing candidate
+  drilling sites, not a real drilling-site recommendation (no real geological/GIS
+  data exists in this prototype; see "Limitations and the real-data boundary" below).
+
+See `docs/R3_CHAIN_PyDoublet_pandapipes_Implementation_Plan.md` for the original
+six-week plan and `docs/decisions/ADR-001-geothermal-poc-scope.md` (including its D9
+amendment) for the current, authoritative scope of both modes.
 
 ## Environment
 
@@ -141,10 +152,13 @@ workflow through the *same* CLI:
   (`docs/issues/candidate-generation.md`).
 - **A joint-optimization run** — any config with `joint_optimization.enabled=true` (in addition to
   a `candidates.generated` block) dispatches the CLI to a genuinely different, full-product
-  evaluation: every one of three synthetic geothermal scenarios (derived from the one golden
-  PyDoublet result — this prototype cannot run real PyDoublet scenarios — by adjusting producer
-  temperature and/or brine mass flow, one deliberately made heat-exchanger-infeasible) paired with
-  *every* accepted generated candidate — 3 × 11 = 33 alternatives for this topology, with **no
+  evaluation answering: *"Among the candidate geothermal doublet locations and associated network
+  connections, which candidate provides the technically feasible minimum-cost/LCOH solution for
+  supplying the four-consumer DH network?"* Every one of three synthetic geothermal scenarios
+  (derived from the one golden PyDoublet result — this prototype cannot run real PyDoublet
+  scenarios — by adjusting producer temperature, brine mass flow, doublet-pump power, and a
+  declared drilling-CAPEX multiplier, one deliberately made heat-exchanger-infeasible) is paired
+  with *every* accepted generated candidate — 3 × 11 = 33 alternatives for this topology, with **no
   curation**: the evaluated set size always equals the true, unfiltered search space, never a
   hand-picked subset presented without disclosing how large the full space actually is. Since no
   approved multi-objective weighting policy exists, the result is a **Pareto shortlist** of
@@ -318,9 +332,15 @@ demonstration. Concretely, this project does **not**:
   but no code path anywhere in this repository actually ingests real data today. Verified directly:
   no reference to `DatasetClassification.REAL` exists in `network/blueprint.py`, `workflow/core.py`,
   or `workflow/joint_workflow.py`.
-- Determine where a geothermal doublet should be drilled. Every result here ranks or Pareto-compares
-  **network connection points** for one already-computed, already-fixed doublet result — never a
-  drilling-site recommendation, stated explicitly in every `recommendation.md`/
+- Make a real geological drilling-site recommendation. The **canonical mode** ranks/Pareto-compares
+  network connection points for one already-computed, already-fixed doublet result only. The
+  **joint-optimization mode** additionally varies a synthetic geothermal scenario/site axis
+  (`workflow/joint_optimization.py`) — demonstrating the methodology for comparing candidate
+  drilling sites against real data, once real data exists — but every scenario it evaluates is
+  explicitly `synthetic=True`, derived from the one golden PyDoublet result, never an independent
+  real drilling-site simulation. Real drilling-location optimization stays gated behind
+  `data_contracts.readiness.drilling_location_optimization_permitted`, never satisfied by any code
+  path in this repository today. Both facts are stated explicitly in every `recommendation.md`/
   `joint_recommendation.md` this project produces.
 - Claim a validated commercial cost basis. Every economic figure (CAPEX, O&M, interest rate,
   electricity/auxiliary-heat prices) is a labelled `demo_assumption` placeholder in

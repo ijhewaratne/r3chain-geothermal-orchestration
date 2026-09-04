@@ -32,6 +32,28 @@ variant passes that check by construction rather than by chance. These are
 clearly labelled synthetic (`GeothermalSiteScenario.synthetic=True`) and
 must never be presented as independent real PyDoublet runs.
 
+Each scenario also carries two site-dependent COST/POWER terms, so a
+scenario's own economic consequence is no longer limited to deliverable
+heat alone:
+
+- `doublet_pump_electric_power_kw` is RESCALED (not left at the golden
+  value) by the scenario's own mass-flow ratio relative to the golden
+  result, reusing PyDoublet's OWN internal pump-power relationship
+  (`repos/PyDoublet/pydoublet/doublet_config/doublet.py::calc_power_data()`,
+  `pump_power = q_vol_pump * pump_pressure_draw_down /
+  pump_system_efficiency` -- linear in volumetric/mass flow, every other
+  term held fixed) -- reused, not re-derived, exactly like
+  `_recompute_raw_power_kw()` reuses T1.5B's own formula above.
+- `GeothermalSiteScenario.drilling_capex_multiplier` is an explicit,
+  DECLARED synthetic assumption (never a depth-derived cost model -- no
+  well-depth-to-cost formula exists anywhere in this codebase or in
+  PyDoublet), applied to `assumptions.doublet_capex_eur` only for that
+  scenario's own alternatives in `evaluate_alternative()`. It follows the
+  SAME declared-multiplier pattern `network/candidate_generation.py`
+  (CAN-006) already uses for route/design options ("direct" x1.0,
+  "diverted" x1.5) -- an illustrative input chosen before any alternative
+  is evaluated, never tuned afterward to produce a particular ranking.
+
 ## Evaluation stages (OPT-002)
 
 `evaluate_alternative()` sequences the SAME already-existing calls
@@ -149,7 +171,14 @@ class AlternativeIdentity(BaseModel):
 class GeothermalSiteScenario(BaseModel):
     """One (geothermal_scenario_id, surface_site_id) pairing -- OPT-001's
     first two identity axes are deliberately distinct fields, never
-    merged. `synthetic=True` always -- see module docstring."""
+    merged. `synthetic=True` always -- see module docstring.
+
+    `drilling_capex_multiplier` is a DECLARED, illustrative synthetic
+    assumption (module docstring) -- multiplied against
+    `EconomicAssumptions.doublet_capex_eur` in `evaluate_alternative()`
+    only for this scenario's own alternatives. It is not derived from
+    `coupling_input` or from any depth/geological model; no such model
+    exists in this prototype."""
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     scenario_id: str
@@ -157,6 +186,7 @@ class GeothermalSiteScenario(BaseModel):
     description: str
     synthetic: Literal[True] = True
     coupling_input: PyDoubletCouplingResult
+    drilling_capex_multiplier: float = Field(gt=0)
 
 
 class AlternativeEvaluation(BaseModel):
@@ -211,6 +241,19 @@ def _recompute_raw_power_kw(mass_flow_kg_s: float, specific_heat_j_kg_k: float, 
     return mass_flow_kg_s * specific_heat_j_kg_k * (t_prod_c - t_brine_outlet_c) / 1000.0
 
 
+def _scale_pump_power_kw(mass_flow_kg_s: float, golden_mass_flow_kg_s: float, golden_pump_power_kw: float) -> float:
+    """Scales the golden doublet-pump electrical power linearly with the
+    scenario's own mass-flow ratio, reusing PyDoublet's OWN internal
+    pump-power relationship (`repos/PyDoublet/pydoublet/doublet_config/
+    doublet.py::calc_power_data()`: `pump_power = q_vol_pump *
+    pump_pressure_draw_down / pump_system_efficiency`, linear in
+    volumetric/mass flow with every other term -- density, pressure
+    drawdown, pump efficiency -- held fixed). Reused, not re-derived,
+    exactly like `_recompute_raw_power_kw()` above. A ratio of 1.0 (mass
+    flow unchanged from golden) leaves the golden pump power unchanged."""
+    return golden_pump_power_kw * (mass_flow_kg_s / golden_mass_flow_kg_s)
+
+
 def build_synthetic_geothermal_scenarios(golden_coupling_input: PyDoubletCouplingResult) -> list[GeothermalSiteScenario]:
     """OPT-005: at least three explicitly synthetic geothermal/site
     scenarios, derived from the ONE golden PyDoublet result (this
@@ -221,13 +264,22 @@ def build_synthetic_geothermal_scenarios(golden_coupling_input: PyDoubletCouplin
     raw_geothermal_thermal_power_kw is recomputed via the SAME
     energy-consistency formula T1.5B applies, so it fails the HX
     hot-end check specifically, not the earlier, unrelated energy-
-    consistency gate."""
+    consistency gate.
+
+    Each scenario also carries a rescaled doublet_pump_electric_power_kw
+    (linear in its own mass-flow ratio, reusing PyDoublet's own pump-power
+    formula -- module docstring) and a declared, illustrative
+    `drilling_capex_multiplier` (1.0 / 0.85 / 1.15 below) chosen before any
+    alternative is evaluated, never tuned afterward to produce a
+    particular ranking outcome."""
     mass_flow = golden_coupling_input.geothermal_brine_mass_flow_kg_s.value
     specific_heat = golden_coupling_input.geothermal_brine_specific_heat_capacity_j_kg_k.value
     t_brine_outlet = golden_coupling_input.geothermal_brine_hx_outlet_temperature_c.value
+    golden_pump_power = golden_coupling_input.doublet_pump_electric_power_kw.value
 
     def _variant(t_prod_c: float, mass_flow_kg_s: float) -> PyDoubletCouplingResult:
         raw_power_kw = _recompute_raw_power_kw(mass_flow_kg_s, specific_heat, t_prod_c, t_brine_outlet)
+        pump_power_kw = _scale_pump_power_kw(mass_flow_kg_s, mass_flow, golden_pump_power)
         return golden_coupling_input.model_copy(update={
             "producer_wellhead_temperature_c": golden_coupling_input.producer_wellhead_temperature_c.model_copy(
                 update={"value": t_prod_c},
@@ -238,6 +290,9 @@ def build_synthetic_geothermal_scenarios(golden_coupling_input: PyDoubletCouplin
             "raw_geothermal_thermal_power_kw": golden_coupling_input.raw_geothermal_thermal_power_kw.model_copy(
                 update={"value": raw_power_kw},
             ),
+            "doublet_pump_electric_power_kw": golden_coupling_input.doublet_pump_electric_power_kw.model_copy(
+                update={"value": pump_power_kw},
+            ),
         })
 
     return [
@@ -245,6 +300,7 @@ def build_synthetic_geothermal_scenarios(golden_coupling_input: PyDoubletCouplin
             scenario_id="scenario_A", surface_site_id="site_A",
             description="Synthetic scenario A: the golden PyDoublet result, unmodified.",
             coupling_input=golden_coupling_input,
+            drilling_capex_multiplier=1.0,
         ),
         GeothermalSiteScenario(
             scenario_id="scenario_B", surface_site_id="site_B",
@@ -254,20 +310,27 @@ def build_synthetic_geothermal_scenarios(golden_coupling_input: PyDoubletCouplin
                 "to demonstrate a geological/site-level HX_SUPPLY_TEMPERATURE_INFEASIBLE screening "
                 "failure -- raw_geothermal_thermal_power_kw is recomputed via the same "
                 "mass_flow*cp*(T_prod-T_brine_outlet) formula so this variant passes the "
-                "unrelated raw-energy-consistency check."
+                "unrelated raw-energy-consistency check. drilling_capex_multiplier=0.85 is a "
+                "declared, illustrative 'shallower/cheaper reservoir' assumption; it never reaches "
+                "the economics stage in the curated demo below since this scenario fails HX "
+                "screening first."
             ),
             coupling_input=_variant(t_prod_c=60.0, mass_flow_kg_s=mass_flow),
+            drilling_capex_multiplier=0.85,
         ),
         GeothermalSiteScenario(
             scenario_id="scenario_C", surface_site_id="site_C",
             description=(
                 "Synthetic scenario C: brine mass flow scaled to 70% of the golden value "
                 "(producer_wellhead_temperature_c unchanged) -- a genuinely different, still "
-                "HX-feasible scenario with a lower deliverable heat ceiling."
+                "HX-feasible scenario with a lower deliverable heat ceiling, a proportionally "
+                "scaled doublet-pump power, and drilling_capex_multiplier=1.15 (a declared, "
+                "illustrative 'deeper/more difficult reservoir' assumption)."
             ),
             coupling_input=_variant(
                 t_prod_c=golden_coupling_input.producer_wellhead_temperature_c.value, mass_flow_kg_s=mass_flow * 0.7,
             ),
+            drilling_capex_multiplier=1.15,
         ),
     ]
 
@@ -333,7 +396,15 @@ def evaluate_alternative(
     candidate_result: CandidateEvaluationResult = candidate_boundary
 
     # Stage 7: economics, only now that the alternative is technically feasible.
-    economics = compute_candidate_economics(candidate_result, baseline_economics, assumptions=economic_assumptions)
+    # scenario.drilling_capex_multiplier applies ONLY to this scenario's own
+    # alternatives -- compute_candidate_economics() itself is unchanged (module
+    # docstring); a scenario-adjusted EconomicAssumptions copy is passed in its
+    # place so doublet CAPEX (and its annuity) reflects this scenario's own
+    # declared drilling-cost assumption.
+    scenario_economic_assumptions = economic_assumptions.model_copy(update={
+        "doublet_capex_eur": economic_assumptions.doublet_capex_eur * scenario.drilling_capex_multiplier,
+    })
+    economics = compute_candidate_economics(candidate_result, baseline_economics, assumptions=scenario_economic_assumptions)
 
     # Stage 8: risk/uncertainty metadata -- this prototype has no formal
     # uncertainty quantification (OPT-004's own scope), so this is a
@@ -361,10 +432,14 @@ _OBJECTIVE_SPECS: list[tuple[str, bool]] = [
 """OPT-003's supported objective fields, restricted to those this
 prototype actually computes data for (annualized cost, indicative LCOH,
 geothermal heat delivered, auxiliary heat, pumping electricity,
-connection length) -- drilling/site cost (not yet differentiated per
-scenario, see module docstring), risk/success-probability, and emissions
-are DELIBERATELY excluded: no data/source exists for them in this
-prototype (OPT-003's own explicit instruction)."""
+connection length). Drilling/site cost is now DIFFERENTIATED per scenario
+(GeothermalSiteScenario.drilling_capex_multiplier, module docstring) and
+flows into annualised_cost_total_eur_per_a/indicative_lcoh_eur_per_mwh
+above -- it has no SEPARATE objective entry of its own only because it is
+not an independently reported KPI on CandidateEconomicResult, not because
+it is undifferentiated. Risk/success-probability and emissions remain
+DELIBERATELY excluded: no data/source exists for them in this prototype
+(OPT-003's own explicit instruction)."""
 
 
 def _objective_values(alt: AlternativeEvaluation) -> dict[str, ParetoObjective]:

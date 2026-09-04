@@ -2,7 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-19
-- **Amended:** 2026-08-19 (D7: top-level orchestration repository added)
+- **Amended:** 2026-08-19 (D7: top-level orchestration repository added); 2026-09-04 (D9:
+  synthetic joint site/connection extension)
 - **Decider:** Ishantha Hewaratne
 - **Informed by:** `docs/R3_CHAIN_PyDoublet_pandapipes_Implementation_Plan.md`
   (18 Aug 2026); code study of the PyDoublet and pandapipesAI baselines
@@ -117,6 +118,29 @@ Every provisional value is stored in `config/demo_assumptions.json`, labelled
 `docs/decisions/phase0-questions.md`, and replaceable without code changes.
 Changing a scientific assumption requires explicit approval (CLAUDE.md rule);
 silently editing a value in code is forbidden.
+
+### D9 — Synthetic joint site/connection extension (decided 2026-09-04)
+
+`workflow/joint_optimization.py` EXTENDS D1, not replaces it: alongside the canonical
+single-scenario C1-C4 comparison (unchanged, still available), it additionally varies a
+synthetic geothermal scenario/site axis (`geothermal_scenario_id`/`surface_site_id`),
+independent of the network-connection axis (`connection_candidate_id`/`route_id`/
+`design_option_id`), via a six-component `AlternativeIdentity`. Every scenario is
+`synthetic=True` and derived from the one golden, already-validated PyDoublet coupling
+result by perturbing producer temperature and/or brine mass flow — never an
+independent real drilling-site simulation or claim. Each scenario also carries a
+declared, illustrative `drilling_capex_multiplier` and a doublet-pump power rescaled by
+its own mass-flow ratio (reusing PyDoublet's own linear-in-flow pump formula), so a
+scenario's economic consequence is not limited to deliverable heat alone. Since no
+approved multi-objective weighting policy exists, feasible alternatives are compared via
+a Pareto/non-dominated shortlist (OPT-003), never an invented single ranking.
+
+Real drilling-location determination remains on D2's deferred list: `data_contracts
+.readiness.drilling_location_optimization_permitted` is the enforced gate a future
+real-data entry point must satisfy before any real (non-synthetic) drilling-location
+optimization may run, and no code path in this repository currently supplies real data
+to it. See `docs/issues/joint-location-optimization.md` for the full implementation
+record.
 
 ## Consequences
 
