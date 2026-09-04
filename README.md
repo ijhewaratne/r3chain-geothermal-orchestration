@@ -150,11 +150,19 @@ workflow through the *same* CLI:
   silently glossed over: a generated candidate's own connection-pipe-DN design axis is recorded but
   not yet consumed by the physics evaluator, which still uses one fixed DN for every candidate
   (`docs/issues/candidate-generation.md`).
-- **A joint-optimization run** — any config with `joint_optimization.enabled=true` (in addition to
-  a `candidates.generated` block) dispatches the CLI to a genuinely different, full-product
-  evaluation answering: *"Among the candidate geothermal doublet locations and associated network
-  connections, which candidate provides the technically feasible minimum-cost/LCOH solution for
-  supplying the four-consumer DH network?"* Every one of three synthetic geothermal scenarios
+- **A joint-optimization run** — **status: implemented (v1), being corrected.** What's described
+  below is what actually runs today (`workflow/joint_optimization.py`). A corrected v2 methodology
+  (site-linked resource scenarios with real coordinates, site-specific route geometry, corrected
+  `doublet_capex_multiplier` naming, materiality-aware non-duplicative Pareto objectives) is being
+  implemented phase by phase under
+  `docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md` — consult that
+  document and `docs/decisions/ADR-001-geothermal-poc-scope.md` (D10) for what's actually landed
+  versus still planned; nothing below is retroactively claimed to already be v2. Any config with
+  `joint_optimization.enabled=true` (in addition to a `candidates.generated` block) dispatches the CLI
+  to a genuinely different, full-product evaluation answering: *"Among the candidate geothermal
+  doublet locations and associated network connections, which candidate provides the technically
+  feasible minimum-cost/LCOH solution for supplying the four-consumer DH network?"* Every one of
+  three synthetic geothermal scenarios
   (derived from the one golden PyDoublet result — this prototype cannot run real PyDoublet
   scenarios — by adjusting producer temperature, brine mass flow, doublet-pump power, and a
   declared drilling-CAPEX multiplier, one deliberately made heat-exchanger-infeasible) is paired

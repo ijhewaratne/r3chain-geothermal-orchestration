@@ -4,27 +4,38 @@
 
 ## Objective
 
-This project has two scope layers, in order:
+This project's scope has evolved through several layers. When scope is ambiguous, consult
+them in this order (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+§5.1's own authority hierarchy — do not resolve ambiguity from the original plan alone):
 
-1. **Original six-week PoC (complete).** Implement the deterministic proof of concept
-   described in the imported implementation plan: one fixed, already-computed
-   geothermal doublet result, ranking candidate district-heating network-connection
-   points only. Evidence of completion lives under `docs/evidence/`.
-2. **Synthetic joint site/connection-optimization extension (implemented).**
-   `workflow/joint_optimization.py` additionally varies a synthetic geothermal
-   scenario/site axis (`geothermal_scenario_id`/`surface_site_id`), independent of the
-   network-connection axis, producing a Pareto shortlist rather than a single invented
-   ranking. Every scenario is explicitly `synthetic=True`, derived from the one golden
-   PyDoublet result — never an independent real drilling-site claim. Current
-   limitations: no real per-site PyDoublet runs, no real geological/GIS data, and
-   drilling/well CAPEX and doublet-pump power vary only through declared synthetic
-   assumptions, not a depth-derived cost/physics model.
+1. **`docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md`**
+   is authoritative for the current target implementation of the synthetic joint
+   site/connection layer (site-linked resource scenarios, site-specific routes,
+   materiality-aware Pareto decision policy, corrected terminology). Implemented phase
+   by phase (its own §21); consult it before assuming any target capability already
+   exists — code and tests below are the ground truth for what is actually built.
+2. **Executable code and tests** are authoritative evidence of current behaviour.
+3. **`docs/decisions/ADR-001-geothermal-poc-scope.md`** (D1-D10) explains the approved
+   scope extensions and their limitations, most recently D9 (synthetic joint
+   site/connection extension) and D10 (adoption of the specification above).
+4. **README, `docs/acceptance-criteria.md`, and the traceability matrix** describe
+   user-facing current status.
+5. This file (CLAUDE.md) directs future agents to the documents above.
+6. **The original six-week implementation plan**
+   (`docs/R3_CHAIN_PyDoublet_pandapipes_Implementation_Plan.md`) remains a historical
+   record only — its own connection-only, single-fixed-PyDoublet-result scope is the
+   **canonical baseline boundary** (still true and still enforced for the canonical
+   C1-C4 workflow), not the current authority for the joint site/connection layer,
+   which has since been extended and is being corrected under item 1 above.
 
-Real drilling-location optimization against real data remains out of scope until
+Two concrete facts this hierarchy resolves: the canonical single-scenario C1-C4 workflow
+(`workflow/core.py`) is complete and unchanged — evidence under `docs/evidence/`. The
+synthetic joint site/connection layer is mid-correction under the specification in item 1;
+consult its own phase-by-phase status (and the code) rather than assuming any phase not
+yet reported complete already exists. Real drilling-location optimization against real
+data remains out of scope everywhere until
 `data_contracts.readiness.drilling_location_optimization_permitted` can be satisfied —
-never claimed or attempted in this prototype. `docs/decisions/ADR-001-geothermal-poc-scope.md`
-(including its D9 amendment) is the authoritative current scope record; consult it, not
-just the original implementation plan, when scope is ambiguous.
+never claimed or attempted in this prototype.
 
 ## Non-negotiable rules
 

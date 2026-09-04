@@ -3,7 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-08-19
 - **Amended:** 2026-08-19 (D7: top-level orchestration repository added); 2026-09-04 (D9:
-  synthetic joint site/connection extension)
+  synthetic joint site/connection extension); 2026-09-04 (D10: corrected joint
+  site/connection specification adopted)
 - **Decider:** Ishantha Hewaratne
 - **Informed by:** `docs/R3_CHAIN_PyDoublet_pandapipes_Implementation_Plan.md`
   (18 Aug 2026); code study of the PyDoublet and pandapipesAI baselines
@@ -141,6 +142,30 @@ real-data entry point must satisfy before any real (non-synthetic) drilling-loca
 optimization may run, and no code path in this repository currently supplies real data
 to it. See `docs/issues/joint-location-optimization.md` for the full implementation
 record.
+
+### D10 — Corrected joint site/connection specification adopted (decided 2026-09-04)
+
+A subsequent review of D9's own implementation found several genuine methodological
+gaps: the six identity fields were loosely described as "axes" even where several never
+independently vary; `surface_site_id` was a bare label with no coordinates; the three
+synthetic resource scenarios were perturbations of one golden result rather than
+independently site-linked inputs; every scenario shared the same global connection-route
+distances instead of site-specific geometry; the declared CAPEX/pump-power multipliers
+used the pre-correction field name `drilling_capex_multiplier`; and the Pareto objective
+set mixed mathematically dependent quantities (e.g. LCOH alongside its own cost
+denominator). `docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md`
+is the authoritative correction for all of these, implemented phase by phase (its own
+§21). D9's synthetic extension is understood as the corrected specification's own "v1"
+baseline: still available, still accurately described where it is, now being extended
+rather than replaced.
+
+This specification is now the authoritative current-scope record for the joint
+site/connection layer, ranking above the D9 text above for anything the two disagree
+on (see `CLAUDE.md`'s authority hierarchy). It does not reopen D1's own boundary: the
+canonical single-scenario C1-C4 workflow remains unchanged and is not affected by this
+amendment. Real drilling-location determination remains exactly as constrained by D2
+and the paragraph above -- this amendment corrects the SYNTHETIC methodology's
+honesty and structure, it does not loosen the real-data gate.
 
 ## Consequences
 

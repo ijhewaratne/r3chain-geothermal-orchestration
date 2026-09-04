@@ -5,7 +5,11 @@
 > extension (`workflow/joint_optimization.py`) that additionally varies a synthetic geothermal
 > scenario/site axis, independent of the network-connection axis — see
 > `docs/decisions/ADR-001-geothermal-poc-scope.md` (amendment D9) and
-> `docs/issues/joint-location-optimization.md` for the current, authoritative scope.
+> `docs/issues/joint-location-optimization.md` for the current, authoritative scope. That
+> extension is itself now being corrected under
+> `docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md`
+> (ADR-001 amendment D10, 2026-09-04) — consult it, not this document, for the joint
+> layer's current target and status.
 
 # R3-CHAIN PyDoublet–pandapipes Proof-of-Concept Implementation Plan
 
