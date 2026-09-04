@@ -6,6 +6,15 @@ explicitly deferred** (2026-09-03, `feature/complete-synthetic-prototype`,
 `docs/decisions/decision-register.md` (IMPL-018) and `docs/issues/joint-location-optimization.md`
 (the original OPT-001..007 implementation this phase builds on).
 
+**Update (2026-09-04):** this remains accurate for `workflow/joint_workflow.py` (v1) specifically —
+its own MCP `geo_run_workflow` dispatch is still genuinely deferred, unchanged. The corrected v2
+layer (`workflow/joint_workflow_v2.py`,
+`docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md` Phase 6) DOES
+now dispatch through `geo_run_workflow` (a discriminated `workflow_mode: joint_site_connection`
+success shape, through the same six tools, no seventh tool added) — see
+`docs/decisions/decision-register.md` (IMPL-023) for that implementation's own record. Nothing
+below this note describes v2.
+
 ## What this closes
 
 Phase 4's core instruction: "Do not limit the primary demonstration to a hand-selected list of six

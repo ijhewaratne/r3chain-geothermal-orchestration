@@ -134,3 +134,17 @@ class CandidateFailureCode(str, Enum):
     solve one candidate iteration -- still raised, unchanged, if any single
     iteration's own pipeflow() call fails). Never raised under the default
     "fixed_design_temperature" policy, which performs exactly one solve."""
+
+    CONNECTION_DESIGN_INVALID = "CONNECTION_DESIGN_INVALID"
+    """DESIGN-004/006, R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+    Phase 3: `evaluate_candidate()`'s own `connection_pipe_inner_diameter_mm`
+    keyword argument was not a positive number -- checked BEFORE any
+    network construction is attempted. Defensive: every existing caller
+    (the canonical single-scenario workflow, the v1 joint module) always
+    passes the fixed positive `CONNECTION_PIPE_DN_MM` default, and
+    `data_contracts.joint_study.ConnectionDesignOption`'s own contract
+    validator already rejects a non-positive diameter before it can ever
+    reach this function through the Phase-2/3 joint evaluation path --
+    this code exists so a direct, unvalidated caller still fails loudly
+    with an exact cause rather than an unhandled pandapipes exception
+    deep inside pipe construction."""

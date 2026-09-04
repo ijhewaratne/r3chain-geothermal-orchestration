@@ -71,7 +71,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -165,6 +165,16 @@ class ManifestRecord(BaseModel):
 
     contract_schema_version: str = MANIFEST_CONTRACT_SCHEMA_VERSION
     scientific_normalization_rule_version: str = SCIENTIFIC_NORMALIZATION_RULE_VERSION
+    run_type: Literal["canonical"] = "canonical"
+    """MCP-006 (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+    Phase 6): an explicit, on-disk run-type discriminator so
+    mcp_server/registry.py's own rehydration can tell a canonical bundle
+    apart from a joint-site-connection one (`workflow.joint_workflow_v2
+    .JointWorkflowV2ManifestRecord`'s own `run_type="joint_site_connection"`)
+    directly from `manifest.json`, without inferring it from which files
+    happen to exist. Defaults to `"canonical"` so every pre-Phase-6
+    manifest already on disk (this field did not exist when written) still
+    validates and rehydrates exactly as before."""
     run_id: str
     created_at: datetime
     files: dict[str, ArtifactHashRecord]

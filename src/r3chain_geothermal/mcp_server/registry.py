@@ -77,7 +77,12 @@ from ..workflow import (
     WorkflowAuditRecord,
     parse_workflow_result_json,
 )
-from .schemas import RunSummary, summarize_workflow_result
+from ..workflow.joint_workflow_v2 import (
+    JOINT_RESULT_FILENAME,
+    JointWorkflowV2ManifestRecord,
+    parse_joint_workflow_v2_result_json,
+)
+from .schemas import JointWorkflowSummary, RunSummary, summarize_joint_workflow_v2_result, summarize_workflow_result
 
 DEFAULT_MAX_REGISTRY_SIZE = 50
 
@@ -119,7 +124,7 @@ class RegistryClosedError(Exception):
 @dataclass(frozen=True)
 class RunEntry:
     run_id: str
-    summary: RunSummary
+    summary: "RunSummary | JointWorkflowSummary"
     audit: WorkflowAuditRecord
     artifact_dir: Path
     """This run's own directory, server-owned -- `run_id` is always
@@ -129,6 +134,15 @@ class RunEntry:
     a path -- only bare filenames are ever exposed (geo_get_artifact)."""
     artifact_filenames: frozenset[str]
     created_at: datetime
+    run_type: str = "canonical"
+    """MCP-006 (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+    Phase 6): `"canonical"` or `"joint_site_connection"` -- copied
+    straight from the published bundle's own `manifest.json::run_type`
+    field (`ManifestRecord`/`JointWorkflowV2ManifestRecord`), so a caller
+    holding a `RunEntry` can always tell which kind of run it is without
+    inspecting `summary`'s own type. Defaults to `"canonical"` so every
+    existing keyword-argument construction call site (which never
+    mentions this field) is completely unaffected."""
 
 
 class _InFlightRun:
@@ -294,11 +308,25 @@ class RunRegistry:
         """Raises (never caught here -- `_rehydrate` is the one caller
         and does the catching) on any validation failure. Every raised
         message is specific enough to be useful in
-        `self.rehydration_warnings` without ever including file content."""
+        `self.rehydration_warnings` without ever including file content.
+
+        MCP-007 (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+        Phase 6): the raw manifest JSON is read ONCE, and its own
+        `run_type` field (defaulting to `"canonical"` for a bundle written
+        before this field existed) decides which typed manifest model,
+        result-parser and summarizer to use -- never inferred from which
+        files happen to be present."""
         manifest_path = run_dir / MANIFEST_FILENAME
         if not manifest_path.is_file():
             raise ValueError(f"missing {MANIFEST_FILENAME}")
-        manifest = ManifestRecord(**json.loads(manifest_path.read_text(encoding="utf-8")))
+        manifest_raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+        run_type = manifest_raw.get("run_type", "canonical")
+        if run_type == "joint_site_connection":
+            return self._load_joint_run_entry(run_id, run_dir, manifest_raw)
+        return self._load_canonical_run_entry(run_id, run_dir, manifest_raw)
+
+    def _load_canonical_run_entry(self, run_id: str, run_dir: Path, manifest_raw: dict) -> RunEntry:
+        manifest = ManifestRecord(**manifest_raw)
         if manifest.run_id != run_id:
             raise ValueError(f"manifest run_id {manifest.run_id!r} does not match directory name {run_id!r}")
         for filename, record in manifest.files.items():
@@ -318,6 +346,31 @@ class RunRegistry:
         return RunEntry(
             run_id=run_id, summary=summary, audit=boundary.audit,
             artifact_dir=run_dir, artifact_filenames=artifact_filenames, created_at=manifest.created_at,
+            run_type="canonical",
+        )
+
+    def _load_joint_run_entry(self, run_id: str, run_dir: Path, manifest_raw: dict) -> RunEntry:
+        manifest = JointWorkflowV2ManifestRecord(**manifest_raw)
+        if manifest.run_id != run_id:
+            raise ValueError(f"manifest run_id {manifest.run_id!r} does not match directory name {run_id!r}")
+        for filename, record in manifest.files.items():
+            file_path = run_dir / filename
+            if not file_path.is_file():
+                raise ValueError(f"declared file {filename!r} is missing on disk")
+            actual_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+            if actual_hash != record.byte_sha256:
+                raise ValueError(f"{filename!r} on-disk byte hash does not match the manifest's own record")
+        joint_result_path = run_dir / JOINT_RESULT_FILENAME
+        if not joint_result_path.is_file():
+            raise ValueError(f"missing {JOINT_RESULT_FILENAME}")
+        boundary = parse_joint_workflow_v2_result_json(joint_result_path.read_text(encoding="utf-8"))
+        artifact_filenames = frozenset(manifest.files) | {MANIFEST_FILENAME}
+        summary = summarize_joint_workflow_v2_result(boundary, artifact_filenames, reused_existing_run=True)
+        summary = summary.model_copy(update={"bundle_scientific_sha256": manifest.bundle_scientific_sha256})
+        return RunEntry(
+            run_id=run_id, summary=summary, audit=boundary.audit,
+            artifact_dir=run_dir, artifact_filenames=artifact_filenames, created_at=manifest.created_at,
+            run_type="joint_site_connection",
         )
 
     @property
@@ -385,7 +438,15 @@ class RunRegistry:
         propagates normally; the staging directory is left in place for
         forensic inspection, exactly the "identifiable, safely cleanable"
         abandoned-staging-directory case RR-004 describes). Raises
-        `RegistryClosedError` if the registry is already closed."""
+        `RegistryClosedError` if the registry is already closed.
+
+        MCP-007: `manifest.json`'s own `run_type` field selects whether
+        this is validated as a canonical `ManifestRecord` or a
+        `JointWorkflowV2ManifestRecord` -- exactly the same branch
+        `_load_run_entry` uses for rehydration, so a staged joint-workflow
+        bundle (whose manifest legitimately carries fields/values a
+        canonical `ManifestRecord` would reject) is validated against its
+        own correct contract."""
         if not _is_traversal_safe_path_component(run_id):
             raise ValueError(f"run_id {run_id!r} is not a safe path component")
         with self._master_lock:
@@ -394,7 +455,9 @@ class RunRegistry:
         manifest_path = staging_dir / MANIFEST_FILENAME
         if not manifest_path.is_file():
             raise ValueError(f"staging directory for {run_id!r} has no {MANIFEST_FILENAME} -- refusing to publish")
-        manifest = ManifestRecord(**json.loads(manifest_path.read_text(encoding="utf-8")))
+        manifest_raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_cls = JointWorkflowV2ManifestRecord if manifest_raw.get("run_type") == "joint_site_connection" else ManifestRecord
+        manifest = manifest_cls(**manifest_raw)
         if manifest.run_id != run_id:
             raise ValueError(f"manifest.json run_id {manifest.run_id!r} does not match expected {run_id!r}")
         for filename in manifest.files:

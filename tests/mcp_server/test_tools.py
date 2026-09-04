@@ -144,7 +144,7 @@ def test_run_workflow_worked_case_matches_committed_lcoh(fixed_config, registry)
 
 def test_run_workflow_worked_case_publishes_eight_artifacts(fixed_config, registry):
     result = tools.run_workflow_tool(_raw(), _provenance(), fixed_config=fixed_config, registry=registry)
-    assert sorted(result.artifact_filenames) == sorted(tools._ALLOWED_ARTIFACT_FILENAMES)
+    assert sorted(result.artifact_filenames) == sorted(tools._CANONICAL_ARTIFACT_FILENAMES)
 
 
 def test_run_workflow_repeated_identical_input_reuses_the_same_run(fixed_config, registry):

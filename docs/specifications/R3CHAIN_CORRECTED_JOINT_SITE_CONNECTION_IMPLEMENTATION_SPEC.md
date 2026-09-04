@@ -1,11 +1,16 @@
 # R3-CHAIN Corrected Joint Geothermal Site–Connection Optimisation
 ## Complete Implementation Specification for Claude Code
 
-**Document status:** Implementation contract  
-**Prepared:** 2026-09-04  
-**Repository:** https://github.com/ijhewaratne/r3chain-geothermal-orchestration  
-**Inspected branch:** feature/complete-synthetic-prototype  
-**Inspected commit:** 1fa8d39bb3d1e6db28ffefd790e6c844c968504e  
+**Document status:** Implementation contract
+
+**Prepared:** 2026-09-04
+
+**Repository:** https://github.com/ijhewaratne/r3chain-geothermal-orchestration
+
+**Inspected branch:** feature/complete-synthetic-prototype
+
+**Inspected commit:** 1fa8d39bb3d1e6db28ffefd790e6c844c968504e
+
 **Target:** A scientifically coherent, auditable synthetic joint site–connection research prototype
 
 ---

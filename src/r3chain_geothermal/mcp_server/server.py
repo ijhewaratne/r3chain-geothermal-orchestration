@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from pydantic import Field
 
-from .config import load_fixed_server_config, resolve_run_root
+from .config import load_fixed_server_config, resolve_fixed_config_path, resolve_run_root
 from .registry import DEFAULT_MAX_REGISTRY_SIZE, RunRegistry
 from .schemas import (
     ArtifactResult,
@@ -44,11 +44,11 @@ from .schemas import (
 from .tools import (
     MAX_ARTIFACT_SLICE_CHARS,
     MIN_ARTIFACT_SLICE_LIMIT,
+    dispatch_run_workflow,
     get_artifact,
     get_audit,
     get_capabilities,
     get_run_summary,
-    run_workflow_tool,
     validate_pydoublet_result,
 )
 
@@ -83,6 +83,7 @@ def build_server(
     config_path: Path | None = None,
     max_registry_size: int = DEFAULT_MAX_REGISTRY_SIZE,
     registry: RunRegistry | None = None,
+    package_root: Path | None = None,
     _install_signal_handler: bool = False,
 ) -> "FastMCP":
     """Builds one FastMCP server instance with its own fixed config and
@@ -92,6 +93,27 @@ def build_server(
     NEVER exposed as a tool argument on any live server; a deployed
     server always uses the one config resolved by
     `config.load_fixed_server_config()` at build time.
+
+    `package_root` (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+    Phase 6, fixed in Phase 7): the directory `joint_study_v2.package_path`
+    is resolved against when the loaded config enables it -- another
+    TEST-ONLY seam (matching `config`/`config_path` above), letting a test
+    pass an explicit, cwd-independent root. `None` (a live server's only
+    real path) is resolved HERE, at build time, from the ACTUAL config
+    file path actually used (`config_path` if given, else
+    `config.resolve_fixed_config_path()`'s own env-var resolution) as
+    `that_path.resolve().parent.parent` -- NEVER from `Path.cwd()` (a
+    Phase 7 fix: cwd-based resolution only happened to work when the
+    server process's cwd was the repository root, mirroring
+    `workflow/cli.py::_run_joint_study_v2_cli()`'s own identical fix,
+    found by this phase's own cross-platform wheel-smoke-test
+    verification). Every committed package-relative path is written as
+    `"config/<name>.json"`, relative to whatever directory contains that
+    config file's own `config/` folder -- unaffected when `config` (the
+    raw-dict seam) is used instead of a real file, in which case this
+    derivation is skipped and the caller is expected to pass
+    `package_root` explicitly if it exercises `joint_study_v2` (every
+    such test in this project's own suite already does).
 
     When `registry` is not supplied: if `R3CHAIN_RUN_ROOT` is set
     (`config.resolve_run_root()`), builds a PERSISTENT `RunRegistry`
@@ -130,6 +152,23 @@ def build_server(
         ) from exc
 
     fixed_config = config if config is not None else load_fixed_server_config(config_path)
+    if package_root is None and config is None:
+        # Phase 7 fix (REPRO/AC-J16, mirrors workflow/cli.py's own
+        # identical fix): derive package_root from the ACTUAL resolved
+        # config file path -- config_path.resolve().parent.parent -- never
+        # from Path.cwd(), which only happens to work when the server
+        # process's cwd is the repository root. Every committed
+        # package-relative path is written as "config/<name>.json",
+        # relative to whatever directory contains that config file's own
+        # config/ folder. Only applies when `config` (the raw-dict
+        # test-only seam) was NOT given -- a caller supplying a raw config
+        # dict directly has no real on-disk config path to derive from,
+        # and is expected to pass package_root explicitly if it exercises
+        # joint_study_v2 (every such test in this project's own suite
+        # already does).
+        resolved_config_path = config_path if config_path is not None else resolve_fixed_config_path()
+        if resolved_config_path is not None:
+            package_root = resolved_config_path.resolve().parent.parent
     if registry is not None:
         run_registry = registry
     else:
@@ -169,8 +208,9 @@ def build_server(
     def geo_run_workflow(
         pydoublet_raw_result: dict[str, Any], source_provenance: SourceProvenanceInput,
     ) -> RunWorkflowResult:
-        return run_workflow_tool(
+        return dispatch_run_workflow(
             pydoublet_raw_result, source_provenance, fixed_config=fixed_config, registry=run_registry,
+            package_root=package_root,
         )
 
     @mcp.tool(name="geo_get_run_summary", structured_output=True)

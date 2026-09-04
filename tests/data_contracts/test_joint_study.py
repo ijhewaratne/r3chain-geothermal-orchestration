@@ -241,6 +241,53 @@ def test_alternative_identity_rejects_an_empty_field():
         )
 
 
+def test_alternative_identity_alternative_id_appears_in_the_serialized_contract():
+    """TEST-001: 'validate AND serialize deterministically' -- a bare
+    @property is invisible to model_dump()/model_dump_json(); this
+    proves alternative_id is a real key in both, not merely accessible
+    via Python attribute access on the live object."""
+    identity = JointAlternativeIdentity(
+        resource_scenario_id="scenario_A", surface_site_id="site_A", attachment_id="trunk_1",
+        route_id="route_1", design_option_id="standard", operating_policy_id="standard",
+    )
+    dumped = identity.model_dump()
+    assert dumped["alternative_id"] == "scenario_A|site_A|trunk_1|route_1|standard|standard"
+    assert '"alternative_id":"scenario_A|site_A|trunk_1|route_1|standard|standard"' in identity.model_dump_json()
+
+
+def test_alternative_identity_round_trips_through_its_own_serialized_json():
+    """The computed alternative_id key must not break re-validating the
+    model's own model_dump_json() output (a known Pydantic v2 trap when
+    a computed field is combined with extra="forbid") -- confirms the
+    deliberate extra="ignore" config on this one model works as
+    intended, and that the round-tripped object is identical."""
+    identity = JointAlternativeIdentity(
+        resource_scenario_id="scenario_A", surface_site_id="site_A", attachment_id="trunk_1",
+        route_id="route_1", design_option_id="standard", operating_policy_id="standard",
+    )
+    reloaded = JointAlternativeIdentity.model_validate_json(identity.model_dump_json())
+    assert reloaded == identity
+    assert reloaded.alternative_id == identity.alternative_id
+
+
+def test_alternative_identity_two_distinct_tuples_serialize_to_distinct_ids():
+    """Determinism proof at the serialization boundary, not just via
+    property access: two different six-field tuples must produce two
+    different alternative_id values in model_dump(), and the SAME tuple
+    must always produce the SAME serialized id."""
+    a = JointAlternativeIdentity(
+        resource_scenario_id="scenario_A", surface_site_id="site_A", attachment_id="trunk_1",
+        route_id="route_1", design_option_id="standard", operating_policy_id="standard",
+    )
+    b = JointAlternativeIdentity(
+        resource_scenario_id="scenario_C", surface_site_id="site_C", attachment_id="trunk_3",
+        route_id="route_3", design_option_id="standard", operating_policy_id="standard",
+    )
+    a_again = JointAlternativeIdentity(**a.model_dump(exclude={"alternative_id"}))
+    assert a.model_dump()["alternative_id"] != b.model_dump()["alternative_id"]
+    assert a.model_dump()["alternative_id"] == a_again.model_dump()["alternative_id"]
+
+
 # ── TEST-002: missing site reference is rejected ─────────────────────────────
 def test_scenario_referencing_unknown_site_is_rejected():
     package = _package(resource_scenarios=[_scenario(site_id="nonexistent_site")])

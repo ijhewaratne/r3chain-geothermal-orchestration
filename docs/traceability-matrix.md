@@ -141,6 +141,47 @@ section below.
 | OPT-006 | **PARTIAL, gate now exists, not yet wired here** *(2026-09-03, `d2b4994`)* | `data_contracts.readiness.enforce_real_data_readiness()` (new) is now the MANDATORY, typed `DATA_REQUIREMENTS_NOT_MET`-returning gate any future real-data caller must use — a genuine strengthening over the prior state (a permission-flag-only report). It is still not wired into `joint_optimization.py` itself, and — verified directly before this session's work — there is currently no real-data entry point anywhere in this repository to wire it into; Phase 8 remains blocked (`docs/issues/real-data-readiness-gate.md`). |
 | OPT-007 | **PASS, lighter-weight than the main pipeline** | 5 of 6 named files produced (`location_shortlist.geojson` never applicable — no real spatial data); no full byte/scientific-hash manifest audit for the ORIGINAL curated-demo export path (documented scope decision, unchanged). The NEW full-product workflow entry point (OPT-005 above) DOES carry a full byte/scientific-hash-audited manifest (`JointOptimizationManifestRecord`, `write_joint_optimization_artifacts()`) — the audit gap is closed for that path specifically, not for `joint_optimization_export.py`'s original lighter-weight exporter. |
 
+## Workstream K — corrected joint site/connection layer, v2 (this session, 2026-09-04)
+
+Workstream J above (OPT-001..007) describes `workflow/joint_optimization.py` (v1) exactly as it is —
+unchanged throughout this workstream, and still accurate. A subsequent, separate specification,
+`docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md` (ADR-001
+amendment D10), corrects the specific methodological gaps that document's own §2.5 names in v1
+(site as a bare label rather than coordinates; scenarios as perturbations rather than
+independently site-linked; global routes not bound to site origin; a Cartesian product rather than
+compatibility-screened enumeration; connection diameter recorded but not consumed by the physics
+evaluator; mathematically dependent Pareto objectives; strict rather than materiality-aware
+dominance; no committed ready-to-run config; no MCP dispatch). That specification defines its own
+~300 requirement IDs (TERM/DATA/GOV/ARCH/ROUTE/SCEN/DESIGN/EVAL/ECON/DEC/WF/AUD/MCP/REPRO/FAIL/
+NFR-prefixed) and its own acceptance scenarios (AC-J01 through AC-J18, §20) — these are **not**
+retrofitted row-by-row into this document (the same choice `docs/acceptance-criteria.md` already
+made for this same specification): a second ~300-row parallel table duplicating IDs the
+specification itself already defines and phase-tracks (§21) would be a maintenance liability, not
+an added guarantee. Consult the specification directly for the authoritative, current, ID-level
+record; `docs/decisions/decision-register.md` (IMPL-022 for Phase 1, IMPL-023 for Phases 2-7) and
+`docs/decisions/ADR-001-geothermal-poc-scope.md` (D10's own "Implementation status" addendum) for
+the decision-level record. Summary, at the phase level, as of this document's own last edit:
+
+| Phase | Scope | Status |
+|---|---|---|
+| 0 / 0.5 | Read-only baseline audit; remote-URL reconciliation | PASS |
+| 1 | Documentation-authority correction; joint package/site/scenario/route/design/decision contracts; relationship validation; active-dimension reporting | PASS — `tests/data_contracts/test_joint_study.py` |
+| 2 | Site-linked scenarios/routes; compatible-only enumeration | PASS — AC-J02–AC-J07 proven, `tests/workflow/test_joint_phase2.py` |
+| 3 | Executable per-design connection diameter | PASS — AC-J08 proven, `tests/network/test_candidate.py` |
+| 4 | Corrected economics; materiality-aware Pareto decision policy | PASS — AC-J09–AC-J11 proven, `tests/workflow/test_joint_phase4.py`, `tests/decision/test_joint_policy.py` |
+| 5 | Ready-to-run config; full audit bundle; CLI dispatch | PASS — AC-J12 proven twice into independent output directories, `tests/workflow/test_joint_workflow_v2.py` |
+| 6 | MCP dispatch (six tools, unchanged count); persistent-registry rehydration | PASS — AC-J13/AC-J14 proven, `tests/mcp_server/test_joint_workflow_v2_mcp.py` |
+| 7 | Cross-platform reproducibility diagnosis and correction | **PARTIAL** — Linux/arm64 (Python 3.11 and 3.12) verified clean via local Docker. Linux/amd64 was attempted via local emulation (Rosetta) but abandoned after 5 hours (4h43m CPU, zero output) as impractical on this host — not a real result either way, and not one this document treats as evidence. The real GitHub Actions `ubuntu-latest` runner (genuine hardware, not emulated) is the correct mechanism for that specific architecture gap and has not been triggered (requires a push, authorised separately). See `docs/issues/cross-platform-reproducibility.md`. |
+| 8 | Documentation reconciliation | IN PROGRESS — this edit, and the README/ADR-001/decision-register edits alongside it |
+| 9 | Release-candidate verification | NOT STARTED |
+
+Every canonical C1-C4 golden value (`run_id r3chain-run-93d41133daa11d1a`, the exact LCOH set) is
+unchanged throughout this workstream, re-verified after every phase — this workstream never
+modifies `workflow/core.py`'s own canonical execution path or `workflow/joint_optimization.py` (v1).
+No test was removed or weakened to reach a green suite anywhere in this workstream (CLAUDE.md); the
+two REPRO-009 test broadenings in Phase 7 are documented exactly, in place, as principled corrections
+approved by the specification itself, not silent dilutions.
+
 ## MCP and orchestration requirements
 
 | ID | Status | Evidence |

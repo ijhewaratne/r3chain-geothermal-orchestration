@@ -14,13 +14,35 @@ on:
 # own docstring. Running the full suite on both ubuntu-latest and
 # macos-latest here is exactly how that specific claim gets tested, not
 # merely asserted.
+#
+# docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+# Phase 7 (REPRO-006, TEST-034/036/037): Python 3.12 added to the matrix --
+# pandapipes 0.14.0 and every other direct dependency (pydantic, mcp,
+# jsonpointer) declare 3.12 support on PyPI, and this addition was verified
+# BEFORE being made, not merely assumed: both a Linux/Python 3.11 and a
+# Linux/Python 3.12 container (python:3.11-slim / python:3.12-slim,
+# linux/arm64, a genuinely different OS/glibc/BLAS backend from this
+# project's own macOS ARM64 development environment) were built fresh from
+# this exact commit and ran the full offline suite clean -- see
+# docs/issues/cross-platform-reproducibility.md for the recorded evidence
+# and exact comparison. macos-latest is only ever tested against 3.11 here
+# (matching the ORIGINAL matrix): Apple does not publish a macOS Python
+# 3.12 GitHub Actions runner image guarantee equivalent to Ubuntu's, and
+# 3.12-on-macOS was not part of this phase's own verified claim -- adding
+# it without evidence would repeat exactly the mistake REPRO-003 warns
+# against (asserting reproducibility that was never actually tested).
 jobs:
   test:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ["3.11"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: macos-latest
+            python-version: "3.11"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -92,9 +114,43 @@ jobs:
           print('wheel smoke test OK, run_id =', record['run_id'])
           "
 
+      - name: Joint site/connection wheel installation smoke test (fresh venv, outside the repo)
+        # docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+        # Phase 7 (TEST-037/AC-J16): the SAME staged, external-run-directory
+        # pattern as the canonical wheel smoke test above, dispatched to
+        # joint_study_v2 via the committed config -- reuses the SAME venv
+        # the canonical smoke test already built (the wheel does not need
+        # rebuilding or reinstalling). This step exists BECAUSE running it
+        # locally in a fresh Docker container (before this workflow change)
+        # caught a real bug: the joint CLI's own package_root used to
+        # default to the process's cwd, which broke exactly this
+        # "external run directory, absolute --config path" pattern --
+        # fixed in workflow/cli.py::_run_joint_study_v2_cli (package_root
+        # is now derived from --config's own resolved path, never cwd).
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /tmp/r3chain-wheel-smoke-venv/bin/activate
+          mkdir -p /tmp/r3chain-joint-wheel-smoke-run
+          cd /tmp/r3chain-joint-wheel-smoke-run
+          r3chain-geothermal-demo \
+            --input "${GITHUB_WORKSPACE}/fixtures/pydoublet/repaired_result.json" \
+            --config "${GITHUB_WORKSPACE}/config/demo_assumptions_joint_study_v2.json" \
+            --provenance "${GITHUB_WORKSPACE}/config/demo_source_provenance.json" \
+            --output-dir output
+          test -f output/manifest.json
+          test -f output/joint_optimization_result.json
+          python -c "
+          import json
+          record = json.load(open('output/manifest.json'))
+          assert record['run_type'] == 'joint_site_connection', record['run_type']
+          assert record['run_id'] == 'r3chain-run-99e7f5ea0fb38a12', record['run_id']
+          print('joint wheel smoke test OK, run_id =', record['run_id'])
+          "
+
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: r3chain-geothermal-wheel-${{ matrix.os }}
+          name: r3chain-geothermal-wheel-${{ matrix.os }}-py${{ matrix.python-version }}
           path: dist/*.whl
           retention-days: 14

@@ -769,8 +769,17 @@ class CandidateEvaluationResult(BaseModel):
         if self.unmet_heat_kw != 0.0:
             errors.append("unmet_heat_kw must be 0.0 under the only implemented policy (cost_shortfall)")
 
-        if self.connection_pipe_dn_mm != CONNECTION_PIPE_DN_MM:
-            errors.append("connection_pipe_dn_mm does not match the project's fixed connection DN")
+        if self.connection_pipe_dn_mm <= 0:
+            # DESIGN-001, R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+            # Phase 3: this used to hard-require connection_pipe_dn_mm ==
+            # CONNECTION_PIPE_DN_MM -- the exact "unconditional dependence
+            # on the module-level constant" DESIGN-001 asks to remove.
+            # evaluate_candidate()'s own connection_pipe_inner_diameter_mm
+            # keyword argument (default CONNECTION_PIPE_DN_MM, unchanged
+            # for every existing caller) is validated positive BEFORE
+            # construction (CONNECTION_DESIGN_INVALID); this positivity
+            # check is the remaining structural invariant on the result.
+            errors.append("connection_pipe_dn_mm must be > 0")
         if self.connection_pressure_drop_bar < 0:
             errors.append("connection_pressure_drop_bar must be >= 0")
         if self.connection_pumping_power_kw < 0:
@@ -881,6 +890,7 @@ def _add_geothermal_injection_branch(
     injected_mass_flow_kg_s: float,
     dh_supply_temperature_c: float,
     dh_return_temperature_c: float,
+    connection_pipe_inner_diameter_mm: float | None = None,
 ) -> dict[str, str]:
     """Mutates `net` (a freshly-built pandapipesNet -- never `blueprint`,
     a frozen Pydantic model incapable of mutation regardless) by adding the
@@ -888,7 +898,23 @@ def _add_geothermal_injection_branch(
     element NAMES (not raw indices -- callers re-look-up indices from
     net.junction/net.pipe/net.heat_consumer/net.pump AFTER pipeflow(),
     since result extraction always goes through the *_idx name->index maps
-    built fresh from the solved net, matching baseline.py's own pattern)."""
+    built fresh from the solved net, matching baseline.py's own pattern).
+
+    `connection_pipe_inner_diameter_mm` (DESIGN-001/002,
+    R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md Phase
+    3) defaults to the canonical `CONNECTION_PIPE_DN_MM` -- every existing
+    caller (the canonical single-scenario workflow, the v1 joint module)
+    is unaffected unless it explicitly opts into a different diameter.
+    `None` (not a plain `= CONNECTION_PIPE_DN_MM` default) specifically so
+    a test that monkeypatches `network.candidate.CONNECTION_PIPE_DN_MM`
+    (e.g. to force an extreme-diameter convergence failure) is honoured
+    -- a plain default value is bound once at function-definition time
+    and would never see a later monkeypatch (the exact pitfall
+    DoubletOperatingPolicy's own `_candidate_module`-based
+    `default_factory` fields, doublet_component.py, were already written
+    to avoid)."""
+    if connection_pipe_inner_diameter_mm is None:
+        connection_pipe_inner_diameter_mm = CONNECTION_PIPE_DN_MM
     junction_by_name = {name: idx for idx, name in enumerate(net.junction["name"])}
     j_return_trunk = junction_by_name[candidate.return_junction]
     j_supply_trunk = junction_by_name[candidate.supply_junction]
@@ -920,7 +946,7 @@ def _add_geothermal_injection_branch(
     ground_t_k = bp.ground_temperature_c + 273.15
     pandapipes.create_pipe_from_parameters(
         net, j_return_trunk, j_geo_return, length_km=length_km,
-        inner_diameter_mm=CONNECTION_PIPE_DN_MM, k_mm=bp.pipe_roughness_mm,
+        inner_diameter_mm=connection_pipe_inner_diameter_mm, k_mm=bp.pipe_roughness_mm,
         u_w_per_m2k=bp.pipe_heat_transfer_coefficient_w_per_m2k, text_k=ground_t_k,
         name=return_pipe_name,
     )
@@ -940,7 +966,7 @@ def _add_geothermal_injection_branch(
 
     pandapipes.create_pipe_from_parameters(
         net, j_geo_supply, j_supply_trunk, length_km=length_km,
-        inner_diameter_mm=CONNECTION_PIPE_DN_MM, k_mm=bp.pipe_roughness_mm,
+        inner_diameter_mm=connection_pipe_inner_diameter_mm, k_mm=bp.pipe_roughness_mm,
         u_w_per_m2k=bp.pipe_heat_transfer_coefficient_w_per_m2k, text_k=ground_t_k,
         name=supply_pipe_name,
     )
@@ -977,6 +1003,7 @@ def _solve_self_consistent_injection(
     dh_supply_temperature_c: float,
     dh_return_temperature_c: float,
     dh_water_specific_heat_capacity_j_kg_k: float,
+    connection_pipe_inner_diameter_mm: float | None = None,
 ) -> tuple["pandapipes.pandapipesNet", dict[str, str], int, float]:
     """DSP-005's bounded deterministic root solve for the injection
     branch's mass flow, against its own SOLVED return temperature (not the
@@ -1031,13 +1058,20 @@ def _solve_self_consistent_injection(
     SELF_CONSISTENT_FLOW_MAX_ITERATIONS is exhausted -- either without
     ever finding a sign change (no root bracketed) or without the
     bisection meeting both tolerances -- deterministic and bounded, never
-    an unbounded loop or a relaxed gate (Section 23 item 11)."""
+    an unbounded loop or a relaxed gate (Section 23 item 11).
+
+    `connection_pipe_inner_diameter_mm=None` resolves to the LIVE
+    `CONNECTION_PIPE_DN_MM` module global at call time, not a value bound
+    once at function-definition time -- see
+    `_add_geothermal_injection_branch()`'s own docstring for why."""
+    if connection_pipe_inner_diameter_mm is None:
+        connection_pipe_inner_diameter_mm = CONNECTION_PIPE_DN_MM
 
     def _solve_at(mass_flow_kg_s: float) -> tuple["pandapipes.pandapipesNet", dict[str, str], float]:
         net = build_pandapipes_net(blueprint)
         refs = _add_geothermal_injection_branch(
             net, candidate, blueprint, injected_kw, mass_flow_kg_s,
-            dh_supply_temperature_c, dh_return_temperature_c,
+            dh_supply_temperature_c, dh_return_temperature_c, connection_pipe_inner_diameter_mm,
         )
         pandapipes.pipeflow(net, mode="sequential")
         hc_idx = {name: idx for idx, name in enumerate(net.heat_consumer["name"])}
@@ -1093,6 +1127,7 @@ def evaluate_candidate(
     *,
     injection_policy: GeothermalInjectionPolicy,
     tolerances: GateTolerances,
+    connection_pipe_inner_diameter_mm: float | None = None,
 ) -> CandidateEvaluationBoundaryResult:
     """Evaluate one candidate independently: build a FRESH net from
     `blueprint` (never a shared/cached net -- non-mutation and
@@ -1100,8 +1135,23 @@ def evaluate_candidate(
     injection branch (module docstring), solve, extract every KPI, apply
     gates 6-11 (plan §11) plus the geothermal-injection-specific hydraulic
     gate, in order. Never raises for any of the seven recognized failure
-    modes; never mutates `blueprint`, `coupling_result`, or `baseline`."""
+    modes plus one construction-input check (DESIGN-004/006, CONNECTION_
+    DESIGN_INVALID); never mutates `blueprint`, `coupling_result`, or
+    `baseline`. `connection_pipe_inner_diameter_mm=None` resolves to the
+    LIVE `CONNECTION_PIPE_DN_MM` module global at call time -- see
+    `_add_geothermal_injection_branch()`'s own docstring for why."""
     created_at = datetime.now(timezone.utc)
+
+    if connection_pipe_inner_diameter_mm is None:
+        connection_pipe_inner_diameter_mm = CONNECTION_PIPE_DN_MM
+
+    if connection_pipe_inner_diameter_mm <= 0:
+        return CandidateEvaluationFailure(
+            failure_code=CandidateFailureCode.CONNECTION_DESIGN_INVALID,
+            message=f"connection_pipe_inner_diameter_mm={connection_pipe_inner_diameter_mm!r} must be > 0",
+            details={"connection_pipe_inner_diameter_mm": connection_pipe_inner_diameter_mm},
+            candidate=candidate, coupling_input=coupling_result, created_at=created_at,
+        )
 
     injected_kw, curtailed_kw, stabilization_margin_applied = _compute_injected_heat_kw(
         coupling_result.deliverable_geothermal_heat_kw.value,
@@ -1170,6 +1220,7 @@ def evaluate_candidate(
         dh_supply_temperature_c=coupling_result.assumptions.dh_supply_temperature_c,
         dh_return_temperature_c=coupling_result.assumptions.dh_return_temperature_c,
         dh_water_specific_heat_capacity_j_kg_k=coupling_result.assumptions.dh_water_specific_heat_capacity_j_kg_k,
+        connection_pipe_inner_diameter_mm=connection_pipe_inner_diameter_mm,
     )
     doublet_policy = DoubletOperatingPolicy(
         accepted_heat_kw=injected_kw, injection_sizing_policy=injection_policy.injection_sizing_policy,
@@ -1453,7 +1504,7 @@ def evaluate_candidate(
         geothermal_injection_outlet_temperature_c=geo_outlet_actual_c,
         geothermal_injection_outlet_design_temperature_c=geo_outlet_design_c,
         geothermal_injection_outlet_temperature_deviation_k=geo_outlet_actual_c - geo_outlet_design_c,
-        connection_pipe_dn_mm=CONNECTION_PIPE_DN_MM, connection_pressure_drop_bar=connection_pressure_drop_bar,
+        connection_pipe_dn_mm=connection_pipe_inner_diameter_mm, connection_pressure_drop_bar=connection_pressure_drop_bar,
         connection_pumping_power_kw=connection_pumping_power_kw,
         doublet_pump_electric_power_kw=coupling_result.coupling_input.doublet_pump_electric_power_kw.value,
         baseline_total_heat_delivered_kw=baseline.total_heat_delivered_kw,

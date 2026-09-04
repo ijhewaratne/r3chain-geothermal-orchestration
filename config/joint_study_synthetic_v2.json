@@ -1,0 +1,558 @@
+{
+  "contract_schema_version": "2.0.0",
+  "study_id": "r3chain-joint-study-synthetic-v2-demo",
+  "classification": "synthetic",
+  "coordinate_reference": {
+    "kind": "synthetic_cartesian",
+    "identifier": "r3chain-synthetic-network-v1",
+    "horizontal_unit": "m",
+    "axis_order": [
+      "x",
+      "y"
+    ],
+    "epsg_code": null
+  },
+  "sites": [
+    {
+      "site_id": "site_alpha",
+      "label": "Site alpha (near trunk_1/trunk_2)",
+      "classification": "synthetic",
+      "coordinate": {
+        "kind": "synthetic_cartesian",
+        "x_m": 250.0,
+        "y_m": -60.0
+      },
+      "elevation_m": null,
+      "availability_status": "available",
+      "exclusion_reason": null,
+      "assumption_status": "synthetic_assumption",
+      "source_reference": "demo"
+    },
+    {
+      "site_id": "site_beta",
+      "label": "Site beta (near trunk_2)",
+      "classification": "synthetic",
+      "coordinate": {
+        "kind": "synthetic_cartesian",
+        "x_m": 600.0,
+        "y_m": -90.0
+      },
+      "elevation_m": null,
+      "availability_status": "available",
+      "exclusion_reason": null,
+      "assumption_status": "synthetic_assumption",
+      "source_reference": "demo"
+    },
+    {
+      "site_id": "site_gamma",
+      "label": "Site gamma (near trunk_3/trunk_4)",
+      "classification": "synthetic",
+      "coordinate": {
+        "kind": "synthetic_cartesian",
+        "x_m": 750.0,
+        "y_m": -70.0
+      },
+      "elevation_m": null,
+      "availability_status": "available",
+      "exclusion_reason": null,
+      "assumption_status": "synthetic_assumption",
+      "source_reference": "demo"
+    },
+    {
+      "site_id": "site_delta",
+      "label": "Site delta (protected-geometry demonstration, excluded)",
+      "classification": "synthetic",
+      "coordinate": {
+        "kind": "synthetic_cartesian",
+        "x_m": 1000.0,
+        "y_m": -60.0
+      },
+      "elevation_m": null,
+      "availability_status": "excluded",
+      "exclusion_reason": "synthetic protected-geometry demonstration example (S8.1: at least one excluded site)",
+      "assumption_status": "synthetic_assumption",
+      "source_reference": "demo"
+    }
+  ],
+  "resource_inputs": [
+    {
+      "resource_input_id": "pydoublet-golden-repaired",
+      "source_kind": "primary_runtime_input",
+      "package_relative_path": null,
+      "expected_raw_sha256": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762",
+      "expected_file_byte_sha256": null,
+      "provenance_reference": "fixtures/pydoublet/repaired_result.json",
+      "classification": "synthetic"
+    }
+  ],
+  "resource_scenarios": [
+    {
+      "scenario_id": "scenario_alpha_golden",
+      "site_id": "site_alpha",
+      "scenario_label": "Site alpha, golden PyDoublet result",
+      "classification": "synthetic",
+      "resource_input_id": "pydoublet-golden-repaired",
+      "temporal_basis": "lifetime_average_steady",
+      "probability_label": null,
+      "probability": null,
+      "geological_metadata": {
+        "target_depth_m": null,
+        "reservoir_temperature_c": null,
+        "transmissivity_m2_s": null,
+        "expected_mass_flow_kg_s": null,
+        "pressure_drawdown_bar": null,
+        "producer_injector_subsurface_separation_m": null,
+        "resource_location_reference": null,
+        "well_geometry_status": "absent",
+        "data_status": "absent",
+        "source_reference": null
+      },
+      "economic_inputs": {
+        "doublet_capex_eur": 8000000.0,
+        "drilling_producer_well_capex_eur": null,
+        "drilling_injector_well_capex_eur": null,
+        "well_completion_capex_eur": null,
+        "surface_plant_capex_eur": null,
+        "contingency_capex_eur": null,
+        "price_year": null,
+        "currency": "EUR",
+        "assumption_status": "synthetic_assumption",
+        "source_reference": "demo"
+      },
+      "derivation": {
+        "source_fixture_sha256": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762",
+        "field_changes": [
+          {
+            "field_name": "producer_wellhead_temperature_c",
+            "original_value": 76.31304410943065,
+            "transformed_value": 76.31304410943065,
+            "transformation_formula": "declared target producer temperature",
+            "is_recomputed_consequence": false
+          },
+          {
+            "field_name": "geothermal_brine_mass_flow_kg_s",
+            "original_value": 28.749278488136472,
+            "transformed_value": 28.749278488136472,
+            "transformation_formula": "declared target brine mass flow",
+            "is_recomputed_consequence": false
+          },
+          {
+            "field_name": "raw_geothermal_thermal_power_kw",
+            "original_value": 4345.417312073545,
+            "transformed_value": 4345.417312073546,
+            "transformation_formula": "mass_flow_kg_s * cp * (T_prod_c - T_brine_outlet_c) / 1000",
+            "is_recomputed_consequence": true
+          },
+          {
+            "field_name": "doublet_pump_electric_power_kw",
+            "original_value": 177.44982728456736,
+            "transformed_value": 177.44982728456736,
+            "transformation_formula": "golden_pump_kw * (mass_flow_kg_s / golden_mass_flow_kg_s)",
+            "is_recomputed_consequence": true
+          }
+        ],
+        "doublet_capex_multiplier": 1.0,
+        "rationale": "golden result, unmodified (baseline scenario)",
+        "assumption_status": "synthetic_assumption",
+        "author_or_decision_reference": "R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md Phase 2"
+      }
+    },
+    {
+      "scenario_id": "scenario_alpha_reduced_flow",
+      "site_id": "site_alpha",
+      "scenario_label": "Site alpha, reduced brine flow",
+      "classification": "synthetic",
+      "resource_input_id": "pydoublet-golden-repaired",
+      "temporal_basis": "lifetime_average_steady",
+      "probability_label": null,
+      "probability": null,
+      "geological_metadata": {
+        "target_depth_m": null,
+        "reservoir_temperature_c": null,
+        "transmissivity_m2_s": null,
+        "expected_mass_flow_kg_s": null,
+        "pressure_drawdown_bar": null,
+        "producer_injector_subsurface_separation_m": null,
+        "resource_location_reference": null,
+        "well_geometry_status": "absent",
+        "data_status": "absent",
+        "source_reference": null
+      },
+      "economic_inputs": {
+        "doublet_capex_eur": 9200000.0,
+        "drilling_producer_well_capex_eur": null,
+        "drilling_injector_well_capex_eur": null,
+        "well_completion_capex_eur": null,
+        "surface_plant_capex_eur": null,
+        "contingency_capex_eur": null,
+        "price_year": null,
+        "currency": "EUR",
+        "assumption_status": "synthetic_assumption",
+        "source_reference": "demo"
+      },
+      "derivation": {
+        "source_fixture_sha256": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762",
+        "field_changes": [
+          {
+            "field_name": "producer_wellhead_temperature_c",
+            "original_value": 76.31304410943065,
+            "transformed_value": 76.31304410943065,
+            "transformation_formula": "declared target producer temperature",
+            "is_recomputed_consequence": false
+          },
+          {
+            "field_name": "geothermal_brine_mass_flow_kg_s",
+            "original_value": 28.749278488136472,
+            "transformed_value": 20.12449494169553,
+            "transformation_formula": "declared target brine mass flow",
+            "is_recomputed_consequence": false
+          },
+          {
+            "field_name": "raw_geothermal_thermal_power_kw",
+            "original_value": 4345.417312073545,
+            "transformed_value": 3041.792118451482,
+            "transformation_formula": "mass_flow_kg_s * cp * (T_prod_c - T_brine_outlet_c) / 1000",
+            "is_recomputed_consequence": true
+          },
+          {
+            "field_name": "doublet_pump_electric_power_kw",
+            "original_value": 177.44982728456736,
+            "transformed_value": 124.21487909919716,
+            "transformation_formula": "golden_pump_kw * (mass_flow_kg_s / golden_mass_flow_kg_s)",
+            "is_recomputed_consequence": true
+          }
+        ],
+        "doublet_capex_multiplier": 1.15,
+        "rationale": "declared, illustrative reduced-flow/deeper-reservoir sensitivity case for site_alpha (AC-J03: a second scenario on the same site)",
+        "assumption_status": "synthetic_assumption",
+        "author_or_decision_reference": "R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md Phase 2"
+      }
+    },
+    {
+      "scenario_id": "scenario_beta_low_temperature",
+      "site_id": "site_beta",
+      "scenario_label": "Site beta, low producer temperature",
+      "classification": "synthetic",
+      "resource_input_id": "pydoublet-golden-repaired",
+      "temporal_basis": "lifetime_average_steady",
+      "probability_label": null,
+      "probability": null,
+      "geological_metadata": {
+        "target_depth_m": null,
+        "reservoir_temperature_c": null,
+        "transmissivity_m2_s": null,
+        "expected_mass_flow_kg_s": null,
+        "pressure_drawdown_bar": null,
+        "producer_injector_subsurface_separation_m": null,
+        "resource_location_reference": null,
+        "well_geometry_status": "absent",
+        "data_status": "absent",
+        "source_reference": null
+      },
+      "economic_inputs": {
+        "doublet_capex_eur": 6800000.0,
+        "drilling_producer_well_capex_eur": null,
+        "drilling_injector_well_capex_eur": null,
+        "well_completion_capex_eur": null,
+        "surface_plant_capex_eur": null,
+        "contingency_capex_eur": null,
+        "price_year": null,
+        "currency": "EUR",
+        "assumption_status": "synthetic_assumption",
+        "source_reference": "demo"
+      },
+      "derivation": {
+        "source_fixture_sha256": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762",
+        "field_changes": [
+          {
+            "field_name": "producer_wellhead_temperature_c",
+            "original_value": 76.31304410943065,
+            "transformed_value": 60.0,
+            "transformation_formula": "declared target producer temperature",
+            "is_recomputed_consequence": false
+          },
+          {
+            "field_name": "geothermal_brine_mass_flow_kg_s",
+            "original_value": 28.749278488136472,
+            "transformed_value": 28.749278488136472,
+            "transformation_formula": "declared target brine mass flow",
+            "is_recomputed_consequence": false
+          },
+          {
+            "field_name": "raw_geothermal_thermal_power_kw",
+            "original_value": 4345.417312073545,
+            "transformed_value": 2629.567371362986,
+            "transformation_formula": "mass_flow_kg_s * cp * (T_prod_c - T_brine_outlet_c) / 1000",
+            "is_recomputed_consequence": true
+          },
+          {
+            "field_name": "doublet_pump_electric_power_kw",
+            "original_value": 177.44982728456736,
+            "transformed_value": 177.44982728456736,
+            "transformation_formula": "golden_pump_kw * (mass_flow_kg_s / golden_mass_flow_kg_s)",
+            "is_recomputed_consequence": true
+          }
+        ],
+        "doublet_capex_multiplier": 0.85,
+        "rationale": "declared, illustrative low-temperature scenario -- deliberately below dh_supply_temperature_c + minimum_hx_approach_k, demonstrating HX_SUPPLY_TEMPERATURE_INFEASIBLE (AC-J06)",
+        "assumption_status": "synthetic_assumption",
+        "author_or_decision_reference": "R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md Phase 2"
+      }
+    },
+    {
+      "scenario_id": "scenario_gamma_higher_flow",
+      "site_id": "site_gamma",
+      "scenario_label": "Site gamma, higher brine flow",
+      "classification": "synthetic",
+      "resource_input_id": "pydoublet-golden-repaired",
+      "temporal_basis": "lifetime_average_steady",
+      "probability_label": null,
+      "probability": null,
+      "geological_metadata": {
+        "target_depth_m": null,
+        "reservoir_temperature_c": null,
+        "transmissivity_m2_s": null,
+        "expected_mass_flow_kg_s": null,
+        "pressure_drawdown_bar": null,
+        "producer_injector_subsurface_separation_m": null,
+        "resource_location_reference": null,
+        "well_geometry_status": "absent",
+        "data_status": "absent",
+        "source_reference": null
+      },
+      "economic_inputs": {
+        "doublet_capex_eur": 8400000.0,
+        "drilling_producer_well_capex_eur": null,
+        "drilling_injector_well_capex_eur": null,
+        "well_completion_capex_eur": null,
+        "surface_plant_capex_eur": null,
+        "contingency_capex_eur": null,
+        "price_year": null,
+        "currency": "EUR",
+        "assumption_status": "synthetic_assumption",
+        "source_reference": "demo"
+      },
+      "derivation": {
+        "source_fixture_sha256": "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762",
+        "field_changes": [
+          {
+            "field_name": "producer_wellhead_temperature_c",
+            "original_value": 76.31304410943065,
+            "transformed_value": 76.31304410943065,
+            "transformation_formula": "declared target producer temperature",
+            "is_recomputed_consequence": false
+          },
+          {
+            "field_name": "geothermal_brine_mass_flow_kg_s",
+            "original_value": 28.749278488136472,
+            "transformed_value": 31.62420633695012,
+            "transformation_formula": "declared target brine mass flow",
+            "is_recomputed_consequence": false
+          },
+          {
+            "field_name": "raw_geothermal_thermal_power_kw",
+            "original_value": 4345.417312073545,
+            "transformed_value": 4779.9590432809,
+            "transformation_formula": "mass_flow_kg_s * cp * (T_prod_c - T_brine_outlet_c) / 1000",
+            "is_recomputed_consequence": true
+          },
+          {
+            "field_name": "doublet_pump_electric_power_kw",
+            "original_value": 177.44982728456736,
+            "transformed_value": 195.19481001302412,
+            "transformation_formula": "golden_pump_kw * (mass_flow_kg_s / golden_mass_flow_kg_s)",
+            "is_recomputed_consequence": true
+          }
+        ],
+        "doublet_capex_multiplier": 1.05,
+        "rationale": "declared, illustrative higher-flow sensitivity case for site_gamma",
+        "assumption_status": "synthetic_assumption",
+        "author_or_decision_reference": "R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md Phase 2"
+      }
+    }
+  ],
+  "network_reference": {
+    "network_id": "r3chain-synthetic-network-v1",
+    "network_schema_version": "1.0.0",
+    "source_kind": "committed_blueprint",
+    "package_relative_path": "src/r3chain_geothermal/network/geometry.py",
+    "source_sha256": "57ce16e2ba9d0e2f352f793a36a9ac4cf78716dceac1f33b37c5b790eb6c6974",
+    "topology_scientific_fingerprint": "90df17353acca3023084bf061973bfe4ea6fa35f892869c290756c14522cb420",
+    "classification": "synthetic",
+    "assumption_status": "synthetic_assumption",
+    "source_reference": "network/geometry.py"
+  },
+  "network_attachments": [
+    {
+      "attachment_id": "trunk_1",
+      "supply_junction_id": "trunk_1",
+      "return_junction_id": "ret_trunk_1",
+      "pressure_zone_id": "zone_1",
+      "eligibility_status": "eligible",
+      "exclusion_reason": null,
+      "assumption_status": "synthetic_assumption",
+      "source_reference": "network/geometry.py"
+    },
+    {
+      "attachment_id": "trunk_2",
+      "supply_junction_id": "trunk_2",
+      "return_junction_id": "ret_trunk_2",
+      "pressure_zone_id": "zone_1",
+      "eligibility_status": "eligible",
+      "exclusion_reason": null,
+      "assumption_status": "synthetic_assumption",
+      "source_reference": "network/geometry.py"
+    },
+    {
+      "attachment_id": "trunk_3",
+      "supply_junction_id": "trunk_3",
+      "return_junction_id": "ret_trunk_3",
+      "pressure_zone_id": "zone_1",
+      "eligibility_status": "eligible",
+      "exclusion_reason": null,
+      "assumption_status": "synthetic_assumption",
+      "source_reference": "network/geometry.py"
+    },
+    {
+      "attachment_id": "trunk_4",
+      "supply_junction_id": "trunk_4",
+      "return_junction_id": "ret_trunk_4",
+      "pressure_zone_id": "zone_1",
+      "eligibility_status": "eligible",
+      "exclusion_reason": null,
+      "assumption_status": "synthetic_assumption",
+      "source_reference": "network/geometry.py"
+    }
+  ],
+  "routing_policy": {
+    "route_kind": "synthetic_polyline",
+    "maximum_paired_trench_length_m": 300.0,
+    "allowed_attachment_ids": [
+      "trunk_1",
+      "trunk_2",
+      "trunk_3",
+      "trunk_4"
+    ],
+    "detour_definitions": [],
+    "exclusion_definitions": [
+      {
+        "exclusion_id": "protected_zone_east",
+        "geometry": [
+          {
+            "kind": "synthetic_cartesian",
+            "x_m": 950.0,
+            "y_m": -120.0
+          },
+          {
+            "kind": "synthetic_cartesian",
+            "x_m": 1050.0,
+            "y_m": -120.0
+          },
+          {
+            "kind": "synthetic_cartesian",
+            "x_m": 1050.0,
+            "y_m": 0.0
+          },
+          {
+            "kind": "synthetic_cartesian",
+            "x_m": 950.0,
+            "y_m": 0.0
+          }
+        ],
+        "applies_to": "sites",
+        "reason": "synthetic protected-geometry demonstration polygon (S7.14)",
+        "assumption_status": "synthetic_assumption",
+        "source_reference": "demo"
+      }
+    ],
+    "shared_trench": true,
+    "assumption_status": "synthetic_assumption",
+    "source_reference": "demo"
+  },
+  "design_options": [
+    {
+      "design_option_id": "standard",
+      "connection_pipe_inner_diameter_mm": 200.0,
+      "pipe_roughness_mm": 0.1,
+      "heat_transfer_coefficient_w_m2_k": null,
+      "capex_eur_per_paired_trench_m": 1000.0,
+      "assumption_status": "synthetic_assumption",
+      "source_reference": "config/demo_assumptions.json"
+    }
+  ],
+  "operating_policies": [
+    {
+      "operating_policy_id": "standard",
+      "policy_schema_version": "1.0.0",
+      "package_relative_path": "config/demo_assumptions.json",
+      "source_sha256": "444acf3e79221540737ca72415a4da31293705634d53caf21edece5e6746ad27",
+      "shortfall_mode": "auxiliary",
+      "assumption_status": "synthetic_assumption",
+      "source_reference": "config/demo_assumptions.json"
+    }
+  ],
+  "economics": {
+    "economic_policy_id": "demo-econ-v2",
+    "economic_schema_version": "1.0.0",
+    "base_assumptions_package_relative_path": "config/demo_assumptions.json",
+    "base_assumptions_sha256": "444acf3e79221540737ca72415a4da31293705634d53caf21edece5e6746ad27",
+    "annual_operating_hours": 8000.0,
+    "discount_rate_fraction": 0.04,
+    "analysis_period_years": 25,
+    "electricity_price_eur_per_mwh": 180.0,
+    "auxiliary_heat_price_eur_per_mwh": 90.0,
+    "price_year": 2026,
+    "currency": "EUR",
+    "assumption_status": "synthetic_assumption",
+    "source_reference": "config/demo_assumptions.json"
+  },
+  "decision_policy": {
+    "mode": "pareto_only",
+    "objectives": [
+      {
+        "name": "indicative_system_lcoh_eur_per_mwh",
+        "direction": "minimize",
+        "absolute_materiality": 0.5,
+        "relative_materiality_fraction": 0.01,
+        "unit": "EUR/MWh",
+        "rationale": "primary cost signal (S14.2)",
+        "source_reference": "R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md S14.2"
+      },
+      {
+        "name": "geothermal_coverage_fraction",
+        "direction": "maximize",
+        "absolute_materiality": 0.01,
+        "relative_materiality_fraction": 0.02,
+        "unit": "dimensionless",
+        "rationale": "resource utilisation signal (S14.2)",
+        "source_reference": "R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md S14.2"
+      },
+      {
+        "name": "total_pumping_electric_energy_mwh_per_a",
+        "direction": "minimize",
+        "absolute_materiality": 0.05,
+        "relative_materiality_fraction": 0.02,
+        "unit": "MWh/a",
+        "rationale": "electrical energy, not cost, since cost is already in LCOH (DEC-004)",
+        "source_reference": "R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md S14.2"
+      }
+    ],
+    "primary_objective": null,
+    "tie_breakers": [],
+    "allow_shared_rank": true,
+    "display_order_key": "alternative_id"
+  },
+  "provenance": {
+    "created_at_utc": "2026-09-04T00:00:00Z",
+    "created_by": "R3-CHAIN Phase 2 synthetic-v2 fixture builder",
+    "repository_commit": "f8dde60",
+    "software_version": "0.1.0",
+    "parent_input_sha256": [
+      "6c42d3368883070cd177ecb02572480d3aab4238e4781357b78c742cec642762"
+    ],
+    "classification": "synthetic",
+    "approval_status": "synthetic_demo_approved",
+    "approval_reference": null,
+    "notes": []
+  }
+}

@@ -5,6 +5,16 @@
 before Phase 8 (real Wuppertal, external-data gated) and Phase 9 (release acceptance)). See
 `docs/decisions/decision-register.md` (IMPL-013).
 
+**This is the "v1" record (ADR-001 D9), preserved as-is below and still accurate for
+`workflow/joint_optimization.py`, which remains unchanged.** A subsequent review found genuine
+methodological gaps in this v1 design (site as a bare label, scenarios as global perturbations
+rather than site-linked, global routes not bound to site origin, dependent Pareto objectives — see
+`docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md` §2.5 for the
+full list) and a corrected "v2" implementation (`workflow/joint_workflow_v2.py`) now exists
+alongside v1, addressing them — see that specification (ADR-001 D10) and
+`docs/decisions/decision-register.md` (IMPL-023) for v2's own current status. Nothing below this
+note has been edited or is retroactively reinterpreted as describing v2.
+
 ## What this closes
 
 OPT-001 (six-component decision identity), OPT-002 (evaluation stages), OPT-003 (Pareto shortlist,

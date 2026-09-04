@@ -1,23 +1,33 @@
 # R3-CHAIN PyDoublet–pandapipes proof of concept
 
 Deterministic, auditable evaluation of a geothermal doublet's connection to a
-district-heating network. Two modes exist, kept clearly distinct throughout every
+district-heating network. Three modes exist, kept clearly distinct throughout every
 artifact this package produces:
 
 - **Canonical single-scenario mode** (`workflow/core.py`): ranks candidate DH
   network-**connection** points for **one** already-computed, fixed geothermal
   doublet result. Does **not** determine where to drill.
-- **Synthetic joint site/connection-optimization mode** (`workflow/joint_optimization.py`,
+- **Synthetic joint site/connection-optimization mode, v1** (`workflow/joint_optimization.py`,
   see "A joint-optimization run" below): additionally varies a synthetic
   geothermal scenario/site axis, independently of the connection axis, and returns
   a Pareto shortlist rather than a single ranking. Every scenario is explicitly
   `synthetic=True` — it demonstrates the *methodology* for comparing candidate
   drilling sites, not a real drilling-site recommendation (no real geological/GIS
   data exists in this prototype; see "Limitations and the real-data boundary" below).
+  Still available, unchanged, throughout the v2 correction below.
+- **Corrected synthetic joint site/connection-optimization mode, v2**
+  (`workflow/joint_workflow_v2.py`, see "A corrected joint site/connection run (v2)"
+  below): the same synthetic-methodology demonstration as v1, corrected to link each
+  resource scenario to an explicit, coordinate-bearing site, generate site-specific
+  route geometry per site/attachment pair, and compare feasible alternatives with a
+  materiality-aware Pareto policy. Same real-data boundary as v1 — still entirely
+  synthetic, still never a drilling-site recommendation.
 
 See `docs/R3_CHAIN_PyDoublet_pandapipes_Implementation_Plan.md` for the original
-six-week plan and `docs/decisions/ADR-001-geothermal-poc-scope.md` (including its D9
-amendment) for the current, authoritative scope of both modes.
+six-week plan, `docs/decisions/ADR-001-geothermal-poc-scope.md` (D9/D10 amendments) for
+the scope history of both joint-optimization modes, and
+`docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md` for
+v2's own authoritative, phase-by-phase target and current status.
 
 ## Environment
 
@@ -150,14 +160,15 @@ workflow through the *same* CLI:
   silently glossed over: a generated candidate's own connection-pipe-DN design axis is recorded but
   not yet consumed by the physics evaluator, which still uses one fixed DN for every candidate
   (`docs/issues/candidate-generation.md`).
-- **A joint-optimization run** — **status: implemented (v1), being corrected.** What's described
-  below is what actually runs today (`workflow/joint_optimization.py`). A corrected v2 methodology
-  (site-linked resource scenarios with real coordinates, site-specific route geometry, corrected
-  `doublet_capex_multiplier` naming, materiality-aware non-duplicative Pareto objectives) is being
-  implemented phase by phase under
-  `docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md` — consult that
-  document and `docs/decisions/ADR-001-geothermal-poc-scope.md` (D10) for what's actually landed
-  versus still planned; nothing below is retroactively claimed to already be v2. Any config with
+- **A joint-optimization run (v1)** — **status: implemented, superseded for new work by v2 below,
+  still available unchanged.** What's described below is what actually runs today
+  (`workflow/joint_optimization.py`). A corrected v2 methodology (site-linked resource scenarios with
+  real coordinates, site-specific route geometry, corrected `doublet_capex_multiplier` naming,
+  materiality-aware non-duplicative Pareto objectives) is described in "A corrected joint
+  site/connection run (v2)" below — consult
+  `docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md` and
+  `docs/decisions/ADR-001-geothermal-poc-scope.md` (D10) for that layer's own phase-by-phase status.
+  Any config with
   `joint_optimization.enabled=true` (in addition to a `candidates.generated` block) dispatches the CLI
   to a genuinely different, full-product evaluation answering: *"Among the candidate geothermal
   doublet locations and associated network connections, which candidate provides the technically
@@ -181,6 +192,39 @@ workflow through the *same* CLI:
   why this is a separate top-level entry point rather than a mode inside the single-scenario
   workflow (a Pareto shortlist cannot honestly be forced into a single-ranking result shape).
 
+- **A corrected joint site/connection run (v2)** — **status: Phases 1–7 of
+  `docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md` implemented
+  (contracts/terminology, site-linked scenarios and routes, executable per-design connection
+  diameters, corrected economics/materiality-aware Pareto decision policy, the primary
+  CLI/audit-bundle workflow, MCP dispatch and persistent-registry rehydration, and cross-platform
+  reproducibility verification); consult that specification's own §21 phased plan for exactly which
+  phases remain (8 — documentation reconciliation, in progress; 9 — release-candidate
+  verification).** Corrects the specific methodological gaps `workflow/joint_optimization.py` (v1)
+  never addressed (spec §2.5): `surface_site_id` is now an explicit, coordinate-bearing
+  `SurfaceSite`, not a bare label; each `GeothermalResourceScenario` links to exactly one site (one
+  site may carry several scenarios); routes are generated per site/network-attachment pair from
+  actual site coordinates, so the SAME attachment reached from two different sites has two different,
+  independently-measured route lengths and costs — never one global route reused regardless of
+  origin; only *compatible* (same-site) scenario/route combinations are ever evaluated, never a blind
+  Cartesian product; connection-pipe diameter is threaded all the way into the pandapipes evaluation
+  (not recorded-but-ignored); and the Pareto objective set was corrected to remove mathematically
+  dependent quantities, with materiality thresholds so a below-threshold numerical difference no
+  longer creates false dominance. Reachable identically from the CLI
+  (`joint_study_v2.enabled=true` + `joint_study_v2.package_path` pointing at a committed
+  `JointStudyPackage` JSON file — see `config/demo_assumptions_joint_study_v2.json` and
+  `config/joint_study_synthetic_v2.json`) and from `geo_run_workflow` (the SAME six-tool MCP server,
+  a discriminated `workflow_mode: joint_site_connection` success shape, no seventh tool). Publishes
+  its own, separately-hash-audited artifact bundle
+  (`joint_optimization_result.json`, `joint_study_snapshot.json`,
+  `screened_site_connection_routes.json`, `compatible_alternatives.json`,
+  `alternative_comparison.csv`, `objective_policy.json`, `pareto_or_ranking.json`,
+  `joint_recommendation.md`, `audit.json`, `manifest.json`) at the same `--output-dir`, and survives
+  an MCP server restart via the same persistent-registry rehydration path the canonical workflow
+  already uses. Every artifact carries the same synthetic disclaimer v1's own artifacts do — this
+  remains a **synthetic scenario/site/connection/design comparison**, never a geological
+  drilling-site recommendation, and the canonical single-scenario C1-C4 comparison is untouched by
+  any `joint_study_v2` config.
+
 Try it directly:
 
 ```bash
@@ -195,6 +239,16 @@ r3chain-geothermal-demo \
   --config config/demo_assumptions_generated_candidates.json \
   --provenance config/demo_source_provenance.json \
   --output-dir artifacts/generated-candidates-demo
+
+# Corrected joint site/connection run (v2) -- must be run with the repository
+# root as the working directory (config/demo_assumptions_joint_study_v2.json's
+# own joint_study_v2.package_path is a package-relative path resolved
+# against --config's own location, config/joint_study_synthetic_v2.json).
+r3chain-geothermal-demo \
+  --input fixtures/pydoublet/repaired_result.json \
+  --config config/demo_assumptions_joint_study_v2.json \
+  --provenance config/demo_source_provenance.json \
+  --output-dir artifacts/joint-study-v2-demo
 ```
 
 ## Strict input-provenance validation

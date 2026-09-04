@@ -120,6 +120,13 @@ from .joint_workflow import (
     run_joint_optimization_workflow,
     write_joint_optimization_artifacts,
 )
+from .joint_workflow_v2 import (
+    JointWorkflowV2Failure,
+    JointWorkflowV2Result,
+    is_joint_study_v2_enabled,
+    run_joint_workflow_v2,
+    write_joint_workflow_v2_artifacts,
+)
 from .recommendation import render_recommendation_markdown
 from .svg_export import render_network_candidates_svg
 
@@ -318,6 +325,105 @@ def _run_joint_optimization_cli(
     return EXIT_OK
 
 
+def _run_joint_study_v2_cli(
+    pydoublet_raw_result: dict[str, Any], config: dict[str, Any], source_provenance: SourceProvenance,
+    output_dir: Path, config_path: Path,
+) -> int:
+    """docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+    Phase 5 (WF-001/002): the SAME CLI entry point dispatches here instead
+    of the single-scenario or v1-joint-optimization path whenever
+    `config["joint_study_v2"]["enabled"]` is true -- the same
+    config-driven mode-switch convention as `is_joint_optimization_enabled`
+    above, checked first since it names the more specific, corrected
+    layer.
+
+    `package_root` (Phase 7 fix, REPRO/AC-J16: found by this phase's own
+    cross-platform wheel-smoke-test verification, not by the spec's own
+    diagnosis) is derived from `config_path` itself -- `config_path.resolve()
+    .parent.parent` -- NEVER from the process's current working directory.
+    Every committed package-relative path (`joint_study_v2.package_path`,
+    the study package's own `economics.base_assumptions_package_relative_path`)
+    is written as `"config/<name>.json"`, i.e. relative to whatever directory
+    CONTAINS `--config`'s own `config/` folder -- so walking up two levels
+    from the config file's own resolved path reaches that same directory
+    regardless of the process's cwd. This was a real, previously-unfixed
+    bug: `Path.cwd()` only happened to work when the CLI was invoked with
+    cwd already at the repository root (every existing test's own
+    convention) -- it silently breaks for a wheel-installed CLI invoked
+    from an external run directory with an absolute `--config` path, which
+    is exactly the shape of ci.yml's own wheel-smoke-test pattern (`cd
+    /tmp/...-smoke-run; r3chain-geothermal-demo --config
+    "${GITHUB_WORKSPACE}/config/....json" ...`) -- confirmed by actually
+    reproducing the failure in a local Docker container before this fix.
+
+    NOTE on exit codes: mirrors `_run_joint_optimization_cli`'s own
+    documented precedent -- a missing/unreadable/malformed
+    `joint_study_v2.package_path` is a WORKFLOW-level stopping condition
+    (`run_joint_workflow_v2()` itself reports it as a typed
+    `JointWorkflowV2Failure` with `failure_code="JOINT_STUDY_PACKAGE_INVALID"`),
+    reported as EXIT_WORKFLOW_FAILURE (2), not EXIT_INPUT_ERROR (1) --
+    `validate_config_structure()` does not (yet) check this section. The
+    best-effort package load below is ONLY to obtain raw package bytes for
+    `joint_study_snapshot.json`'s own artifact content; it never determines
+    success/failure of the run itself, and falls back to `{}` (an empty
+    snapshot) exactly when the run already failed before or while loading
+    the package."""
+    package_root = config_path.resolve().parent.parent
+    try:
+        package_path = (package_root / config["joint_study_v2"]["package_path"]).resolve()
+        package_raw = json.loads(package_path.read_text(encoding="utf-8"))
+        if not isinstance(package_raw, dict):
+            package_raw = {}
+    except (KeyError, OSError, ValueError):
+        package_raw = {}
+
+    result = run_joint_workflow_v2(
+        pydoublet_raw_result, config, source_provenance=source_provenance, package_root=package_root,
+    )
+
+    try:
+        parent_dir = output_dir.parent if str(output_dir.parent) else Path(".")
+        parent_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.tmp-", dir=str(parent_dir)))
+    except OSError as exc:
+        print(f"error: failed to create a temporary working directory: {exc}", file=sys.stderr)
+        return EXIT_ARTIFACT_PUBLICATION_FAILURE
+
+    try:
+        write_joint_workflow_v2_artifacts(result, pydoublet_raw_result, config, package_raw, temp_dir)
+        _publish_temp_dir(temp_dir, output_dir)
+    except Exception as exc:  # noqa: BLE001 -- any publication-stage failure maps to one exit code
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        print(f"error: failed to publish the artifact bundle: {exc}", file=sys.stderr)
+        return EXIT_ARTIFACT_PUBLICATION_FAILURE
+
+    if isinstance(result, JointWorkflowV2Failure):
+        print(f"joint site/connection workflow (v2) stopped: {result.failure_code}: {result.message}", file=sys.stderr)
+        print(f"run_id: {result.run_id}", file=sys.stderr)
+        print(f"bundle published (failure audit trail): {output_dir}", file=sys.stderr)
+        return EXIT_WORKFLOW_FAILURE
+
+    assert isinstance(result, JointWorkflowV2Result)
+    c = result.counts
+    print(f"run_id: {result.run_id}")
+    print(
+        f"sites={c.site_count} scenarios={c.resource_scenario_count} attachments={c.network_attachment_count} "
+        f"routes={c.generated_route_count}({c.accepted_route_count} accepted) "
+        f"possible={c.possible_alternative_count} compatible={c.compatible_alternative_count} "
+        f"evaluated={c.evaluated_alternative_count} feasible={c.feasible_alternative_count}"
+    )
+    if result.decision.pareto_shortlist_alternative_ids:
+        print(f"Pareto shortlist ({len(result.decision.pareto_shortlist_alternative_ids)} non-dominated):")
+        for alt_id in result.decision.pareto_shortlist_alternative_ids:
+            print(f"  {alt_id}")
+    elif result.decision.preferred_alternative_id:
+        print(f"preferred alternative: {result.decision.preferred_alternative_id}")
+    else:
+        print("no feasible alternative -- no recommendation (synthetic joint site/connection comparison only)")
+    print(f"bundle published: {output_dir}")
+    return EXIT_OK
+
+
 def run_cli(argv: list[str]) -> int:
     args = _build_argument_parser().parse_args(argv)
 
@@ -332,6 +438,9 @@ def run_cli(argv: list[str]) -> int:
     except (_CliInputError, WorkflowConfigurationError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_INPUT_ERROR
+
+    if is_joint_study_v2_enabled(config):
+        return _run_joint_study_v2_cli(pydoublet_raw_result, config, source_provenance, output_dir, args.config)
 
     if is_joint_optimization_enabled(config):
         return _run_joint_optimization_cli(pydoublet_raw_result, config, source_provenance, output_dir)

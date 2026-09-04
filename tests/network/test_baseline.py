@@ -156,8 +156,61 @@ def test_mass_balance_residual_is_machine_precision():
 
 
 # ── Convergence handling ────────────────────────────────────────────────────
-def test_absurd_demand_produces_thermal_pipeflow_not_converged():
+# REPRO-007/009 (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+# Phase 7): a genuinely ill-conditioned, absurd input's own convergence
+# behaviour is real pandapipes/BLAS/LAPACK solver behaviour, not something
+# this project controls -- a Linux CI run with a different BLAS backend
+# (docs/issues -- see hashing.py::SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES's
+# own diagnosis of the same class of cross-platform numerical noise)
+# observed this exact test choosing a DIFFERENT one of pandapipes' own
+# failure paths for the SAME absurd 1e9 kW demand. The safety property this
+# test must prove -- an absurd demand is REJECTED by SOME applicable hard
+# gate, never silently accepted as feasible -- does not depend on which
+# gate fires first; only the single hardcoded failure_code assertion did.
+_ABSURD_DEMAND_ACCEPTABLE_FAILURE_CODES = frozenset({
+    BaselineFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED,
+    BaselineFailureCode.CONSUMER_TEMPERATURE_NOT_MET,
+    BaselineFailureCode.PRESSURE_LIMIT_EXCEEDED,
+    BaselineFailureCode.VELOCITY_LIMIT_EXCEEDED,
+    BaselineFailureCode.MASS_BALANCE_FAILED,
+    BaselineFailureCode.ENERGY_BALANCE_FAILED,
+    BaselineFailureCode.PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED,
+})
+"""Every BaselineFailureCode member -- deliberately the FULL enum, not a
+narrowed guess at which gates a 1e9 kW single-consumer demand could
+plausibly trip on a solver this project does not control the internals
+of. REPRO-010: this widens WHICH code is acceptable, never weakens a gate
+threshold itself -- every one of these codes still means "rejected,"
+never "accepted.\""""
+
+
+def test_absurd_demand_is_rejected_by_some_applicable_technical_failure():
+    """REPRO-009: does not assume every backend chooses the same first
+    failure for this pathological input -- only that it is rejected by
+    ONE of the recognized hard gates, never silently treated as feasible.
+    See test_thermal_pipeflow_not_converged_via_injected_solver_failure
+    below for a deterministic, platform-independent proof of the specific
+    PipeflowNotConverged -> THERMAL_PIPEFLOW_NOT_CONVERGED mapping itself."""
     bp = _blueprint(consumer_demands_kw={**_DEMANDS, "consumer_1": 1e9})
+    result = run_baseline_evaluation(bp, tolerances=_tolerances())
+    assert isinstance(result, BaselineNetworkFailure)
+    assert result.failure_code in _ABSURD_DEMAND_ACCEPTABLE_FAILURE_CODES
+    assert result.blueprint == bp
+
+
+def test_thermal_pipeflow_not_converged_via_injected_solver_failure(monkeypatch):
+    """REPRO-008: a deterministic, platform-independent unit proof of the
+    PipeflowNotConverged -> THERMAL_PIPEFLOW_NOT_CONVERGED mapping itself
+    -- forces pandapipes.pipeflow() to raise directly, rather than relying
+    on any genuinely ill-conditioned physical input's own BLAS/LAPACK-
+    dependent convergence behaviour (REPRO-007)."""
+    import pandapipes
+
+    def _raise_not_converged(*args, **kwargs):
+        raise pandapipes.PipeflowNotConverged("simulated non-convergence, injected for REPRO-008")
+
+    monkeypatch.setattr(pandapipes, "pipeflow", _raise_not_converged)
+    bp = _blueprint()
     result = run_baseline_evaluation(bp, tolerances=_tolerances())
     assert isinstance(result, BaselineNetworkFailure)
     assert result.failure_code == BaselineFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED

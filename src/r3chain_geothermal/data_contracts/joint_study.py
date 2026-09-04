@@ -43,7 +43,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field, model_validator
 
 from .schema import DatasetClassification
 
@@ -627,7 +627,12 @@ class SiteConnectionRoute(BaseModel):
                         f"paired_trench_length_m={self.paired_trench_length_m!r} does not match the length "
                         f"derived from route_geometry ({geometry_length!r} m)"
                     )
-        elif self.route_kind in (RouteKind.NETWORK_GRAPH, RouteKind.EXTERNAL_GIS):
+        elif self.route_kind in (RouteKind.NETWORK_GRAPH, RouteKind.EXTERNAL_GIS) and self.screening_status == RouteScreeningStatus.ACCEPTED:
+            # ROUTE-010: an unimplemented route engine may never be
+            # constructed as ACCEPTED (that would claim a routed length
+            # this prototype cannot actually compute) -- a REJECTED
+            # record for the same route_kind is fine and expected (the
+            # caller's own typed way of reporting "not implemented").
             errors.append(
                 f"route_kind={self.route_kind.value!r} is not implemented in this prototype (ROUTE-010) -- "
                 "only synthetic_polyline routes may be constructed as accepted"
@@ -716,8 +721,22 @@ class AlternativeIdentity(BaseModel):
     workflow/joint_optimization.py's own (untouched) v1
     `AlternativeIdentity`, which used `connection_candidate_id` (a
     partly-composite string) instead of a typed `attachment_id`; see
-    DATA-016 for the legacy-migration boundary, deferred to Phase 2."""
-    model_config = _MODEL_CONFIG
+    DATA-016 for the legacy-migration boundary, deferred to Phase 2.
+
+    `model_config` deliberately uses `extra="ignore"` here, not this
+    module's blanket `_MODEL_CONFIG` (`extra="forbid"`) -- this is the
+    one model in this module with a `@computed_field`
+    (`alternative_id`), and `extra="forbid"` combined with a computed
+    field is a known Pydantic v2 round-trip trap:
+    `AlternativeIdentity.model_validate_json(instance.model_dump_json())`
+    would otherwise raise `extra_forbidden` on `alternative_id`, since a
+    computed field appears in serialized OUTPUT but is not a settable
+    INPUT field. `extra="ignore"` costs nothing here specifically
+    because `alternative_id` carries no information beyond the other six
+    fields it is deterministically derived from -- silently ignoring it
+    on input can never lose or corrupt data (ARCH-006: nothing reads it
+    back apart in the first place)."""
+    model_config = ConfigDict(frozen=True, extra="ignore", allow_inf_nan=False)
 
     resource_scenario_id: str
     surface_site_id: str
@@ -740,8 +759,18 @@ class AlternativeIdentity(BaseModel):
             raise ValueError("; ".join(errors))
         return self
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def alternative_id(self) -> str:
+        """TEST-001: a bare @property is invisible to model_dump()/
+        model_dump_json() -- Pydantic's own convention for a derived
+        field that MUST appear in the serialized contract (S16.1's MCP
+        summary and every audit artifact reference `alternative_id` as
+        a plain string field, not something a caller re-derives) is
+        @computed_field. No prior model in this codebase used
+        @computed_field (grepped; none exists), so this is the first
+        instance of the standard Pydantic convention here, not a
+        deviation from an established repository pattern."""
         return (
             f"{self.resource_scenario_id}|{self.surface_site_id}|{self.attachment_id}"
             f"|{self.route_id}|{self.design_option_id}|{self.operating_policy_id}"
@@ -1272,13 +1301,24 @@ class ActiveDimensionReport(BaseModel):
     dependency_notes: list[str]
 
 
-def compute_active_dimensions(package: JointStudyPackage) -> ActiveDimensionReport:
+def compute_active_dimensions(
+    package: JointStudyPackage, routes: list[SiteConnectionRoute] | None = None,
+) -> ActiveDimensionReport:
     """TERM-003/004/005, AC-J02/AC-J03: a dimension with exactly one
     distinct value is CONTROLLED, not optimised (TERM-004) -- this
     function reports which identity dimensions this package's OWN
     declared data actually varies, computed directly from typed fields,
     never guessed from naming or code comments (TERM-002: never call six
-    stored identity fields "six active axes" without this check)."""
+    stored identity fields "six active axes" without this check).
+
+    `routes` is optional because routes are a GENERATED output (module
+    docstring: S7.1 has no `routes` field on `JointStudyPackage` itself)
+    -- when omitted, `route_id` is reported as a NOT_YET_GENERATED
+    cardinality rather than silently fabricated as 0 or 1 (a caller that
+    HAS generated routes, e.g. via `network.site_routing
+    .generate_site_routes()`, passes them here so the sixth dimension is
+    reported honestly once it actually exists -- the specific gap
+    S2.5 item 1 named)."""
     site_ids = {s.site_id for s in package.sites}
     scenario_ids = {s.scenario_id for s in package.resource_scenarios}
     attachment_ids = {a.attachment_id for a in package.network_attachments}
@@ -1297,9 +1337,10 @@ def compute_active_dimensions(package: JointStudyPackage) -> ActiveDimensionRepo
         "design_option_id": len(design_option_ids),
         "operating_policy_id": len(operating_policy_ids),
     }
-    # route_id's cardinality is not reported here: routes are a Phase-2
-    # generated output, not part of this static package (S7.1 has no
-    # `routes` field) -- this function never fabricates a route count.
+    route_reported = routes is not None
+    if routes is not None:
+        accepted_route_ids = {r.route_id for r in routes if r.screening_status == RouteScreeningStatus.ACCEPTED}
+        cardinalities["route_id"] = len(accepted_route_ids)
 
     active = sorted(name for name, count in cardinalities.items() if count > 1)
     controlled = sorted(name for name, count in cardinalities.items() if count <= 1)
@@ -1315,6 +1356,15 @@ def compute_active_dimensions(package: JointStudyPackage) -> ActiveDimensionRepo
             "resource_scenario_id and surface_site_id vary in lockstep here (TERM-005's many-to-one "
             "condition is not exercised by this package's own data)."
         )
+    dependency_notes.append(
+        "route_id depends on BOTH surface_site_id and attachment_id (S7.9: a route always names its "
+        "own site_id and attachment_id); accepted route_id cardinality is reported here because routes "
+        "were supplied, not because a route count can be inferred from the package alone."
+        if route_reported else
+        "route_id is not reported: no generated route list was supplied to this call. Routes are a "
+        "GENERATED output (network.site_routing.generate_site_routes()), not a JointStudyPackage field "
+        "-- pass the generated routes to see this sixth dimension's real cardinality."
+    )
 
     return ActiveDimensionReport(
         active_dimensions=active, controlled_dimensions=controlled,

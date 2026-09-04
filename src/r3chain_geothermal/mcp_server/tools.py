@@ -25,6 +25,7 @@ wraps these same six functions independently.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from .. import __version__ as PACKAGE_VERSION
@@ -52,6 +53,22 @@ from ..workflow import (
     run_workflow,
     write_workflow_artifacts,
 )
+from ..workflow.joint_workflow_v2 import (
+    ALTERNATIVE_COMPARISON_CSV_FILENAME,
+    COMPATIBLE_ALTERNATIVES_FILENAME,
+    JOINT_RECOMMENDATION_MD_FILENAME,
+    JOINT_RESULT_FILENAME,
+    JOINT_STUDY_SNAPSHOT_FILENAME,
+    OBJECTIVE_POLICY_FILENAME,
+    PARETO_OR_RANKING_FILENAME,
+    SCREENED_ROUTES_FILENAME,
+    JointWorkflowV2Failure,
+    JointWorkflowV2Result,
+    is_joint_study_v2_enabled,
+    resolve_joint_workflow_v2_run_id,
+    run_joint_workflow_v2,
+    write_joint_workflow_v2_artifacts,
+)
 from .config import config_sha256
 from .errors import ToolError, ToolErrorCode
 from .registry import RunEntry, RunRegistry
@@ -59,11 +76,13 @@ from .schemas import (
     ArtifactSlice,
     AuditSummary,
     CapabilitiesSummary,
+    JointWorkflowSummary,
     PyDoubletValidationSummary,
     RunSummary,
     SourceProvenanceInput,
     _CALCULATION_MODES,
     _SOURCE_FORMAT_HINTS,
+    summarize_joint_workflow_v2_result,
     summarize_workflow_result,
 )
 
@@ -83,7 +102,7 @@ GEO_TOOL_NAMES = (
     "geo_get_artifact",
 )
 
-_ALLOWED_ARTIFACT_FILENAMES = (
+_CANONICAL_ARTIFACT_FILENAMES = (
     PYDOUBLET_INPUT_FILENAME,
     CONFIG_SNAPSHOT_FILENAME,
     WORKFLOW_RESULT_FILENAME,
@@ -93,6 +112,41 @@ _ALLOWED_ARTIFACT_FILENAMES = (
     RECOMMENDATION_MD_FILENAME,
     MANIFEST_FILENAME,
 )
+"""Exactly the 8 filenames a CANONICAL (`workflow_mode == "canonical"`)
+run ever publishes -- named separately from `_ALLOWED_ARTIFACT_FILENAMES`
+below (Phase 6's own superset allow-list) so a test/caller can assert a
+canonical run's own artifact_filenames precisely, without that assertion
+silently widening every time a new joint-only filename is added."""
+
+_JOINT_ARTIFACT_FILENAMES = (
+    PYDOUBLET_INPUT_FILENAME,
+    CONFIG_SNAPSHOT_FILENAME,
+    JOINT_STUDY_SNAPSHOT_FILENAME,
+    SCREENED_ROUTES_FILENAME,
+    COMPATIBLE_ALTERNATIVES_FILENAME,
+    JOINT_RESULT_FILENAME,
+    ALTERNATIVE_COMPARISON_CSV_FILENAME,
+    OBJECTIVE_POLICY_FILENAME,
+    PARETO_OR_RANKING_FILENAME,
+    JOINT_RECOMMENDATION_MD_FILENAME,
+    AUDIT_FILENAME,
+    MANIFEST_FILENAME,
+)
+"""Exactly the 12 filenames a completed (`workflow_status == "completed"`)
+joint_site_connection run publishes -- mirrors workflow/joint_workflow_v2.py's
+own `write_joint_workflow_v2_artifacts()` bundle exactly (11 hashed files
+plus manifest.json itself, which never hashes itself)."""
+
+_ALLOWED_ARTIFACT_FILENAMES = tuple(dict.fromkeys(_CANONICAL_ARTIFACT_FILENAMES + _JOINT_ARTIFACT_FILENAMES))
+"""docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+Phase 6 (MCP-005): the union of both workflow modes' own filenames --
+joint_study_v2 artifacts share this SAME allow-list and geo_get_artifact's
+own pagination protections, not a second mechanism. `dict.fromkeys(...)`
+de-duplicates the filenames the two tuples share (PYDOUBLET_INPUT_FILENAME/
+CONFIG_SNAPSHOT_FILENAME/AUDIT_FILENAME/MANIFEST_FILENAME are the exact
+same literal strings in both modules, deliberately) while preserving
+insertion order, so CapabilitiesSummary.allowed_artifact_filenames never
+lists a filename twice."""
 _ALLOWED_ARTIFACT_FILENAME_SET = frozenset(_ALLOWED_ARTIFACT_FILENAMES)
 
 MIN_ARTIFACT_SLICE_LIMIT = 1
@@ -148,6 +202,8 @@ def get_capabilities(*, fixed_config: dict[str, Any], registry: RunRegistry) -> 
         available_shortfall_policies=["cost_shortfall", "strict_infeasible"],
         available_injection_sizing_policies=["fixed_design_temperature", "self_consistent"],
         candidate_generation_modes=["predefined", "generated"],
+        supported_workflow_modes=["canonical", "joint_site_connection"],
+        joint_study_v2_enabled=is_joint_study_v2_enabled(fixed_config),
     )
 
 
@@ -293,8 +349,121 @@ class _ProvenanceMismatchError(Exception):
         self.details = details
 
 
+# ── 3b. geo_run_workflow, joint_study_v2 dispatch target ─────────────────────
+def run_joint_workflow_tool(
+    pydoublet_raw_result: dict[str, Any],
+    source_provenance: SourceProvenanceInput,
+    *,
+    fixed_config: dict[str, Any],
+    registry: RunRegistry,
+    package_root: Path,
+) -> JointWorkflowSummary | ToolError:
+    """docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+    Phase 6 (MCP-002): the joint-site-connection analogue of
+    `run_workflow_tool()` above, following the exact same shape --
+    pre-registry run_id computation, a `_factory()` closure that raises
+    the SAME two internal signals (`_UnexpectedWorkflowError`,
+    `_ProvenanceMismatchError`) for `registry.get_or_run()`'s own generic
+    handling, staged artifact publication, and a
+    `reused_existing_run`-copied summary on cache hit -- reusing
+    `run_joint_workflow_v2()`/`write_joint_workflow_v2_artifacts()`
+    unchanged, never re-deriving anything about the physics, economics or
+    decision logic. `package_root` is a required keyword, not defaulted to
+    `Path.cwd()` here, so this function's own behaviour never depends on
+    which directory happens to be the current one at call time --
+    `dispatch_run_workflow()` below is the one place that resolves the
+    real default."""
+    provenance = _source_provenance_from_input(source_provenance)
+    run_id, package_raw_for_run_id = resolve_joint_workflow_v2_run_id(
+        pydoublet_raw_result, fixed_config, source_provenance=provenance, package_root=package_root,
+    )
+
+    def _factory() -> RunEntry:
+        try:
+            result = run_joint_workflow_v2(
+                pydoublet_raw_result, fixed_config, source_provenance=provenance, package_root=package_root,
+                expected_raw_sha256=source_provenance.expected_raw_sha256,
+            )
+        except Exception as exc:  # noqa: BLE001 -- the narrow "unexpected" boundary, module docstring
+            raise _UnexpectedWorkflowError(str(exc)) from exc
+
+        if isinstance(result, JointWorkflowV2Failure) and result.failure_code == "PYDOUBLET_RAW_HASH_MISMATCH":
+            # MCP-009 (mirrors run_workflow_tool()'s own IP-006 handling
+            # exactly): no run directory is ever created for a provenance
+            # mismatch -- raised BEFORE registry.new_artifact_dir() below.
+            raise _ProvenanceMismatchError(result.message, result.details)
+
+        staging_dir = registry.new_artifact_dir(run_id)
+        # A best-effort package_raw for the artifact bundle's own
+        # joint_study_snapshot.json -- run_id above was already computed
+        # from whatever resolve_joint_workflow_v2_run_id() itself managed
+        # to load (module docstring); if the package could not be loaded
+        # at all, run_joint_workflow_v2() above already reports a
+        # JOINT_STUDY_PACKAGE_INVALID JointWorkflowV2Failure, and the
+        # snapshot is written as an empty object, exactly like the CLI's
+        # own documented fallback (workflow/cli.py::_run_joint_study_v2_cli).
+        package_raw = package_raw_for_run_id if package_raw_for_run_id is not None else {}
+        manifest = write_joint_workflow_v2_artifacts(result, pydoublet_raw_result, fixed_config, package_raw, staging_dir)
+        all_filenames = frozenset(manifest.files.keys()) | {MANIFEST_FILENAME}
+        run_dir = registry.publish_artifact_dir(run_id, staging_dir)
+        summary = summarize_joint_workflow_v2_result(result, all_filenames, reused_existing_run=False)
+        summary = summary.model_copy(update={"bundle_scientific_sha256": manifest.bundle_scientific_sha256})
+        return RunEntry(
+            run_id=run_id, summary=summary, audit=result.audit,
+            artifact_dir=run_dir, artifact_filenames=all_filenames,
+            created_at=datetime.now(timezone.utc), run_type="joint_site_connection",
+        )
+
+    try:
+        entry, reused = registry.get_or_run(run_id, _factory)
+    except _UnexpectedWorkflowError as exc:
+        return ToolError(
+            code=ToolErrorCode.UNEXPECTED_ERROR, message=str(exc), stage="run_joint_workflow_v2", recoverable=False,
+        )
+    except _ProvenanceMismatchError as exc:
+        return ToolError(
+            code=ToolErrorCode.PYDOUBLET_VALIDATION_FAILED, message=exc.message,
+            stage="input_provenance_validation", recoverable=True, details=exc.details,
+        )
+
+    if reused:
+        return entry.summary.model_copy(update={"reused_existing_run": True})
+    return entry.summary
+
+
+def dispatch_run_workflow(
+    pydoublet_raw_result: dict[str, Any],
+    source_provenance: SourceProvenanceInput,
+    *,
+    fixed_config: dict[str, Any],
+    registry: RunRegistry,
+    package_root: Path | None = None,
+) -> RunSummary | JointWorkflowSummary | ToolError:
+    """MCP-002: the ONE dispatch point `server.py`'s own `geo_run_workflow`
+    tool wrapper (and `GEO_TOOL_REGISTRY["geo_run_workflow"]`) calls --
+    reads `fixed_config["joint_study_v2"]["enabled"]` (the exact same
+    config-driven mode switch `workflow/cli.py::is_joint_study_v2_enabled`
+    already established for the CLI) and routes to
+    `run_joint_workflow_tool()` or, unchanged, `run_workflow_tool()`.
+    `package_root` defaults to `Path.cwd()` ONLY here, at the one call
+    site that actually needs a real default -- mirrors
+    `workflow/cli.py::_run_joint_study_v2_cli()`'s own documented choice:
+    every package-relative path in the committed fixtures is written
+    relative to the repository root, and this server -- like the CLI --
+    is expected to be launched from there when `joint_study_v2` is
+    enabled. `build_server()` exposes `package_root` as its own test-only
+    seam (matching `config`/`config_path`) for a caller that needs an
+    explicit, cwd-independent root."""
+    if is_joint_study_v2_enabled(fixed_config):
+        return run_joint_workflow_tool(
+            pydoublet_raw_result, source_provenance, fixed_config=fixed_config, registry=registry,
+            package_root=package_root if package_root is not None else Path.cwd(),
+        )
+    return run_workflow_tool(pydoublet_raw_result, source_provenance, fixed_config=fixed_config, registry=registry)
+
+
 # ── 4. geo_get_run_summary ──────────────────────────────────────────────────
-def get_run_summary(run_id: str, *, registry: RunRegistry) -> RunSummary | ToolError:
+def get_run_summary(run_id: str, *, registry: RunRegistry) -> RunSummary | JointWorkflowSummary | ToolError:
     entry = registry.get(run_id)
     if entry is None:
         return ToolError(
@@ -377,7 +546,7 @@ def get_artifact(
 GEO_TOOL_REGISTRY: dict[str, Any] = {
     "geo_get_capabilities": get_capabilities,
     "geo_validate_pydoublet_result": validate_pydoublet_result,
-    "geo_run_workflow": run_workflow_tool,
+    "geo_run_workflow": dispatch_run_workflow,
     "geo_get_run_summary": get_run_summary,
     "geo_get_audit": get_audit,
     "geo_get_artifact": get_artifact,

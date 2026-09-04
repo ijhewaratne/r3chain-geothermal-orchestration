@@ -488,19 +488,74 @@ def test_geothermal_injection_hydraulic_conflict_via_insufficient_margin():
 
 
 # ── Inherited gate failures (reusing CandidateFailureCode's shared codes) ──
-def test_thermal_pipeflow_not_converged_via_undersized_connection_pipe(monkeypatch):
-    """Distinct from GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT (a UserWarning
-    the main pump's own direction check raises on an otherwise-converged
-    solution) -- this is a genuine pandapipes.PipeflowNotConverged from the
-    hydraulic solve itself, forced by an absurdly undersized connection
-    pipe (1.0 mm, vs. the real 200.0 mm) at the candidate's own injection
-    branch, with a baseline that converges normally."""
+# REPRO-007/009 (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+# Phase 7): an absurdly undersized connection pipe's own convergence
+# behaviour is real pandapipes/BLAS/LAPACK solver behaviour -- a Linux CI
+# run with a different BLAS backend observed this exact test choosing a
+# DIFFERENT one of pandapipes' own hard-gate failure paths for the SAME
+# 1.0 mm pipe. The safety property that matters -- an absurdly undersized
+# connection pipe is REJECTED, never silently accepted as feasible --
+# does not depend on which specific gate fires first.
+_UNDERSIZED_PIPE_ACCEPTABLE_FAILURE_CODES = frozenset({
+    CandidateFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED,
+    CandidateFailureCode.CONSUMER_TEMPERATURE_NOT_MET,
+    CandidateFailureCode.PRESSURE_LIMIT_EXCEEDED,
+    CandidateFailureCode.VELOCITY_LIMIT_EXCEEDED,
+    CandidateFailureCode.MASS_BALANCE_FAILED,
+    CandidateFailureCode.ENERGY_BALANCE_FAILED,
+    CandidateFailureCode.PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED,
+    CandidateFailureCode.GEOTHERMAL_INJECTION_HYDRAULIC_CONFLICT,
+})
+"""Every hard-gate/solver-derived CandidateFailureCode reachable under this
+test's own configuration (default injection policy, default fixed-design
+sizing, a structurally valid positive diameter) -- excludes
+GEOTHERMAL_HEAT_SHORTFALL/SELF_CONSISTENT_FLOW_NOT_CONVERGED/
+CONNECTION_DESIGN_INVALID, which require a different policy mode or an
+invalid design and are not reachable from this setup regardless of
+platform. REPRO-010: widens WHICH code is acceptable, never weakens a
+gate threshold -- every one of these codes still means "rejected.\""""
+
+
+def test_undersized_connection_pipe_is_rejected_by_some_applicable_gate(monkeypatch):
+    """REPRO-009: an absurdly undersized connection pipe (1.0 mm, vs. the
+    real 200.0 mm) at the candidate's own injection branch must be
+    rejected by SOME applicable hard gate, without assuming every backend
+    chooses the same one first. See
+    test_thermal_pipeflow_not_converged_via_injected_solver_failure below
+    for a deterministic, platform-independent proof of the specific
+    PipeflowNotConverged -> THERMAL_PIPEFLOW_NOT_CONVERGED mapping itself."""
     import r3chain_geothermal.network.candidate as candidate_module
     monkeypatch.setattr(candidate_module, "CONNECTION_PIPE_DN_MM", 1.0)
 
     bp = _blueprint()
     baseline = _baseline(bp)
     coupling_result = _golden_coupling_result()
+    result = evaluate_candidate(
+        coupling_result, bp, _candidate("C1"), baseline,
+        injection_policy=_policy(), tolerances=_tolerances(),
+    )
+    assert isinstance(result, CandidateEvaluationFailure)
+    assert result.failure_code in _UNDERSIZED_PIPE_ACCEPTABLE_FAILURE_CODES
+
+
+def test_thermal_pipeflow_not_converged_via_injected_solver_failure(monkeypatch):
+    """REPRO-008: a deterministic, platform-independent unit proof of the
+    PipeflowNotConverged -> THERMAL_PIPEFLOW_NOT_CONVERGED mapping on the
+    CANDIDATE evaluator's own solve -- forces pandapipes.pipeflow() to
+    raise directly, rather than relying on any genuinely ill-conditioned
+    physical input's own BLAS/LAPACK-dependent convergence behaviour
+    (REPRO-007). See tests/network/test_baseline.py's own analogous test
+    for the baseline evaluator's version of this same proof."""
+    import pandapipes
+
+    bp = _blueprint()
+    baseline = _baseline(bp)  # built BEFORE patching -- the baseline's own solve must still converge normally
+    coupling_result = _golden_coupling_result()
+
+    def _raise_not_converged(*args, **kwargs):
+        raise pandapipes.PipeflowNotConverged("simulated non-convergence, injected for REPRO-008")
+
+    monkeypatch.setattr(pandapipes, "pipeflow", _raise_not_converged)
     result = evaluate_candidate(
         coupling_result, bp, _candidate("C1"), baseline,
         injection_policy=_policy(), tolerances=_tolerances(),
@@ -536,13 +591,15 @@ def test_velocity_limit_exceeded_via_undersized_connection_pipe(monkeypatch):
     assert result.details["pipe"] == "geo_supply_connection_C1"
 
 
-def test_all_ten_failure_codes_reachable():
+def test_all_eleven_failure_codes_reachable():
     """Enumerates CandidateFailureCode and cross-checks it against the
     dedicated failure-path tests above -- if a new code is ever added to
     the enum without a corresponding reachability test, this test's own
     membership assertion documents the gap explicitly rather than passing
     silently. Was "all nine" prior to DSP-005 (decision-register.md
-    IMPL-008), which added SELF_CONSISTENT_FLOW_NOT_CONVERGED."""
+    IMPL-008), which added SELF_CONSISTENT_FLOW_NOT_CONVERGED; "all ten"
+    prior to R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+    Phase 3 (DESIGN-004/006), which added CONNECTION_DESIGN_INVALID."""
     covered = {
         CandidateFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED,
         CandidateFailureCode.CONSUMER_TEMPERATURE_NOT_MET,
@@ -554,9 +611,10 @@ def test_all_ten_failure_codes_reachable():
         CandidateFailureCode.PUMP_DIFFERENTIAL_PRESSURE_EXCEEDED,
         CandidateFailureCode.GEOTHERMAL_HEAT_SHORTFALL,
         CandidateFailureCode.SELF_CONSISTENT_FLOW_NOT_CONVERGED,
+        CandidateFailureCode.CONNECTION_DESIGN_INVALID,
     }
     assert covered == set(CandidateFailureCode)
-    assert len(covered) == 10
+    assert len(covered) == 11
 
 
 def test_pump_differential_pressure_exceeded_via_tight_tolerance():
@@ -999,7 +1057,7 @@ def test_strict_json_round_trip_for_success():
 
 @pytest.mark.parametrize("failure_code", list(CandidateFailureCode))
 def test_strict_json_round_trip_for_failure_codes(failure_code, monkeypatch):
-    """Covers all ten CandidateFailureCode values -- one dedicated,
+    """Covers all eleven CandidateFailureCode values -- one dedicated,
     independently-verified scenario per code, matching the scenario used
     in that code's own dedicated failure test above."""
     import r3chain_geothermal.network.candidate as candidate_module
@@ -1008,6 +1066,7 @@ def test_strict_json_round_trip_for_failure_codes(failure_code, monkeypatch):
     tolerances = _tolerances()
     policy = _policy()
     coupling_result = _golden_coupling_result()
+    extra_kwargs: dict = {}
 
     if failure_code == CandidateFailureCode.MASS_BALANCE_FAILED:
         tolerances = tolerances.model_copy(update={"mass_balance_tolerance_fraction": 1e-18})
@@ -1031,11 +1090,16 @@ def test_strict_json_round_trip_for_failure_codes(failure_code, monkeypatch):
     elif failure_code == CandidateFailureCode.SELF_CONSISTENT_FLOW_NOT_CONVERGED:
         policy = _policy(injection_sizing_policy="self_consistent")
         monkeypatch.setattr(candidate_module, "SELF_CONSISTENT_FLOW_MAX_ITERATIONS", 1)
+    elif failure_code == CandidateFailureCode.CONNECTION_DESIGN_INVALID:
+        # DESIGN-004/006, R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+        # Phase 3: a non-positive connection_pipe_inner_diameter_mm is
+        # rejected BEFORE any network construction is attempted.
+        extra_kwargs["connection_pipe_inner_diameter_mm"] = -1.0
 
     baseline = _baseline(bp)
     result = evaluate_candidate(
         coupling_result, bp, _candidate("C1"), baseline,
-        injection_policy=policy, tolerances=tolerances,
+        injection_policy=policy, tolerances=tolerances, **extra_kwargs,
     )
     assert isinstance(result, CandidateEvaluationFailure)
     assert result.failure_code == failure_code
@@ -1095,11 +1159,74 @@ def test_tamper_doublet_pump_electric_power_mismatch_is_rejected():
         parse_candidate_result_json(json.dumps(payload))
 
 
-def test_tamper_connection_pipe_dn_mismatch_is_rejected():
+def test_tamper_non_positive_connection_pipe_dn_is_rejected():
+    """DESIGN-001, R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+    Phase 3, intentionally changes what counts as a "tampered"
+    connection_pipe_dn_mm: this field previously had to equal the fixed
+    CONNECTION_PIPE_DN_MM module constant exactly (DESIGN-001's own
+    "unconditional dependence on the module-level constant," now
+    explicitly removed so a real, approved ConnectionDesignOption can
+    carry a different diameter through evaluate_candidate()). The
+    remaining structural invariant this contract can still check on its
+    own is positivity -- see test_a_different_positive_connection_pipe_dn_
+    is_now_legitimately_accepted() immediately below for the deliberate,
+    spec-driven other half of this behaviour change."""
     payload = _valid_success_payload()
-    payload["connection_pipe_dn_mm"] = 999.0
+    payload["connection_pipe_dn_mm"] = 0.0
     with pytest.raises(ValidationError):
         parse_candidate_result_json(json.dumps(payload))
+
+    payload_negative = _valid_success_payload()
+    payload_negative["connection_pipe_dn_mm"] = -50.0
+    with pytest.raises(ValidationError):
+        parse_candidate_result_json(json.dumps(payload_negative))
+
+
+def test_a_different_positive_connection_pipe_dn_is_now_legitimately_accepted():
+    """The other half of DESIGN-001's intentional behaviour change: a
+    candidate genuinely EVALUATED with a non-canonical diameter (not a
+    hand-tampered payload -- an actual evaluate_candidate() call) must
+    report that real diameter, and the result must construct/round-trip
+    successfully, never rejected merely for differing from
+    CONNECTION_PIPE_DN_MM."""
+    bp = _blueprint()
+    coupling_result = _golden_coupling_result()
+    baseline = _baseline(bp)
+    result = evaluate_candidate(
+        coupling_result, bp, _candidate("C1"), baseline,
+        injection_policy=_policy(), tolerances=_tolerances(),
+        connection_pipe_inner_diameter_mm=250.0,
+    )
+    assert isinstance(result, CandidateEvaluationResult)
+    assert result.connection_pipe_dn_mm == 250.0
+    restored = parse_candidate_result_json(result.model_dump_json())
+    assert isinstance(restored, CandidateEvaluationResult)
+    assert restored == result
+
+
+def test_ac_j08_two_diameters_change_a_hydraulic_kpi():
+    """DESIGN-008/AC-J08: two configured pipe diameters produce different
+    hydraulic results in a controlled case -- the SAME candidate,
+    blueprint, coupling result, policy and tolerances, only the
+    connection diameter differs."""
+    bp = _blueprint()
+    coupling_result = _golden_coupling_result()
+    baseline = _baseline(bp)
+    wide = evaluate_candidate(
+        coupling_result, bp, _candidate("C1"), baseline,
+        injection_policy=_policy(), tolerances=_tolerances(), connection_pipe_inner_diameter_mm=200.0,
+    )
+    narrow = evaluate_candidate(
+        coupling_result, bp, _candidate("C1"), baseline,
+        injection_policy=_policy(), tolerances=_tolerances(), connection_pipe_inner_diameter_mm=150.0,
+    )
+    assert isinstance(wide, CandidateEvaluationResult)
+    assert isinstance(narrow, CandidateEvaluationResult)
+    assert wide.connection_pipe_dn_mm != narrow.connection_pipe_dn_mm
+    # A narrower connection pipe carrying the same mass flow must show a
+    # higher velocity through that pipe -- a real, physically-expected
+    # hydraulic consequence, not merely a differing recorded label.
+    assert narrow.max_velocity_m_s > wide.max_velocity_m_s
 
 
 def test_tamper_kpi_delta_inconsistent_with_baseline_reference_is_rejected():

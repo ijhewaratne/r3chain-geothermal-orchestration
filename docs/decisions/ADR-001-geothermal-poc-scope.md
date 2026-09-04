@@ -167,6 +167,27 @@ amendment. Real drilling-location determination remains exactly as constrained b
 and the paragraph above -- this amendment corrects the SYNTHETIC methodology's
 honesty and structure, it does not loosen the real-data gate.
 
+**Implementation status (updated 2026-09-04):** Phases 1-7 of the specification's own
+§21 phased plan are implemented -- corrected contracts/terminology and relationship
+validation (Phase 1); site-linked resource scenarios and site-origin-aware route
+generation, with only compatible combinations evaluated (Phase 2); connection-pipe
+diameter threaded into the pandapipes evaluation itself (Phase 3); corrected
+site/scenario-sourced economics and a materiality-aware Pareto decision policy with
+optional primary-objective ranking (Phase 4); a committed, ready-to-run joint
+configuration with a full audit bundle, reachable by CLI (Phase 5); the same corrected
+layer dispatched through the existing six-tool MCP server, with persistent-registry
+rehydration distinguishing canonical and joint run types (Phase 6); and a diagnosed,
+corrected, empirically Linux-verified cross-platform reproducibility claim, including
+two genuine defects this verification work found and fixed that the specification's own
+diagnosis did not name -- a joint-CLI package-path resolution bug reachable only from an
+external run directory, and two solver-non-convergence unit tests that depended on
+BLAS-backend-specific behaviour rather than a deterministic injected failure (Phase 7).
+Phase 8 (documentation reconciliation, this edit among others) and Phase 9
+(release-candidate verification) remain. Every canonical C1-C4 golden value (`run_id`,
+LCOH set) is unchanged throughout. See
+`docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md`
+§21 and `docs/decisions/decision-register.md` for the phase-by-phase evidence.
+
 ## Consequences
 
 - Scope creep toward geological placement, weighted scoring, or real Wuppertal data

@@ -181,20 +181,38 @@ class DistrictHeatingConnectionSpec(BaseModel):
     pair + surface connection length -- reuses BlueprintCandidate directly
     rather than duplicating its fields) plus the DH-side design
     temperatures and water property this component sizes flow against.
-    Connection-pipe DN/roughness and the circulation-pump's own lift curve
+    Connection-pipe roughness and the circulation-pump's own lift curve
     are read from the supplied NetworkBlueprint at build time (the SAME
     fixed, shared values every candidate already uses -- plan §10.1's
     "fixed pipe diameters across candidate evaluations"), not duplicated
-    here."""
+    here. `connection_pipe_inner_diameter_mm` (DESIGN-001/002,
+    R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md Phase
+    3) is the one exception -- it defaults to the canonical
+    `CONNECTION_PIPE_DN_MM` but is now an explicit field here rather than
+    an unconditional module-level constant, so a caller with an
+    approved, different design option can thread its own diameter
+    through."""
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
     candidate: BlueprintCandidate
     dh_supply_temperature_c: float
     dh_return_temperature_c: float
     dh_water_specific_heat_capacity_j_kg_k: float
+    connection_pipe_inner_diameter_mm: float = Field(
+        default_factory=lambda: _candidate_module.CONNECTION_PIPE_DN_MM,
+    )
+    """`default_factory` reading the LIVE `_candidate_module
+    .CONNECTION_PIPE_DN_MM` (not a plain `= CONNECTION_PIPE_DN_MM`
+    default) -- the same reasoning, and the same established pattern,
+    as this class's own `DoubletOperatingPolicy` sibling above (module
+    docstring, `_candidate_module` import comment): a plain default is
+    bound once at class-definition time and would never see a later
+    `monkeypatch.setattr(candidate_module, "CONNECTION_PIPE_DN_MM", ...)`."""
 
     @model_validator(mode="after")
     def _validate_positive(self) -> "DistrictHeatingConnectionSpec":
+        if self.connection_pipe_inner_diameter_mm <= 0:
+            raise ValueError("connection_pipe_inner_diameter_mm must be > 0")
         if self.dh_water_specific_heat_capacity_j_kg_k <= 0:
             raise ValueError("dh_water_specific_heat_capacity_j_kg_k must be > 0")
         if self.dh_supply_temperature_c <= self.dh_return_temperature_c:
@@ -458,11 +476,12 @@ def build_and_evaluate_geothermal_doublet_with_net(
     dh_supply_c = connection.dh_supply_temperature_c
     dh_return_c = connection.dh_return_temperature_c
     cp_j_kg_k = connection.dh_water_specific_heat_capacity_j_kg_k
+    pipe_diameter_mm = connection.connection_pipe_inner_diameter_mm
 
     if policy.injection_sizing_policy == "self_consistent":
         try:
             net, refs, iteration_count, mass_flow_kg_s = _solve_self_consistent_injection(
-                blueprint, candidate, policy.accepted_heat_kw, dh_supply_c, dh_return_c, cp_j_kg_k,
+                blueprint, candidate, policy.accepted_heat_kw, dh_supply_c, dh_return_c, cp_j_kg_k, pipe_diameter_mm,
             )
         except pandapipes.PipeflowNotConverged as exc:
             return None, _failure(
@@ -487,7 +506,7 @@ def build_and_evaluate_geothermal_doublet_with_net(
         mass_flow_kg_s = _compute_injected_mass_flow_kg_s(policy.accepted_heat_kw, dh_supply_c, dh_return_c, cp_j_kg_k)
         net = build_pandapipes_net(blueprint)
         refs = _add_geothermal_injection_branch(
-            net, candidate, blueprint, policy.accepted_heat_kw, mass_flow_kg_s, dh_supply_c, dh_return_c,
+            net, candidate, blueprint, policy.accepted_heat_kw, mass_flow_kg_s, dh_supply_c, dh_return_c, pipe_diameter_mm,
         )
         iteration_count = 1
         try:

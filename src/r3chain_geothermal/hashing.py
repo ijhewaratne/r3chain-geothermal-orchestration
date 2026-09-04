@@ -102,16 +102,27 @@ linear solve (commonly below the 13th-15th significant digit), so it
 correctly makes the SAME physical solution, computed on two different
 platforms, hash identically.
 
-**Honesty boundary (Phase 2.3's own required fallback, since only one
-platform -- macOS ARM64 -- was available to test this change against):**
+**Honesty boundary, updated (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+Phase 7, REPRO-001..005, docs/issues/cross-platform-reproducibility.md):**
 this constant is a principled, documented, testable mechanism for the
 diagnosed class of noise, verified directly by
 tests/test_hashing.py::test_a_one_ulp_scale_float_difference_produces_the_same_hash
-and test_a_genuinely_different_value_still_changes_the_hash. It is NOT,
-and must not be read as, an empirically-reproduced guarantee that THIS
-specific macOS/Linux hash pair now converges -- that would require
-actually re-running the workflow on a Linux machine, which this session
-could not do. The supported reproducibility boundary is: identical
+and test_a_genuinely_different_value_still_changes_the_hash. Originally
+(Phase 2.3) this note said an empirically-reproduced macOS/Linux
+convergence guarantee would require actually re-running the workflow on a
+Linux machine, which that session could not do -- Phase 7 did: this
+project's own canonical golden run was built and tested fresh, from
+source, inside genuine Linux/arm64 containers (Python 3.11 and 3.12,
+OpenBLAS 0.3.31, glibc) via Docker, and reproduced the EXACT SAME
+`bundle_scientific_sha256`
+(`ee76b2a626f57fd4825c554ac55e57e81e567f86c7bf4acd771cb23a4389f3c8`) this
+project's macOS ARM64 (Apple Accelerate) development environment already
+asserts -- see docs/issues/cross-platform-reproducibility.md for the full
+comparison (package versions, BLAS backend detail, exact containers run).
+A genuinely different CPU architecture (Linux/amd64, matching GitHub
+Actions' own `ubuntu-latest` runners) was still being verified as that
+document was written; it is not assumed passing before its own result is
+recorded. The supported reproducibility boundary remains: identical
 `bundle_scientific_sha256` is expected across platforms/BLAS backends
 whose numerical noise for this project's own linear solves stays below
 the 12th significant figure; a platform whose noise exceeds that (e.g. a
