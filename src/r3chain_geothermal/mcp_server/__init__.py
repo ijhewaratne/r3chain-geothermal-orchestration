@@ -19,9 +19,11 @@ from .schemas import (
     JointWorkflowSummary,
     PyDoubletValidationSummary,
     RankedCandidateSummary,
+    ResearchExperimentSummary,
     RunSummary,
     SourceProvenanceInput,
     summarize_joint_workflow_v2_result,
+    summarize_research_experiment_result,
 )
 from .tools import (
     GEO_TOOL_NAMES,
@@ -29,6 +31,7 @@ from .tools import (
     INTERIM_ARCHITECTURE_DISCLAIMER,
     dispatch_run_workflow,
     run_joint_workflow_tool,
+    run_research_experiment_tool,
     summarize_workflow_result,
 )
 
@@ -45,6 +48,7 @@ __all__ = [
     "PyDoubletValidationSummary",
     "RankedCandidateSummary",
     "RegistryClosedError",
+    "ResearchExperimentSummary",
     "RunEntry",
     "RunRegistry",
     "RunSummary",
@@ -53,6 +57,8 @@ __all__ = [
     "ToolErrorCode",
     "dispatch_run_workflow",
     "run_joint_workflow_tool",
+    "run_research_experiment_tool",
     "summarize_joint_workflow_v2_result",
+    "summarize_research_experiment_result",
     "summarize_workflow_result",
 ]

@@ -235,6 +235,51 @@ Executed against the corrected working tree, following the specification's own �
 under Phase 7 above) landed as CI run `33953933376` against commit `1d4a3ec` — all three required
 jobs pass. Nothing in this checklist remains open.
 
+## Workstream L — research-experiment layer (this session, 2026-09-05)
+
+Workstream K above (the corrected v2 joint site/connection layer) is complete and unchanged
+throughout this workstream. A subsequent specification,
+`docs/specifications/R3CHAIN_FINAL_RESEARCH_ALIGNMENT_IMPLEMENTATION_SPEC.md` (ADR-001 amendment
+D11), defines a NEW layer built entirely on top of v2: three representative steady-state load
+conditions per compatible alternative, annualized-system-LCOH primary-objective ranking (v2's own
+Pareto machinery reused unchanged and retained as a secondary diagnostic), three baselines
+(geothermal-only, network-only fixed-source, integrated) with a deterministic cross-baseline
+comparison, and a small deterministic sensitivity/robustness study. That specification defines its
+own requirement-ID taxonomy (RA-GOV/DATA/LOAD/ECON/DEC/BASE/SENS/API/ART/TEST) and acceptance
+scenarios (AC-RA01 through AC-RA17) — not retrofitted row-by-row into this document, the same
+choice already made for Workstream K's own AC-J set. Consult the specification directly for the
+authoritative, ID-level record; `docs/decisions/decision-register.md` (IMPL-027) and
+`docs/decisions/ADR-001-geothermal-poc-scope.md` (D11) for the decision-level record. Summary, at
+the phase level, as of this document's own last edit:
+
+| Phase | Scope | Status |
+|---|---|---|
+| 0 | Read-only audit against the actual v2 code (curtailment-stability risk area investigated directly, not assumed) | PASS |
+| 1 | `data_contracts/research_experiment.py` typed contracts; relationship/invariant validation | PASS — `tests/data_contracts/test_research_experiment.py` |
+| 2 | Per-(alternative, load-state) evaluation, reusing `workflow.joint_evaluation.evaluate_alternative()` unchanged | PASS — `tests/workflow/test_load_state_evaluation.py`, including the flagged low-load curtailment risk case |
+| 3 | Annualized system economics (CAPEX/annuity once, OPEX/auxiliary/pumping summed across load states) | PASS — `tests/economics/test_annualized_system_costing.py` |
+| 4 | Cross-baseline comparison, decision reuse, deterministic sensitivity/robustness | PASS — `tests/decision/test_research_comparison.py`, exercising all 7 comparison codes and all 6 robustness classifications |
+| 5 | Orchestrator (`workflow/research_experiment.py`), committed config, CLI wiring | PASS — `tests/workflow/test_research_experiment.py`, end-to-end against the committed `config/research_experiment_synthetic.json` |
+| 6 | MCP dispatch (`workflow_mode: research_experiment` on the existing six tools, `run_type` registry rehydration) | PASS — `tests/mcp_server/test_research_experiment_mcp.py`, including restart-recovery rehydration |
+| 7 | Full artifact bundle (`workflow/research_experiment_export.py`) | PASS — `tests/workflow/test_research_experiment_export.py` |
+| 8 | Documentation reconciliation | PASS — this edit and the README/CLAUDE.md/ADR-001/acceptance-criteria/decision-register edits alongside it |
+| 9 | Release-candidate verification | pending — see "Remaining work" below |
+
+Every canonical C1-C4 golden value and every v2 golden value (`run_id r3chain-run-99e7f5ea0fb38a12`,
+its own counts/decision) is unchanged throughout this workstream, re-verified after every phase
+(the full offline suite run clean after each addition) — this workstream never modifies
+`workflow/core.py`, `workflow/joint_optimization.py` (v1), or any file under `workflow/joint_workflow_v2.py`'s
+own module (it calls `run_joint_workflow_v2()` as a black box). No test was removed or weakened to
+reach a green suite (CLAUDE.md).
+
+**Remaining for Phase 9 (honestly scoped, not yet executed):** a fresh real GitHub Actions CI
+confirmation of this workstream (verified so far only against this session's local
+`.venvs/orchestration` environment, not real `ubuntu-latest`/`macos-latest` hardware); a wheel-build
+clean-environment install smoke test exercising the research-experiment CLI path specifically,
+mirroring Workstream K's own Phase-9 checklist item 3; and the same privacy/secret-scan and
+full-file-review pass Workstream K's own Phase 9 executed. None of these gaps affect any golden
+value already reproduced — they are verification-completeness items, not defects found.
+
 ## MCP and orchestration requirements
 
 | ID | Status | Evidence |

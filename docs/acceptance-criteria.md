@@ -12,7 +12,12 @@ has its own acceptance record in `docs/issues/joint-location-optimization.md` an
 own correction (ADR-001 D10) has its acceptance scenarios (AC-J01 through AC-J18) defined
 in `docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md`
 §20 — also not retrofitted here; consult that document's own phase-by-phase status for
-which AC-J scenarios currently pass.
+which AC-J scenarios currently pass. The research-experiment layer built on top of that
+corrected v2 workflow (ADR-001 D11) has its own acceptance scenarios (AC-RA01 through
+AC-RA17) defined in
+`docs/specifications/R3CHAIN_FINAL_RESEARCH_ALIGNMENT_IMPLEMENTATION_SPEC.md` — likewise
+not retrofitted here; consult that document and `docs/decisions/decision-register.md`
+for the current implementation record.
 
 ## Gate 1 — Workshop vertical slice (due 2026-09-15)
 

@@ -4,7 +4,8 @@
 - **Date:** 2026-08-19
 - **Amended:** 2026-08-19 (D7: top-level orchestration repository added); 2026-09-04 (D9:
   synthetic joint site/connection extension); 2026-09-04 (D10: corrected joint
-  site/connection specification adopted)
+  site/connection specification adopted); 2026-09-05 (D11: research-alignment
+  specification adopted)
 - **Decider:** Ishantha Hewaratne
 - **Informed by:** `docs/R3_CHAIN_PyDoublet_pandapipes_Implementation_Plan.md`
   (18 Aug 2026); code study of the PyDoublet and pandapipesAI baselines
@@ -193,6 +194,66 @@ yet re-confirmed on real CI). See
 §21, `docs/traceability-matrix.md`'s own Phase 9 section, and
 `docs/decisions/decision-register.md` (IMPL-023, IMPL-024) for the phase-by-phase
 evidence.
+
+### D11 — Research-alignment specification adopted (decided 2026-09-05)
+
+`docs/specifications/R3CHAIN_FINAL_RESEARCH_ALIGNMENT_IMPLEMENTATION_SPEC.md` (committed
+verbatim from the externally supplied `.docx`, converted to Markdown for readability since
+no docx-reading tool was available in this environment) is now the authoritative record for
+a NEW research-experiment layer built ON TOP of the corrected v2 joint site/connection
+workflow (D10) -- it does not reopen or redesign that layer's own architecture. It answers a
+genuinely new scientific question the v2 layer alone cannot: does the site/resource that
+source-side Pareto analysis prefers remain preferred once its actual district-heating
+integration, evaluated at more than one representative load level, is priced in?
+
+Implemented in full: `data_contracts/research_experiment.py` (typed contracts --
+`LoadStateDefinition`, `ResearchExperimentConfig`, `AnnualizedAlternativeEconomicResult`,
+`BaselineComparisonResult`/`ComparisonInterpretationCode`, `SensitivityCaseDefinition`/
+`SensitivityCaseResult`, `RobustnessClassification`/`ResearchExperimentDecisionSummary`);
+`workflow/load_state_evaluation.py` (per-alternative, per-load-state evaluation, reusing
+`workflow/joint_evaluation.py::evaluate_alternative()` unchanged against a scaled-demand
+baseline built per state); `economics/annualized_system_costing.py` (CAPEX/annuity computed
+ONCE per alternative, OPEX/auxiliary/pumping summed across load states, each weighted by its
+own duration); `decision/research_comparison.py` (the three baselines -- geothermal-only, a
+NEW narrowly-scoped source-side-only LCOH formula since no existing function omits network
+costs; network-only, a deterministic filter of the same integrated results to one fixed
+reference scenario; integrated, reusing `decision/joint_policy.py::decide()`/
+`pareto_shortlist()` completely unchanged -- plus the deterministic cross-baseline
+comparison and the small deterministic sensitivity/robustness study);
+`workflow/research_experiment.py` (the orchestrator, calling `run_joint_workflow_v2()`
+wholesale rather than re-deriving package loading/route generation/enumeration);
+`workflow/research_experiment_export.py` (the artifact bundle); CLI wiring
+(`is_research_experiment_enabled`, checked before `joint_study_v2` in `run_cli()`, mirroring
+the existing "most specific layer first" convention); and MCP dispatch (a third
+`workflow_mode: "research_experiment"` value added to the EXISTING `geo_run_workflow`
+discriminated-union response and the registry's `run_type` string dispatch -- no seventh
+tool, matching how the v2 layer was added to the same six tools in D10's own Phase 6). A
+committed, ready-to-run configuration (`config/research_experiment_synthetic.json`, a copy
+of the v2 config plus one new `research_experiment` section) exercises the full layer
+end-to-end against the same already-committed `config/joint_study_synthetic_v2.json`
+package.
+
+A genuine, evidenced risk area was audited before implementation, not assumed solved:
+`network/candidate.py`'s `GeothermalInjectionPolicy` curtailment-stability margin
+(`minimum_auxiliary_circulation_fraction`) was empirically tuned only at the golden case's
+near-100%-coverage surplus; a load state with much-reduced demand produces a materially
+larger surplus ratio than anything previously verified. `workflow/load_state_evaluation.py`
+treats a resulting `THERMAL_PIPEFLOW_NOT_CONVERGED`/`CONSUMER_TEMPERATURE_NOT_MET` outcome
+at such a state as an ordinary, honestly reported infeasible result -- never masked, never
+retried with a widened margin -- and an alternative with any infeasible load state is
+reported `computable=False` with a typed reason, never estimated or interpolated.
+
+Every new numeric value this layer introduces (three synthetic load-state demand
+multipliers/durations, two sensitivity-case multipliers, and the reused v2 materiality
+thresholds for the new `annualized_system_lcoh_eur_per_mwh` objective) is a labelled
+`synthetic_assumption` in `config/research_experiment_synthetic.json`, following D8's own
+established convention -- none is presented as validated engineering guidance. This
+amendment does not reopen D1's own canonical boundary or D2's real-data deferral list: the
+canonical C1-C4 workflow and the v2 layer's own golden values are unchanged throughout,
+verified by the full offline test suite passing after every phase. **Not yet closed:** a
+fresh green CI confirmation of this new layer on real GitHub Actions runners (verified only
+against this session's local `.venvs/orchestration` environment) -- the same open item D10
+already recorded for the v2 layer's own macOS job remains open here too.
 
 ## Consequences
 

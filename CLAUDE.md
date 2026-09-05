@@ -5,35 +5,46 @@
 ## Objective
 
 This project's scope has evolved through several layers. When scope is ambiguous, consult
-them in this order (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
-§5.1's own authority hierarchy — do not resolve ambiguity from the original plan alone):
+them in this order (`docs/specifications/R3CHAIN_FINAL_RESEARCH_ALIGNMENT_IMPLEMENTATION_SPEC.md`'s
+own §1.2 authority hierarchy, which now ranks above the corrected v2 spec's own §5.1 for the
+research-experiment layer specifically — do not resolve ambiguity from the original plan alone):
 
-1. **`docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md`**
-   is authoritative for the current target implementation of the synthetic joint
-   site/connection layer (site-linked resource scenarios, site-specific routes,
-   materiality-aware Pareto decision policy, corrected terminology). Implemented phase
-   by phase (its own §21); consult it before assuming any target capability already
-   exists — code and tests below are the ground truth for what is actually built.
-2. **Executable code and tests** are authoritative evidence of current behaviour.
-3. **`docs/decisions/ADR-001-geothermal-poc-scope.md`** (D1-D10) explains the approved
+1. **`docs/specifications/R3CHAIN_FINAL_RESEARCH_ALIGNMENT_IMPLEMENTATION_SPEC.md`**
+   is authoritative for the research-experiment layer built on top of the corrected v2
+   joint site/connection workflow: three representative steady-state load conditions per
+   integrated alternative, annualized-system-LCOH primary-objective ranking (Pareto
+   retained as a secondary diagnostic), three baselines (geothermal-only/network-only
+   fixed-source/integrated) with a deterministic cross-baseline comparison, and a small
+   deterministic sensitivity/robustness study. It does not authorize another architecture
+   redesign — it aligns the existing v2 software with this research methodology, reusing
+   `decision/joint_policy.py`'s existing decision machinery rather than duplicating it.
+2. **`docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md`**
+   is authoritative for the v2 joint site/connection layer's own architecture and contracts
+   (site-linked resource scenarios, site-specific routes, materiality-aware Pareto decision
+   policy, corrected terminology) that item 1 builds on top of, unchanged. Implemented phase
+   by phase (its own §21).
+3. **Executable code and tests** are authoritative evidence of current behaviour.
+4. **`docs/decisions/ADR-001-geothermal-poc-scope.md`** (D1-D11) explains the approved
    scope extensions and their limitations, most recently D9 (synthetic joint
-   site/connection extension) and D10 (adoption of the specification above).
-4. **README, `docs/acceptance-criteria.md`, and the traceability matrix** describe
+   site/connection extension), D10 (adoption of the corrected v2 specification), and D11
+   (adoption of the research-alignment specification in item 1).
+5. **README, `docs/acceptance-criteria.md`, and the traceability matrix** describe
    user-facing current status.
-5. This file (CLAUDE.md) directs future agents to the documents above.
-6. **The original six-week implementation plan**
+6. This file (CLAUDE.md) directs future agents to the documents above.
+7. **The original six-week implementation plan**
    (`docs/R3_CHAIN_PyDoublet_pandapipes_Implementation_Plan.md`) remains a historical
    record only — its own connection-only, single-fixed-PyDoublet-result scope is the
    **canonical baseline boundary** (still true and still enforced for the canonical
-   C1-C4 workflow), not the current authority for the joint site/connection layer,
-   which has since been extended and is being corrected under item 1 above.
+   C1-C4 workflow), not the current authority for either extended layer above.
 
-Two concrete facts this hierarchy resolves: the canonical single-scenario C1-C4 workflow
+Three concrete facts this hierarchy resolves: the canonical single-scenario C1-C4 workflow
 (`workflow/core.py`) is complete and unchanged — evidence under `docs/evidence/`. The
-synthetic joint site/connection layer is mid-correction under the specification in item 1;
-consult its own phase-by-phase status (and the code) rather than assuming any phase not
-yet reported complete already exists. Real drilling-location optimization against real
-data remains out of scope everywhere until
+corrected v2 joint site/connection layer (item 2) is complete, phases 1-9 all shipped. The
+research-experiment layer (item 1) is implemented on top of it in `workflow/research_experiment.py`,
+`workflow/load_state_evaluation.py`, `economics/annualized_system_costing.py`, and
+`decision/research_comparison.py` — consult its own phase-by-phase status (and the code)
+rather than assuming any phase not yet reported complete already exists. Real
+drilling-location optimization against real data remains out of scope everywhere until
 `data_contracts.readiness.drilling_location_optimization_permitted` can be satisfied —
 never claimed or attempted in this prototype.
 

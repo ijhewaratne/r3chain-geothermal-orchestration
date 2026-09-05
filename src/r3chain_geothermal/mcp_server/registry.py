@@ -82,7 +82,19 @@ from ..workflow.joint_workflow_v2 import (
     JointWorkflowV2ManifestRecord,
     parse_joint_workflow_v2_result_json,
 )
-from .schemas import JointWorkflowSummary, RunSummary, summarize_joint_workflow_v2_result, summarize_workflow_result
+from ..workflow.research_experiment import parse_research_experiment_result_json
+from ..workflow.research_experiment_export import (
+    RESEARCH_EXPERIMENT_RESULT_FILENAME,
+    ResearchExperimentManifestRecord,
+)
+from .schemas import (
+    JointWorkflowSummary,
+    ResearchExperimentSummary,
+    RunSummary,
+    summarize_joint_workflow_v2_result,
+    summarize_research_experiment_result,
+    summarize_workflow_result,
+)
 
 DEFAULT_MAX_REGISTRY_SIZE = 50
 
@@ -124,7 +136,7 @@ class RegistryClosedError(Exception):
 @dataclass(frozen=True)
 class RunEntry:
     run_id: str
-    summary: "RunSummary | JointWorkflowSummary"
+    summary: "RunSummary | JointWorkflowSummary | ResearchExperimentSummary"
     audit: WorkflowAuditRecord
     artifact_dir: Path
     """This run's own directory, server-owned -- `run_id` is always
@@ -321,6 +333,8 @@ class RunRegistry:
             raise ValueError(f"missing {MANIFEST_FILENAME}")
         manifest_raw = json.loads(manifest_path.read_text(encoding="utf-8"))
         run_type = manifest_raw.get("run_type", "canonical")
+        if run_type == "research_experiment":
+            return self._load_research_experiment_run_entry(run_id, run_dir, manifest_raw)
         if run_type == "joint_site_connection":
             return self._load_joint_run_entry(run_id, run_dir, manifest_raw)
         return self._load_canonical_run_entry(run_id, run_dir, manifest_raw)
@@ -371,6 +385,30 @@ class RunRegistry:
             run_id=run_id, summary=summary, audit=boundary.audit,
             artifact_dir=run_dir, artifact_filenames=artifact_filenames, created_at=manifest.created_at,
             run_type="joint_site_connection",
+        )
+
+    def _load_research_experiment_run_entry(self, run_id: str, run_dir: Path, manifest_raw: dict) -> RunEntry:
+        manifest = ResearchExperimentManifestRecord(**manifest_raw)
+        if manifest.run_id != run_id:
+            raise ValueError(f"manifest run_id {manifest.run_id!r} does not match directory name {run_id!r}")
+        for filename, record in manifest.files.items():
+            file_path = run_dir / filename
+            if not file_path.is_file():
+                raise ValueError(f"declared file {filename!r} is missing on disk")
+            actual_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+            if actual_hash != record.byte_sha256:
+                raise ValueError(f"{filename!r} on-disk byte hash does not match the manifest's own record")
+        result_path = run_dir / RESEARCH_EXPERIMENT_RESULT_FILENAME
+        if not result_path.is_file():
+            raise ValueError(f"missing {RESEARCH_EXPERIMENT_RESULT_FILENAME}")
+        boundary = parse_research_experiment_result_json(result_path.read_text(encoding="utf-8"))
+        artifact_filenames = frozenset(manifest.files) | {MANIFEST_FILENAME}
+        summary = summarize_research_experiment_result(boundary, artifact_filenames, reused_existing_run=True)
+        summary = summary.model_copy(update={"bundle_scientific_sha256": manifest.bundle_scientific_sha256})
+        return RunEntry(
+            run_id=run_id, summary=summary, audit=boundary.audit,
+            artifact_dir=run_dir, artifact_filenames=artifact_filenames, created_at=manifest.created_at,
+            run_type="research_experiment",
         )
 
     @property
@@ -456,7 +494,10 @@ class RunRegistry:
         if not manifest_path.is_file():
             raise ValueError(f"staging directory for {run_id!r} has no {MANIFEST_FILENAME} -- refusing to publish")
         manifest_raw = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest_cls = JointWorkflowV2ManifestRecord if manifest_raw.get("run_type") == "joint_site_connection" else ManifestRecord
+        manifest_cls = {
+            "joint_site_connection": JointWorkflowV2ManifestRecord,
+            "research_experiment": ResearchExperimentManifestRecord,
+        }.get(manifest_raw.get("run_type"), ManifestRecord)
         manifest = manifest_cls(**manifest_raw)
         if manifest.run_id != run_id:
             raise ValueError(f"manifest.json run_id {manifest.run_id!r} does not match expected {run_id!r}")

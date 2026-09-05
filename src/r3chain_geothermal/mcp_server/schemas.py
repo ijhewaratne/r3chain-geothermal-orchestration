@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..contracts import CouplingWarning
 from ..workflow import WorkflowAuditRecord, WorkflowFailure, WorkflowResult
 from ..workflow.joint_workflow_v2 import JointWorkflowV2Failure, JointWorkflowV2Result
+from ..workflow.research_experiment import ResearchExperimentFailure, ResearchExperimentResult
 from .errors import ToolError
 
 _SOURCE_FORMAT_HINTS = ("known_pristine", "known_repaired", "unknown")
@@ -90,8 +91,10 @@ class CapabilitiesSummary(BaseModel):
     yet consumed by the physics evaluator)."""
     supported_workflow_modes: list[str]
     """MCP-001 (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
-    Phase 6): always `["canonical", "joint_site_connection"]` -- both
-    workflow_mode values this SERVER IMPLEMENTATION can dispatch
+    Phase 6, extended by the R3-CHAIN Final Research-Alignment
+    Implementation Specification's own Phase 6): always
+    `["canonical", "joint_site_connection", "research_experiment"]` -- every
+    workflow_mode value this SERVER IMPLEMENTATION can dispatch
     geo_run_workflow to, mirroring candidate_generation_modes' own
     "implementation capability, not current config" convention."""
     joint_study_v2_enabled: bool
@@ -103,6 +106,12 @@ class CapabilitiesSummary(BaseModel):
     is distinct from a generic "supports persistence" capability claim:
     this reflects the ACTUAL running configuration, not a static
     capability."""
+    research_experiment_enabled: bool
+    """The research-experiment-layer analogue of joint_study_v2_enabled
+    above: whether `fixed_config["research_experiment"]["enabled"]` is
+    true right now (checked first in dispatch_run_workflow(), since a
+    research-experiment config also carries its own joint_study_v2
+    section)."""
 
 
 class PyDoubletValidationSummary(BaseModel):
@@ -229,9 +238,67 @@ class JointWorkflowSummary(BaseModel):
     reused_existing_run: bool
 
 
-_AnyRunSummary = Annotated[Union[RunSummary, JointWorkflowSummary], Field(discriminator="workflow_mode")]
-"""A nested discriminated union (pydantic's own documented pattern): both
-members share `status == "success"` as a LITERAL, so `status` alone
+class ResearchExperimentSummary(BaseModel):
+    """`geo_run_workflow`'s (and `geo_get_run_summary`'s) success return
+    for a `research_experiment`-enabled run -- R3-CHAIN Final Research-
+    Alignment Implementation Specification, Phase 6. The compact analogue
+    of `JointWorkflowSummary` for this layer: alternative counts, the
+    integrated decision's own preferred alternative, and the cross-
+    baseline/sensitivity outcomes -- never the full per-load-state KPI
+    breakdown (available unabridged via
+    `geo_get_artifact(..., "research_experiment_result.json")`)."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    status: Literal["success"] = "success"
+    workflow_mode: Literal["research_experiment"] = "research_experiment"
+    run_id: str
+    workflow_status: Literal["completed", "stopped"]
+    stopping_failure_code: str | None
+    referenced_v2_run_id: str | None
+    alternative_count: int | None
+    preferred_alternative_id: str | None
+    baseline_comparison_interpretation_code: str | None
+    robustness_classification: str | None
+    artifact_filenames: list[str]
+    bundle_scientific_sha256: str
+    reused_existing_run: bool
+
+
+def summarize_research_experiment_result(
+    result: "ResearchExperimentResult | ResearchExperimentFailure", artifact_filenames: frozenset[str], *,
+    reused_existing_run: bool,
+) -> ResearchExperimentSummary:
+    """The research-experiment analogue of `summarize_joint_workflow_v2_result()`
+    -- the ONE place a `ResearchExperimentResult`/`ResearchExperimentFailure`
+    is mapped to the compact `ResearchExperimentSummary` shape, reused
+    identically by `mcp_server/tools.py::run_research_experiment_tool()`
+    and `mcp_server/registry.py`'s own rehydration path."""
+    if isinstance(result, ResearchExperimentFailure):
+        return ResearchExperimentSummary(
+            run_id=result.run_id, workflow_status="stopped", stopping_failure_code=result.failure_code,
+            referenced_v2_run_id=None, alternative_count=None, preferred_alternative_id=None,
+            baseline_comparison_interpretation_code=None, robustness_classification=None,
+            artifact_filenames=sorted(artifact_filenames), bundle_scientific_sha256="",
+            reused_existing_run=reused_existing_run,
+        )
+    return ResearchExperimentSummary(
+        run_id=result.run_id, workflow_status="completed", stopping_failure_code=None,
+        referenced_v2_run_id=result.referenced_v2_result.run_id,
+        alternative_count=len(result.alternative_summaries),
+        preferred_alternative_id=result.integrated_decision.preferred_alternative_id,
+        baseline_comparison_interpretation_code=result.baseline_comparison.interpretation_code.value,
+        robustness_classification=result.sensitivity_decision_summary.robustness_classification.value,
+        artifact_filenames=sorted(artifact_filenames),
+        bundle_scientific_sha256="",  # filled in by the caller once known, same convention as the other summarizers
+        reused_existing_run=reused_existing_run,
+    )
+
+
+_AnyRunSummary = Annotated[
+    Union[RunSummary, JointWorkflowSummary, ResearchExperimentSummary], Field(discriminator="workflow_mode"),
+]
+"""A nested discriminated union (pydantic's own documented pattern): every
+member shares `status == "success"` as a LITERAL, so `status` alone
 cannot tell them apart -- `workflow_mode` is the inner tag that does.
 `RunWorkflowResult`/`RunSummaryResult` below wrap this union together with
 `ToolError` (whose own `status == "error"`), discriminating on `status` at

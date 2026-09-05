@@ -1,7 +1,7 @@
 # R3-CHAIN PyDoublet–pandapipes proof of concept
 
 Deterministic, auditable evaluation of a geothermal doublet's connection to a
-district-heating network. Three modes exist, kept clearly distinct throughout every
+district-heating network. Four modes exist, kept clearly distinct throughout every
 artifact this package produces:
 
 - **Canonical single-scenario mode** (`workflow/core.py`): ranks candidate DH
@@ -22,12 +22,23 @@ artifact this package produces:
   route geometry per site/attachment pair, and compare feasible alternatives with a
   materiality-aware Pareto policy. Same real-data boundary as v1 — still entirely
   synthetic, still never a drilling-site recommendation.
+- **Research-experiment mode** (`workflow/research_experiment.py`, see "A research-experiment
+  run" below): built ON TOP of v2, unchanged — evaluates every v2 compatible alternative
+  across three representative steady-state load conditions, ranks by annualized system LCOH
+  (Pareto retained as a secondary diagnostic), and compares the integrated result against a
+  geothermal-only and a network-only (fixed-source) baseline, plus a small deterministic
+  sensitivity/robustness study. Answers a question v2 alone cannot: does the site/resource
+  source-side analysis prefers remain preferred once its district-heating integration, at
+  more than one load level, is priced in? Same synthetic, non-drilling-recommendation
+  boundary as v1/v2.
 
 See `docs/R3_CHAIN_PyDoublet_pandapipes_Implementation_Plan.md` for the original
-six-week plan, `docs/decisions/ADR-001-geothermal-poc-scope.md` (D9/D10 amendments) for
-the scope history of both joint-optimization modes, and
+six-week plan, `docs/decisions/ADR-001-geothermal-poc-scope.md` (D9/D10/D11 amendments) for
+the scope history of all three extension modes,
 `docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md` for
-v2's own authoritative, phase-by-phase target and current status.
+v2's own authoritative, phase-by-phase target and current status, and
+`docs/specifications/R3CHAIN_FINAL_RESEARCH_ALIGNMENT_IMPLEMENTATION_SPEC.md` for the
+research-experiment layer's own authoritative target and status.
 
 ## Environment
 
@@ -231,6 +242,34 @@ workflow through the *same* CLI:
   drilling-site recommendation, and the canonical single-scenario C1-C4 comparison is untouched by
   any `joint_study_v2` config.
 
+- **A research-experiment run** — **status: implemented** (see
+  `docs/specifications/R3CHAIN_FINAL_RESEARCH_ALIGNMENT_IMPLEMENTATION_SPEC.md` for the full
+  target and `docs/decisions/ADR-001-geothermal-poc-scope.md`'s D11 for the implementation
+  record). Built entirely on top of v2 — it calls `run_joint_workflow_v2()` unchanged to load
+  the study package, generate routes and enumerate compatible alternatives, then re-evaluates
+  every compatible alternative at three representative steady-state load conditions (never a
+  transient/hourly series), computes one ANNUALIZED system economic result per alternative
+  (CAPEX/annuity once, OPEX/auxiliary/pumping summed across states), and reuses
+  `decision/joint_policy.py`'s existing `decide()`/`pareto_shortlist()` decision machinery
+  completely unchanged for the primary ranking objective (`annualized_system_lcoh_eur_per_mwh`).
+  Compares that integrated result against a geothermal-only baseline (source-side LCOH at the
+  HX boundary only, no connection/network cost) and a network-only baseline (one fixed
+  geothermal source/site, varying only the connection), producing one of seven typed
+  interpretation codes, and runs a small deterministic (never probabilistic) sensitivity study
+  classified into one of six typed robustness outcomes. Reachable identically from the CLI
+  (`research_experiment.enabled=true` — see `config/research_experiment_synthetic.json`, itself
+  a copy of `config/demo_assumptions_joint_study_v2.json` plus one new section, checked BEFORE
+  `joint_study_v2` in dispatch since a research-experiment config also carries that section) and
+  from `geo_run_workflow` (the SAME six-tool MCP server, a discriminated
+  `workflow_mode: research_experiment` success shape, no seventh tool). Publishes its own
+  artifact bundle (`pydoublet_input.json`, `config_snapshot.json`,
+  `referenced_v2_result_snapshot.json`, `research_experiment_result.json`,
+  `alternative_annualized_comparison.csv`, `research_experiment_report.md`, `audit.json`,
+  `manifest.json`) at the same `--output-dir`, and survives an MCP server restart via the same
+  persistent-registry rehydration path. Every artifact carries the same synthetic disclaimer
+  v1/v2's own artifacts do — never a drilling-site recommendation, never a claim that any
+  result is assumption-robust beyond the specific sensitivity cases actually tested.
+
 Try it directly:
 
 ```bash
@@ -257,6 +296,15 @@ r3chain-geothermal-demo \
   --config config/demo_assumptions_joint_study_v2.json \
   --provenance config/demo_source_provenance.json \
   --output-dir artifacts/joint-study-v2-demo
+
+# Research-experiment run -- built on top of the v2 run above; --config's own
+# resolution rule (package_root = config_path.resolve().parent.parent) works
+# identically from any working directory, exactly as the v2 run does.
+r3chain-geothermal-demo \
+  --input fixtures/pydoublet/repaired_result.json \
+  --config config/research_experiment_synthetic.json \
+  --provenance config/demo_source_provenance.json \
+  --output-dir artifacts/research-experiment-demo
 ```
 
 ## Strict input-provenance validation

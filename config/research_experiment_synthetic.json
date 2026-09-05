@@ -1,0 +1,250 @@
+{
+  "_meta": {
+    "schema_version": "1.0",
+    "status": "demo_assumption",
+    "created": "2026-09-05",
+    "revised": "2026-09-05",
+    "changelog": {
+      "1.0": "Phase 5 (R3-CHAIN Final Research-Alignment Implementation Specification): copies config/demo_assumptions_joint_study_v2.json verbatim and adds one new top-level `research_experiment` section (RA-GOV/DATA/LOAD/SENS). Three representative steady-state load states (never transient/hourly), a small deterministic sensitivity study, and a decision_policy naming the new annualized_system_lcoh_eur_per_mwh objective (primary_objective_ranking, reusing config/joint_study_synthetic_v2.json's own indicative_system_lcoh_eur_per_mwh materiality thresholds -- same unit, same order of magnitude). load_states[].annual_duration_hours sum to exactly 5000.0, matching config/demo_assumptions.json's own economics.annual_full_load_hours.value (the base_assumptions this layer's annualized economics actually uses) -- NOT this file's own top-level economics.annual_full_load_hours=5000.0, which is a separate, canonical-shape value only consumed for this run type's own WorkflowAuditRecord, exactly as run_joint_workflow_v2() already does for the v2 run type."
+    },
+    "description": "Provisional configuration for the R3-CHAIN research-experiment layer. Every research_experiment.* value is a labelled synthetic_assumption demonstration fixture, NOT a claimed engineering standard or a validated load profile. Every other section is unchanged from config/demo_assumptions_joint_study_v2.json.",
+    "questions_document": "docs/decisions/phase0-questions.md",
+    "adr": "docs/decisions/ADR-001-geothermal-poc-scope.md",
+    "adr_temperature_source": "docs/decisions/ADR-002-pydoublet-temperature-source.md",
+    "source_plan_sections": ["8.2", "9.2", "10.1", "10.2", "11", "12.2"],
+    "pressure_convention": "All pressure fields in this project are ABSOLUTE pressures in bar (suffix _bar_abs) — this is a project-level reporting convention, not what pandapipes itself computes. VERIFIED (T2.2A, tests/network/test_pressure_semantics.py) against installed pandapipes 0.14.0: pandapipes' res_junction.p_bar is GAUGE pressure (relative to atmosphere), not absolute. Every _bar_abs config value is converted to gauge via network/pressure.py::to_gauge_bar() immediately before any pandapipes create_* call, and every res_junction.p_bar is converted back to absolute via to_absolute_bar() immediately before comparison against a _bar_abs gate or KPI reporting. Raw pandapipes gauge output must never be compared directly against a _bar_abs value anywhere in this project.",
+    "questions_without_config_impact": {
+      "Q9": "MCP server topology - governs architecture, recorded in ADR-001 D6/D7, no numeric config value.",
+      "Q10": "Hosting and PyDoublet licence - governs distribution, recorded in ADR-001 D7, no numeric config value."
+    }
+  },
+  "coupling_assumptions": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q3", "Q4", "Q5", "Q6"],
+    "dh_supply_temperature_c": 70.0,
+    "dh_return_temperature_c": 40.0,
+    "minimum_hx_approach_k": 5.0,
+    "hx_heat_delivery_factor": 0.98,
+    "reinjection_minimum_temperature_c": 35.0,
+    "reinjection_minimum_temperature_note": "Unchanged from config/demo_assumptions_joint_study_v2.json.",
+    "dh_water_specific_heat_capacity_j_kg_k": 4180.0,
+    "dh_water_specific_heat_capacity_note": "Unchanged from config/demo_assumptions_joint_study_v2.json.",
+    "curtailment_allowed": true,
+    "auxiliary_policy": "cost_shortfall",
+    "auxiliary_policy_options": ["cost_shortfall", "strict_infeasible"],
+    "minimum_auxiliary_circulation_fraction": 0.01,
+    "minimum_auxiliary_circulation_fraction_note": "Unchanged from config/demo_assumptions_joint_study_v2.json -- see network/candidate.py's own module docstring for why a load state with much-reduced demand is a genuine, evidenced risk area for this exact margin (Phase-0 audit finding, workflow/load_state_evaluation.py's own module docstring).",
+    "velocity_limit_m_s": 1.5,
+    "pump_dp_limit_bar": 6.0,
+    "consumer_supply_drop_limit_k": 5.0,
+    "mass_balance_tolerance_fraction": 0.005,
+    "energy_balance_tolerance_fraction": 0.02
+  },
+  "pydoublet": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q1", "Q2", "Q3"],
+    "example_config": "examples/complete_example.json",
+    "energy_consistency_tolerance_fraction": 0.02,
+    "producer_wellhead_temperature": {
+      "path_format": "json_pointer",
+      "primary_field_path": "/simulation_results/producer_wellhead_temperature_c",
+      "legacy_fallback_field_path": "/simulation_results/temperature_profile_c/2",
+      "unit": "degC",
+      "mapping_status": "technically_resolved_from_source_pending_domain_owner_confirmation",
+      "evidence_pydoublet_commit": "4b29d1a0b37094543a436e33aba459558fbeb9eb",
+      "fallback_policy": "legacy_fallback_allowed_only_for_recognized_pristine_or_legacy_results; post_repair_result_missing_primary_field_is_a_validation_failure_not_a_fallback",
+      "audit_warning_code": "LEGACY_PYDOUBLET_TEMPERATURE_INDEX_FALLBACK",
+      "agreement_absolute_tolerance_c": 1e-06,
+      "agreement_relative_tolerance_fraction": 1e-09,
+      "agreement_tolerance_basis": "floating_point_safety_margin_not_a_physical_claim; primary and legacy fields are bit-identical by construction in every observed fixture. Checked via math.isclose(primary, legacy, rel_tol=agreement_relative_tolerance_fraction, abs_tol=agreement_absolute_tolerance_c) — the absolute tolerance is the binding term at this magnitude, the relative tolerance is supplementary.",
+      "question_ref": "Q2",
+      "note": "See ADR-002 for the full source evidence and policy. No longer an unsupported array-index assumption; Dr. Jan's domain-owner confirmation is still pending."
+    },
+    "reinjection_temperature_relocation_note": "Unchanged from config/demo_assumptions_joint_study_v2.json.",
+    "scenario_identity": {
+      "_note": "scenario_identifier identifies the SCENARIO (stable across repeated executions of the same PyDoublet configuration); result_identifier identifies THIS SPECIFIC raw result instance via its canonical content hash. Never conflate the two.",
+      "path_format": "json_pointer",
+      "scenario_name_field_path": "/metadata/simulation_name",
+      "timestamp_field_path": "/metadata/timestamp",
+      "result_identifier_prefix": "pydoublet-result-",
+      "result_identifier_hash_length": 16,
+      "scenario_identifier_fallback_policy": "when the scenario-name field is absent, scenario_identifier is derived from a caller-supplied SourceProvenance.scenario_identifier — a real scenario identifier the caller explicitly asserts. It is never derived from source_pydoublet_commit, source_format_hint, or a raw-result content hash — none of those are scenario identifiers."
+    },
+    "calculation_mode_policy": {
+      "_note": "T1.5 supports only deterministic PyDoublet coupling results. SourceProvenance.calculation_mode must be explicitly 'deterministic' for parsing to proceed at all.",
+      "supported_calculation_mode": "deterministic",
+      "unsupported_calculation_mode_failure_code": "PYDOUBLET_UNSUPPORTED_CALCULATION_MODE"
+    },
+    "legacy_run_count_correction": {
+      "_note": "Corrects the known PyDoublet legacy defect where actual_runs_completed was copy-pasted from monte_carlo_runs despite exactly one deterministic run executing.",
+      "applies_when": "trusted_pristine_or_legacy_provenance_confirmed_and_actual_runs_completed_equals_monte_carlo_runs",
+      "normalized_value": 1,
+      "transformation_code": "legacy_deterministic_run_count_metadata_correction",
+      "audit_warning_code": "LEGACY_PYDOUBLET_RUN_COUNT_METADATA_CORRECTED",
+      "ambiguous_case_failure_code": "PYDOUBLET_LEGACY_RUN_COUNT_AMBIGUOUS",
+      "ambiguous_case_policy": "if the reported actual_runs_completed does not exactly match monte_carlo_runs under trusted legacy provenance, calculation mode is treated as uncertain and validation fails rather than guessing the true run count."
+    }
+  },
+  "network": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q4", "Q11"],
+    "consumers": [
+      {"id": "consumer_1", "demand_kw": 650.0},
+      {"id": "consumer_2", "demand_kw": 750.0},
+      {"id": "consumer_3", "demand_kw": 850.0},
+      {"id": "consumer_4", "demand_kw": 950.0}
+    ],
+    "total_demand_kw": 3200.0,
+    "design_delta_t_k": 30.0,
+    "mirrored_return_network": true,
+    "p_supply_bar_abs": 6.0,
+    "min_pressure_bar_abs": 1.5,
+    "pressure_reference": "absolute",
+    "min_pressure_note": "Unchanged from config/demo_assumptions_joint_study_v2.json.",
+    "fluid": "water",
+    "pipe_roughness_mm": 0.1,
+    "ground_temperature_c": 10.0,
+    "geometry": {
+      "_status": "demo_assumption",
+      "_question_refs": [],
+      "_note": "Unchanged from config/demo_assumptions_joint_study_v2.json / network/geometry.py.",
+      "trunk_segment_length_m": 250.0,
+      "trunk_segment_count": 4,
+      "consumer_branch_offset_m": 80.0,
+      "candidate_site_offsets_m": {"C1": 50.0, "C2": 70.0, "C3": 90.0, "C4": 120.0},
+      "trunk_to_consumer_attachment": {
+        "consumer_1": "trunk_1", "consumer_2": "trunk_2", "consumer_3": "trunk_3", "consumer_4": "trunk_4"
+      },
+      "trunk_to_candidate_attachment": {
+        "C1": "trunk_1", "C2": "trunk_2", "C3": "trunk_3", "C4": "trunk_4"
+      }
+    },
+    "pipe_sizing": {
+      "_status": "demo_assumption",
+      "_question_refs": [],
+      "_note": "Unchanged from config/demo_assumptions_joint_study_v2.json.",
+      "trunk_pipe_dn_mm": 200.0,
+      "branch_pipe_dn_mm": 100.0,
+      "pipe_heat_transfer_coefficient_w_per_m2k": 0.0
+    },
+    "circulation_pump": {
+      "_status": "demo_assumption",
+      "_question_refs": [],
+      "_note": "Unchanged from config/demo_assumptions_joint_study_v2.json.",
+      "pressure_lift_bar": 3.0
+    },
+    "atmospheric_pressure_bar": 1.01325
+  },
+  "candidates": {
+    "_status": "demo_assumption",
+    "_question_refs": [],
+    "_note": "Unchanged from config/demo_assumptions_joint_study_v2.json (legacy v1 shape, unused by the v2/research-experiment layer's own site-linked routes).",
+    "list": [
+      {"id": "C1", "label": "Near network head", "surface_connection_length_m": 50.0, "supply_junction": "trunk_1", "return_junction": "ret_trunk_1", "connection_dn": null, "construction_multiplier": 1.0},
+      {"id": "C2", "label": "Near central trunk", "surface_connection_length_m": 70.0, "supply_junction": "trunk_2", "return_junction": "ret_trunk_2", "connection_dn": null, "construction_multiplier": 1.0},
+      {"id": "C3", "label": "Near branch intersection", "surface_connection_length_m": 90.0, "supply_junction": "trunk_3", "return_junction": "ret_trunk_3", "connection_dn": null, "construction_multiplier": 1.0},
+      {"id": "C4", "label": "Near remote/end section", "surface_connection_length_m": 120.0, "supply_junction": "trunk_4", "return_junction": "ret_trunk_4", "connection_dn": null, "construction_multiplier": 1.0}
+    ]
+  },
+  "gates": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q4", "Q5", "Q6", "Q11"],
+    "_note": "Unchanged from config/demo_assumptions_joint_study_v2.json.",
+    "max_pipe_velocity_m_s": 1.5,
+    "max_pump_dp_bar": 6.0,
+    "min_pressure_bar_abs": 1.5,
+    "pressure_reference": "absolute",
+    "max_consumer_supply_drop_k": 5.0,
+    "heat_delivery_tolerance_fraction": 0.01,
+    "mass_balance_tolerance_fraction": 0.005,
+    "energy_balance_tolerance_fraction": 0.02,
+    "pydoublet_energy_consistency_tolerance_fraction": 0.02,
+    "require_sequential_thermal_convergence": true
+  },
+  "economics": {
+    "_status": "demo_assumption",
+    "_question_refs": ["Q7", "Q8"],
+    "_note": "Unchanged from config/demo_assumptions_joint_study_v2.json -- this section is consumed ONLY for this run type's own WorkflowAuditRecord (matching how run_joint_workflow_v2() already uses it), NOT for the research-experiment layer's own annualized economics, which instead loads config/demo_assumptions.json via joint_study_v2's economics policy (see research_experiment.load_states' own note above).",
+    "interest_rate_real": {"value": 0.03, "unit": "fraction/a (real)", "source_status": "demo_assumption_pending_Q7", "source_note": "Generic placeholder; matches pandapipesAI cm.economics.interest_rate default (not a catalog fact)."},
+    "lifetime_years": {
+      "doublet": {"value": 30.0, "unit": "a", "source_status": "demo_assumption_pending_Q7"},
+      "heat_exchanger": {"value": 20.0, "unit": "a", "source_status": "demo_assumption_pending_Q7"},
+      "connection_pipes": {"value": 30.0, "unit": "a", "source_status": "demo_assumption_pending_Q7"}
+    },
+    "capex": {
+      "doublet_capex": {"value": 8000000.0, "unit": "EUR", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7"},
+      "heat_exchanger_capex": {"value": 150000.0, "unit": "EUR", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7"},
+      "connection_pipe_per_m": {"value": 1000.0, "unit": "EUR/m", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7"},
+      "connection_pipe_per_m_note": "Unchanged from config/demo_assumptions_joint_study_v2.json."
+    },
+    "opex": {
+      "fixed_om_fraction_of_capex_per_a": {"value": 0.02, "unit": "fraction/a", "source_status": "demo_assumption_pending_Q7"},
+      "electricity_price": {"value": 0.25, "unit": "EUR/kWh", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7"},
+      "auxiliary_heat_price": {"value": 0.09, "unit": "EUR/kWh", "currency": "EUR", "price_year": null, "source_status": "demo_assumption_pending_Q7"},
+      "auxiliary_heat_price_note": "Unchanged from config/demo_assumptions_joint_study_v2.json."
+    },
+    "annual_full_load_hours": {"value": 5000.0, "unit": "h/a", "source_status": "demo_assumption_pending_Q7", "note": "Unchanged from config/demo_assumptions_joint_study_v2.json -- see this file's own _meta.changelog note on why this value is NOT what governs research_experiment.load_states' own durations."},
+    "dh_pump_efficiency": {"value": 0.7, "unit": "fraction (dimensionless, wire-to-water efficiency)", "source_status": "demo_assumption_pending_Q7", "source_note": "Unchanged from config/demo_assumptions_joint_study_v2.json."},
+    "ranking_rule": {"value": "feasibility_first_then_lowest_annualised_cost", "source_status": "demo_assumption_pending_Q8"},
+    "tie_breakers": {"value": ["lower_dh_pumping_electricity", "shorter_connection_length", "greater_technical_margin"], "source_status": "demo_assumption_pending_Q8"}
+  },
+  "joint_study_v2": {
+    "enabled": true,
+    "package_path": "config/joint_study_synthetic_v2.json"
+  },
+  "research_experiment": {
+    "enabled": true,
+    "_status": "synthetic_assumption",
+    "_note": "Phase 5, R3-CHAIN Final Research-Alignment Implementation Specification. Every value below is a labelled, illustrative synthetic demonstration fixture (spec §1.7.1's own sanctioned path for values not yet separately approved) -- never a validated load profile, cost sensitivity range, or engineering threshold.",
+    "referenced_study_package_relative_path": "config/joint_study_synthetic_v2.json",
+    "referenced_study_package_expected_sha256": "947a1d8fbe52f75cfdb4ac382c681f9196da7cfa638b9c3c9895d79613dc0b12",
+    "referenced_study_package_expected_sha256_note": "SHA-256 of config/joint_study_synthetic_v2.json's raw file bytes at the time this config was written. Declared and structurally validated (data_contracts.research_experiment.ResearchExperimentConfig) but NOT byte-verified against the actual loaded package content in this phase -- a stated limitation, matching economics/joint_costing.py's own identical, already-documented limitation for base_assumptions_sha256.",
+    "load_states": [
+      {
+        "load_state_id": "peak", "label": "Peak demand (100% of design consumer demand)",
+        "demand_scale_fraction": 1.0, "annual_duration_hours": 1000.0,
+        "assumption_status": "synthetic_assumption"
+      },
+      {
+        "load_state_id": "shoulder", "label": "Shoulder demand (65% of design consumer demand)",
+        "demand_scale_fraction": 0.65, "annual_duration_hours": 2000.0,
+        "assumption_status": "synthetic_assumption"
+      },
+      {
+        "load_state_id": "base", "label": "Base demand (35% of design consumer demand)",
+        "demand_scale_fraction": 0.35, "annual_duration_hours": 2000.0,
+        "assumption_status": "synthetic_assumption"
+      }
+    ],
+    "load_states_note": "Three REPRESENTATIVE STEADY-STATE conditions (spec's own explicit scope boundary), never a transient/hourly time series. Durations sum to exactly 5000.0 h/a, matching config/demo_assumptions.json's own economics.annual_full_load_hours.value -- the base_assumptions this layer's annualized economics actually consumes (economics/joint_costing.py::load_base_assumptions(), referenced via joint_study_v2 -> config/joint_study_synthetic_v2.json's own economics.base_assumptions_package_relative_path). The 'base' state (35% demand, largest deliverable-geothermal-heat-over-demand surplus ratio of the three) is the one most likely to exercise network/candidate.py's own documented curtailment-margin risk area (Phase-0 audit finding) -- reported honestly per load state if it occurs, never masked.",
+    "sensitivity_cases": [
+      {
+        "case_id": "connection_capex_plus_20pct", "label": "+20% connection-pipe CAPEX",
+        "factor_name": "connection_capex_multiplier", "multiplier": 1.2,
+        "reason": "illustrative deterministic what-if on connection-pipe construction cost -- never a probabilistic P10/P50/P90 estimate",
+        "assumption_status": "synthetic_assumption"
+      },
+      {
+        "case_id": "geothermal_derate_10pct", "label": "10% geothermal deliverable-heat derating",
+        "factor_name": "geothermal_deliverable_heat_derating_fraction", "multiplier": 0.9,
+        "reason": "illustrative deterministic what-if on geothermal resource availability (e.g. reservoir underperformance) -- never a probabilistic estimate",
+        "assumption_status": "synthetic_assumption"
+      }
+    ],
+    "decision_policy": {
+      "mode": "primary_objective_ranking",
+      "objectives": [
+        {
+          "name": "annualized_system_lcoh_eur_per_mwh", "direction": "minimize",
+          "absolute_materiality": 0.5, "relative_materiality_fraction": 0.01, "unit": "EUR/MWh",
+          "rationale": "primary annualized system cost signal across representative load states -- materiality thresholds reused unchanged from config/joint_study_synthetic_v2.json's own indicative_system_lcoh_eur_per_mwh objective, since both are the same unit and the same order of magnitude",
+          "source_reference": "config/joint_study_synthetic_v2.json::decision_policy.objectives[0]"
+        }
+      ],
+      "primary_objective": "annualized_system_lcoh_eur_per_mwh",
+      "tie_breakers": [],
+      "allow_shared_rank": true,
+      "display_order_key": "alternative_id"
+    }
+  }
+}

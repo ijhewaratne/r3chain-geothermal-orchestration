@@ -73,6 +73,14 @@ from ..workflow.joint_workflow_v2 import (
     run_joint_workflow_v2,
     write_joint_workflow_v2_artifacts,
 )
+from ..workflow.research_experiment import (
+    ResearchExperimentFailure,
+    ResearchExperimentResult,
+    is_research_experiment_enabled,
+    resolve_research_experiment_run_id,
+    run_research_experiment,
+)
+from ..workflow.research_experiment_export import write_research_experiment_artifacts
 from .config import config_sha256
 from .errors import ToolError, ToolErrorCode
 from .registry import RunEntry, RunRegistry
@@ -82,11 +90,13 @@ from .schemas import (
     CapabilitiesSummary,
     JointWorkflowSummary,
     PyDoubletValidationSummary,
+    ResearchExperimentSummary,
     RunSummary,
     SourceProvenanceInput,
     _CALCULATION_MODES,
     _SOURCE_FORMAT_HINTS,
     summarize_joint_workflow_v2_result,
+    summarize_research_experiment_result,
     summarize_workflow_result,
 )
 
@@ -147,7 +157,27 @@ own `write_joint_workflow_v2_artifacts()` bundle exactly (16 hashed files,
 the full docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
 §17 set, plus manifest.json itself, which never hashes itself)."""
 
-_ALLOWED_ARTIFACT_FILENAMES = tuple(dict.fromkeys(_CANONICAL_ARTIFACT_FILENAMES + _JOINT_ARTIFACT_FILENAMES))
+_RESEARCH_EXPERIMENT_ARTIFACT_FILENAMES = (
+    PYDOUBLET_INPUT_FILENAME,
+    CONFIG_SNAPSHOT_FILENAME,
+    "referenced_v2_result_snapshot.json",
+    "research_experiment_result.json",
+    AUDIT_FILENAME,
+    "alternative_annualized_comparison.csv",
+    "research_experiment_report.md",
+    MANIFEST_FILENAME,
+)
+"""Exactly the 8 filenames a completed (`workflow_status == "completed"`)
+research_experiment run publishes -- mirrors
+workflow/research_experiment_export.py's own
+`write_research_experiment_artifacts()` bundle exactly. Filenames unique to
+this run type are written as literal strings (not re-imported constants),
+matching `_JOINT_ARTIFACT_FILENAMES`'s own documented precedent for
+NETWORK_CANDIDATES_SVG_FILENAME above."""
+
+_ALLOWED_ARTIFACT_FILENAMES = tuple(dict.fromkeys(
+    _CANONICAL_ARTIFACT_FILENAMES + _JOINT_ARTIFACT_FILENAMES + _RESEARCH_EXPERIMENT_ARTIFACT_FILENAMES
+))
 """docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
 Phase 6 (MCP-005): the union of both workflow modes' own filenames --
 joint_study_v2 artifacts share this SAME allow-list and geo_get_artifact's
@@ -212,8 +242,9 @@ def get_capabilities(*, fixed_config: dict[str, Any], registry: RunRegistry) -> 
         available_shortfall_policies=["cost_shortfall", "strict_infeasible"],
         available_injection_sizing_policies=["fixed_design_temperature", "self_consistent"],
         candidate_generation_modes=["predefined", "generated"],
-        supported_workflow_modes=["canonical", "joint_site_connection"],
+        supported_workflow_modes=["canonical", "joint_site_connection", "research_experiment"],
         joint_study_v2_enabled=is_joint_study_v2_enabled(fixed_config),
+        research_experiment_enabled=is_research_experiment_enabled(fixed_config),
     )
 
 
@@ -441,6 +472,67 @@ def run_joint_workflow_tool(
     return entry.summary
 
 
+def run_research_experiment_tool(
+    pydoublet_raw_result: dict[str, Any],
+    source_provenance: SourceProvenanceInput,
+    *,
+    fixed_config: dict[str, Any],
+    registry: RunRegistry,
+    package_root: Path,
+) -> ResearchExperimentSummary | ToolError:
+    """R3-CHAIN Final Research-Alignment Implementation Specification,
+    Phase 6: the research-experiment analogue of `run_joint_workflow_tool()`,
+    following the exact same shape -- pre-registry run_id computation, a
+    `_factory()` closure raising the SAME two internal signals for
+    `registry.get_or_run()`'s own generic handling, staged artifact
+    publication, and a `reused_existing_run`-copied summary on cache hit --
+    reusing `run_research_experiment()`/`write_research_experiment_artifacts()`
+    unchanged, never re-deriving anything about the physics, economics or
+    decision logic."""
+    provenance = _source_provenance_from_input(source_provenance)
+    run_id = resolve_research_experiment_run_id(pydoublet_raw_result, fixed_config, source_provenance=provenance)
+
+    def _factory() -> RunEntry:
+        try:
+            result = run_research_experiment(
+                pydoublet_raw_result, fixed_config, source_provenance=provenance, package_root=package_root,
+                expected_raw_sha256=source_provenance.expected_raw_sha256,
+            )
+        except Exception as exc:  # noqa: BLE001 -- the narrow "unexpected" boundary, module docstring
+            raise _UnexpectedWorkflowError(str(exc)) from exc
+
+        if isinstance(result, ResearchExperimentFailure) and result.failure_code == "PYDOUBLET_RAW_HASH_MISMATCH":
+            raise _ProvenanceMismatchError(result.message, result.details)
+
+        staging_dir = registry.new_artifact_dir(run_id)
+        manifest = write_research_experiment_artifacts(result, pydoublet_raw_result, fixed_config, staging_dir)
+        all_filenames = frozenset(manifest.files.keys()) | {MANIFEST_FILENAME}
+        run_dir = registry.publish_artifact_dir(run_id, staging_dir)
+        summary = summarize_research_experiment_result(result, all_filenames, reused_existing_run=False)
+        summary = summary.model_copy(update={"bundle_scientific_sha256": manifest.bundle_scientific_sha256})
+        return RunEntry(
+            run_id=run_id, summary=summary, audit=result.audit,
+            artifact_dir=run_dir, artifact_filenames=all_filenames,
+            created_at=datetime.now(timezone.utc), run_type="research_experiment",
+        )
+
+    try:
+        entry, reused = registry.get_or_run(run_id, _factory)
+    except _UnexpectedWorkflowError as exc:
+        return ToolError(
+            code=ToolErrorCode.UNEXPECTED_ERROR, message=str(exc), stage="run_research_experiment", recoverable=False,
+        )
+    except _ProvenanceMismatchError as exc:
+        return ToolError(
+            code=ToolErrorCode.PYDOUBLET_VALIDATION_FAILED, message=exc.message,
+            stage="input_provenance_validation", recoverable=True, details=exc.details,
+        )
+
+    if reused:
+        return entry.summary.model_copy(update={"reused_existing_run": True})
+    return entry.summary
+
+
 def dispatch_run_workflow(
     pydoublet_raw_result: dict[str, Any],
     source_provenance: SourceProvenanceInput,
@@ -448,13 +540,17 @@ def dispatch_run_workflow(
     fixed_config: dict[str, Any],
     registry: RunRegistry,
     package_root: Path | None = None,
-) -> RunSummary | JointWorkflowSummary | ToolError:
+) -> RunSummary | JointWorkflowSummary | ResearchExperimentSummary | ToolError:
     """MCP-002: the ONE dispatch point `server.py`'s own `geo_run_workflow`
     tool wrapper (and `GEO_TOOL_REGISTRY["geo_run_workflow"]`) calls --
-    reads `fixed_config["joint_study_v2"]["enabled"]` (the exact same
-    config-driven mode switch `workflow/cli.py::is_joint_study_v2_enabled`
-    already established for the CLI) and routes to
-    `run_joint_workflow_tool()` or, unchanged, `run_workflow_tool()`.
+    checks `fixed_config["research_experiment"]["enabled"]` FIRST (the
+    most specific layer, mirroring `workflow/cli.py::run_cli()`'s own
+    ordering -- a research-experiment config also carries its own
+    joint_study_v2 section), then `fixed_config["joint_study_v2"]["enabled"]`
+    (the exact same config-driven mode switch `workflow/cli.py
+    ::is_joint_study_v2_enabled` already established for the CLI), and
+    routes to `run_research_experiment_tool()`, `run_joint_workflow_tool()`,
+    or, unchanged, `run_workflow_tool()`.
     `package_root` defaults to `Path.cwd()` ONLY here, at the one call
     site that actually needs a real default -- mirrors
     `workflow/cli.py::_run_joint_study_v2_cli()`'s own documented choice:
@@ -464,6 +560,11 @@ def dispatch_run_workflow(
     enabled. `build_server()` exposes `package_root` as its own test-only
     seam (matching `config`/`config_path`) for a caller that needs an
     explicit, cwd-independent root."""
+    if is_research_experiment_enabled(fixed_config):
+        return run_research_experiment_tool(
+            pydoublet_raw_result, source_provenance, fixed_config=fixed_config, registry=registry,
+            package_root=package_root if package_root is not None else Path.cwd(),
+        )
     if is_joint_study_v2_enabled(fixed_config):
         return run_joint_workflow_tool(
             pydoublet_raw_result, source_provenance, fixed_config=fixed_config, registry=registry,
@@ -473,7 +574,9 @@ def dispatch_run_workflow(
 
 
 # ── 4. geo_get_run_summary ──────────────────────────────────────────────────
-def get_run_summary(run_id: str, *, registry: RunRegistry) -> RunSummary | JointWorkflowSummary | ToolError:
+def get_run_summary(
+    run_id: str, *, registry: RunRegistry,
+) -> RunSummary | JointWorkflowSummary | ResearchExperimentSummary | ToolError:
     entry = registry.get(run_id)
     if entry is None:
         return ToolError(

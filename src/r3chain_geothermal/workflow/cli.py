@@ -128,6 +128,13 @@ from .joint_workflow_v2 import (
     write_joint_workflow_v2_artifacts,
 )
 from .recommendation import render_recommendation_markdown
+from .research_experiment import (
+    ResearchExperimentFailure,
+    ResearchExperimentResult,
+    is_research_experiment_enabled,
+    run_research_experiment,
+)
+from .research_experiment_export import write_research_experiment_artifacts
 from .svg_export import render_network_candidates_svg
 
 EXIT_OK = 0
@@ -424,6 +431,61 @@ def _run_joint_study_v2_cli(
     return EXIT_OK
 
 
+def _run_research_experiment_cli(
+    pydoublet_raw_result: dict[str, Any], config: dict[str, Any], source_provenance: SourceProvenance,
+    output_dir: Path, config_path: Path,
+) -> int:
+    """R3-CHAIN Final Research-Alignment Implementation Specification,
+    Phase 5/7: dispatched whenever `config["research_experiment"]["enabled"]`
+    is true -- checked BEFORE the v2-only and v1 checks below (the same
+    "most specific layer first" convention `_run_joint_study_v2_cli`
+    already established), since a research-experiment config also carries
+    a `joint_study_v2` section it internally reuses.
+
+    `package_root` is derived exactly as `_run_joint_study_v2_cli` derives
+    it (`config_path.resolve().parent.parent`) -- never from the
+    process's current working directory; see that function's own
+    docstring for the full reasoning."""
+    package_root = config_path.resolve().parent.parent
+    result = run_research_experiment(
+        pydoublet_raw_result, config, source_provenance=source_provenance, package_root=package_root,
+    )
+
+    try:
+        parent_dir = output_dir.parent if str(output_dir.parent) else Path(".")
+        parent_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.tmp-", dir=str(parent_dir)))
+    except OSError as exc:
+        print(f"error: failed to create a temporary working directory: {exc}", file=sys.stderr)
+        return EXIT_ARTIFACT_PUBLICATION_FAILURE
+
+    try:
+        write_research_experiment_artifacts(result, pydoublet_raw_result, config, temp_dir)
+        _publish_temp_dir(temp_dir, output_dir)
+    except Exception as exc:  # noqa: BLE001 -- any publication-stage failure maps to one exit code
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        print(f"error: failed to publish the artifact bundle: {exc}", file=sys.stderr)
+        return EXIT_ARTIFACT_PUBLICATION_FAILURE
+
+    if isinstance(result, ResearchExperimentFailure):
+        print(f"research-experiment workflow stopped: {result.failure_code}: {result.message}", file=sys.stderr)
+        print(f"run_id: {result.run_id}", file=sys.stderr)
+        print(f"bundle published (failure audit trail): {output_dir}", file=sys.stderr)
+        return EXIT_WORKFLOW_FAILURE
+
+    assert isinstance(result, ResearchExperimentResult)
+    print(f"run_id: {result.run_id}")
+    print(f"alternatives evaluated: {len(result.alternative_summaries)}")
+    if result.integrated_decision.preferred_alternative_id:
+        print(f"preferred alternative: {result.integrated_decision.preferred_alternative_id}")
+    else:
+        print("no single unique preferred alternative (materially tied, or none computable)")
+    print(f"baseline comparison: {result.baseline_comparison.interpretation_code.value}")
+    print(f"robustness: {result.sensitivity_decision_summary.robustness_classification.value}")
+    print(f"bundle published: {output_dir}")
+    return EXIT_OK
+
+
 def run_cli(argv: list[str]) -> int:
     args = _build_argument_parser().parse_args(argv)
 
@@ -438,6 +500,9 @@ def run_cli(argv: list[str]) -> int:
     except (_CliInputError, WorkflowConfigurationError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_INPUT_ERROR
+
+    if is_research_experiment_enabled(config):
+        return _run_research_experiment_cli(pydoublet_raw_result, config, source_provenance, output_dir, args.config)
 
     if is_joint_study_v2_enabled(config):
         return _run_joint_study_v2_cli(pydoublet_raw_result, config, source_provenance, output_dir, args.config)
