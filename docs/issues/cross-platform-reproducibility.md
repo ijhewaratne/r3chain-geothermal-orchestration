@@ -1,13 +1,10 @@
 # Issue: cross-platform reproducibility verification and correction (REPRO-001..010, AC-J16)
 
-**Status**: **the Phase 7 fixes (run `33918616460`, commit `dc71d7d`) were pushed externally
-(commit `9da0bb8`) and re-run on real CI (run `33948931491`): both `ubuntu-latest` jobs (Python 3.11
-AND 3.12) now PASS COMPLETELY, confirming the hash-divergence fix and the third pathological-solver
-fix both hold on genuine x86_64 hardware. One remaining issue, unrelated to this specification's own
-joint-site-connection scope, was found on `macos-latest` (a pre-existing subprocess-lifecycle test's
-own CI-timing margin) -- diagnosed and fixed (see "Update 2026-09-05" below); not yet re-confirmed by
-a fresh CI run** (2026-09-05,
-`docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md` Phase 7/9).
+**Status**: **RESOLVED -- a full green three-job CI run (`33953933376`, commit `1d4a3ec`) confirms
+every fix in this document on real target hardware: `ubuntu-latest`×{3.11,3.12} and `macos-latest`×3.11
+all pass, including both canonical and joint wheel-installation smoke tests. AC-J16 (cross-platform
+release gate) is PASS.** (2026-09-05,
+`docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md` Phase 7/9.)
 
 ## Problem (spec §2.5 point 13, §18)
 
@@ -197,17 +194,36 @@ another real CI run to confirm the fix directly: `gh run rerun` was attempted an
 session's own auto-mode classifier (a write action against shared external state) -- reported here
 rather than worked around.
 
-**Current status:** `ubuntu-latest`×{3.11,3.12} confirmed green on real hardware. `macos-latest`'s own
-remaining issue is diagnosed, fixed, and locally re-verified, but not yet re-confirmed by a fresh CI
-run. AC-J16 (cross-platform release gate) is PARTIAL for exactly this one remaining, narrow reason --
-not the broad diagnosis this document originally opened with.
+## Update 2026-09-05 (later) — full three-job green CI confirmed
+
+The `DEVNULL` fix above was pushed externally as `1d4a3ec` ("feat: Update documentation and tests for
+cross-platform reproducibility and joint workflow") and triggered CI run `33953933376`
+(`gh run view 33953933376`). Result:
+
+```
+✓ test (ubuntu-latest, 3.11)  -- 7m44s
+✓ test (ubuntu-latest, 3.12)  -- 12m13s
+✓ test (macos-latest, 3.11)   -- 7m6s
+```
+
+**All three required jobs pass.** Wheel artifacts were uploaded for all three
+(`r3chain-geothermal-wheel-ubuntu-latest-py3.11`, `-py3.12`, `r3chain-geothermal-wheel-macos-latest-py3.11`),
+confirming both the canonical and joint wheel-installation smoke tests (which run after the full
+offline suite in each job) also passed -- those steps only execute if the suite itself is green.
+
+This closes every item this document opened with: the four cross-platform `bundle_scientific_sha256`
+divergences, the third pathological-solver test, and the macOS subprocess-pipe deadlock are all
+confirmed fixed on real target hardware, not merely diagnosed and locally re-verified. **AC-J16
+(cross-platform release gate) is PASS.**
 
 ## What this does NOT claim
 
-This document does not claim the fixes above have been confirmed on real CI; it claims they are
-diagnosed from real CI failures, applied, and re-verified on macOS (the same platform every fix's own
-"before" state was already passing on). It does not claim bit-identical `bundle_scientific_sha256`
-values are achievable or necessary across every CPU architecture -- the corrected test strategy
-explicitly abandons that claim in favour of the specification's own tier-3 "scientific equivalence"
-model for cross-platform comparisons, while preserving byte-level comparison for same-machine
-determinism checks, which remain unaffected and unweakened.
+This document's fixes ARE now confirmed on real CI (run `33953933376`, all three required jobs
+green) -- this is no longer merely a local re-verification. What it still does not claim: bit-identical
+`bundle_scientific_sha256` values are achievable or necessary across every CPU architecture in
+existence -- the corrected test strategy explicitly abandons that narrower claim in favour of the
+specification's own tier-3 "scientific equivalence" model for cross-platform comparisons, while
+preserving byte-level comparison for same-machine determinism checks, which remain unaffected and
+unweakened. Nor does it claim every conceivable future CI environment (a different runner image
+version, a different BLAS release) will behave identically forever -- only that the three currently
+supported, currently tested environments do, as of this run.
