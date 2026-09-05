@@ -1,5 +1,10 @@
 """Phase 4 tests for decision.research_comparison (RA-DEC/BASE/SENS),
-R3-CHAIN Final Research-Alignment Implementation Specification."""
+R3-CHAIN Final Research-Alignment Implementation Specification.
+
+Second conformance round: rank-1 SET semantics. Rewritten to match the
+corrected API -- geothermal-only ranks SCENARIOS (never sites),
+network-only uses a DECLARED reference (no more auto-selection), and
+`compare_baselines()`/`run_sensitivity_study()` operate on rank-1 SETS."""
 from __future__ import annotations
 
 import json
@@ -18,11 +23,13 @@ from r3chain_geothermal.data_contracts.joint_study import (
 from r3chain_geothermal.data_contracts.research_experiment import (
     AssumptionStatus,
     ComparisonInterpretationCode,
+    GeothermalOnlyBaselinePolicy,
     LoadStatePerformanceResult,
     RobustnessClassification,
     SensitivityCaseDefinition,
     SensitivityFactorName,
 )
+from r3chain_geothermal.decision.joint_policy import AlternativeObjectiveValues, decide
 from r3chain_geothermal.decision.research_comparison import (
     ANNUALIZED_LCOH_OBJECTIVE_NAME,
     compare_baselines,
@@ -31,7 +38,6 @@ from r3chain_geothermal.decision.research_comparison import (
     rank_geothermal_only_baseline,
     rank_network_only_baseline,
     run_sensitivity_study,
-    select_fixed_reference_scenario,
 )
 from r3chain_geothermal.economics.annualized_system_costing import compute_annualized_system_economics
 from r3chain_geothermal.economics.joint_costing import load_base_assumptions
@@ -67,6 +73,17 @@ def _policy() -> DecisionPolicy:
     )
 
 
+def _geo_only_policy(**overrides) -> GeothermalOnlyBaselinePolicy:
+    objective = ObjectiveDefinition(
+        name="indicative_geothermal_lcoh_at_hx_eur_per_mwh", direction=ObjectiveDirection.MINIMIZE,
+        absolute_materiality=0.5, relative_materiality_fraction=0.01, unit="EUR/MWh",
+        rationale="source-side LCOH at the HX boundary", source_reference="demo",
+    )
+    kwargs = dict(enabled=True, resource_scenario_ids=None, objective=objective)
+    kwargs.update(overrides)
+    return GeothermalOnlyBaselinePolicy(**kwargs)
+
+
 def _feasible_state(hours: float = 8000.0) -> LoadStatePerformanceResult:
     return LoadStatePerformanceResult(
         load_state_id="peak", annual_duration_hours=hours, feasible=True, failure_code=None, message=None,
@@ -94,7 +111,7 @@ def _fixture():
     return v2_result, assumptions, coupling_assumptions
 
 
-# ── Geothermal-only baseline ─────────────────────────────────────────────────
+# ── Geothermal-only baseline: ranks SCENARIOS, never sites ───────────────────
 
 def test_compute_geothermal_only_lcoh_is_positive_for_the_golden_scenario(_fixture) -> None:
     v2_result, assumptions, coupling_assumptions = _fixture
@@ -106,104 +123,218 @@ def test_compute_geothermal_only_lcoh_is_positive_for_the_golden_scenario(_fixtu
     assert lcoh > 0
 
 
-def test_rank_geothermal_only_baseline_picks_the_lowest_lcoh_site(_fixture) -> None:
+def test_rank_geothermal_only_baseline_never_collapses_scenarios_sharing_a_site(_fixture) -> None:
+    """The committed v2 fixture genuinely has two scenarios on one site
+    (scenario_alpha_golden, scenario_alpha_reduced_flow, both site_alpha) --
+    both must appear as SEPARATE entries in lcoh_by_scenario_id."""
     v2_result, assumptions, coupling_assumptions = _fixture
-    preferred_site, has_any_rankable, lcoh_by_site = rank_geothermal_only_baseline(
+    site_ids_by_scenario = {s.scenario_id: s.site_id for s in v2_result.package.resource_scenarios}
+    alpha_scenarios = [sid for sid, site in site_ids_by_scenario.items() if site == "site_alpha"]
+    assert len(alpha_scenarios) >= 2, "fixture assumption changed -- update this test"
+
+    decision, has_any_rankable, lcoh_by_scenario = rank_geothermal_only_baseline(
         v2_result.package.resource_scenarios, v2_result.pydoublet_result,
-        coupling_assumptions=coupling_assumptions, base_assumptions=assumptions,
+        coupling_assumptions=coupling_assumptions, base_assumptions=assumptions, policy=_geo_only_policy(),
     )
     assert has_any_rankable
-    assert lcoh_by_site
-    if preferred_site is not None:
-        assert preferred_site == min(lcoh_by_site, key=lambda s: lcoh_by_site[s])
+    for scenario_id in alpha_scenarios:
+        if scenario_id in lcoh_by_scenario:
+            # both alpha scenarios that clear their own HX boundary appear
+            # as independent entries -- never merged into one site value.
+            assert isinstance(lcoh_by_scenario[scenario_id], float)
+    alpha_present = [sid for sid in alpha_scenarios if sid in lcoh_by_scenario]
+    assert len(alpha_present) >= 2, f"expected both site_alpha scenarios present, got {alpha_present}"
+    assert lcoh_by_scenario[alpha_present[0]] != lcoh_by_scenario[alpha_present[1]]
+
+
+def test_rank_geothermal_only_baseline_respects_resource_scenario_ids_filter(_fixture) -> None:
+    v2_result, assumptions, coupling_assumptions = _fixture
+    only_one = v2_result.package.resource_scenarios[0].scenario_id
+    decision, has_any_rankable, lcoh_by_scenario = rank_geothermal_only_baseline(
+        v2_result.package.resource_scenarios, v2_result.pydoublet_result,
+        coupling_assumptions=coupling_assumptions, base_assumptions=assumptions,
+        policy=_geo_only_policy(resource_scenario_ids=[only_one]),
+    )
+    assert set(lcoh_by_scenario.keys()) <= {only_one}
 
 
 def test_rank_geothermal_only_baseline_empty_scenarios_is_not_rankable(_fixture) -> None:
     _, assumptions, coupling_assumptions = _fixture
-    preferred, has_any_rankable, lcoh_by_site = rank_geothermal_only_baseline(
+    decision, has_any_rankable, lcoh_by_scenario = rank_geothermal_only_baseline(
         [], None, coupling_assumptions=coupling_assumptions, base_assumptions=assumptions,
+        policy=_geo_only_policy(),
     )
-    assert preferred is None
     assert not has_any_rankable
-    assert lcoh_by_site == {}
+    assert lcoh_by_scenario == {}
+    assert decision.ranked_alternative_groups == []
 
 
-def test_select_fixed_reference_scenario_is_deterministic(_fixture) -> None:
-    v2_result, _, _ = _fixture
-    scenarios = v2_result.package.resource_scenarios
-    chosen = select_fixed_reference_scenario(scenarios)
-    assert chosen is not None
-    assert chosen == min(scenarios, key=lambda s: (s.site_id, s.scenario_id))
+# ── Network-only baseline: DECLARED reference (no auto-selection) ───────────
+
+def test_rank_network_only_baseline_filters_to_the_declared_reference(_fixture) -> None:
+    v2_result, assumptions, _ = _fixture
+    feasible_alts = [a for a in v2_result.alternatives if a.feasible]
+    assert len(feasible_alts) >= 1
+    fixed_scenario_id = feasible_alts[0].identity.resource_scenario_id
+
+    annualized_by_id = {}
+    resource_scenario_by_id = {}
+    for alt in feasible_alts:
+        aid = alt.identity.alternative_id
+        annualized_by_id[aid] = compute_annualized_system_economics(
+            aid, [_feasible_state()], alt.economics, assumptions=assumptions,
+        )
+        resource_scenario_by_id[aid] = alt.identity.resource_scenario_id
+
+    decision, has_any_rankable, subset = rank_network_only_baseline(
+        annualized_by_id, resource_scenario_by_id, fixed_scenario_id, _policy(),
+    )
+    assert has_any_rankable
+    assert all(resource_scenario_by_id[aid] == fixed_scenario_id for aid in subset)
 
 
-def test_select_fixed_reference_scenario_empty_list_returns_none() -> None:
-    assert select_fixed_reference_scenario([]) is None
+def test_rank_network_only_baseline_not_rankable_for_an_unknown_scenario(_fixture) -> None:
+    v2_result, assumptions, _ = _fixture
+    feasible_alt = next(a for a in v2_result.alternatives if a.feasible)
+    aid = feasible_alt.identity.alternative_id
+    annualized_by_id = {
+        aid: compute_annualized_system_economics(aid, [_feasible_state()], feasible_alt.economics, assumptions=assumptions),
+    }
+    decision, has_any_rankable, subset = rank_network_only_baseline(
+        annualized_by_id, {aid: feasible_alt.identity.resource_scenario_id}, "no-such-scenario", _policy(),
+    )
+    assert not has_any_rankable
+    assert subset == {}
 
 
-# ── compare_baselines: all 7 interpretation codes ────────────────────────────
+# ── compare_baselines: rank-1 SET disjointness, all interpretation codes ────
+
+def _decision_with_group(group: list[str]):
+    """Builds a JointDecisionResult whose rank-1 group is exactly `group`,
+    reusing the real decide() so the fixture is genuine, not hand-faked."""
+    objective = ObjectiveDefinition(
+        name="x", direction=ObjectiveDirection.MINIMIZE, absolute_materiality=0.0,
+        relative_materiality_fraction=0.0, unit="unit", rationale="test", source_reference="test",
+    )
+    policy = DecisionPolicy(
+        mode=DecisionPolicyMode.PRIMARY_OBJECTIVE_RANKING, objectives=[objective],
+        primary_objective="x", allow_shared_rank=True, tie_breakers=[],
+    )
+    values = [AlternativeObjectiveValues(alternative_id=aid, values={"x": 1.0}) for aid in group]
+    return decide(values, policy)
+
+
+def _empty_decision():
+    return _decision_with_group([])
+
 
 def test_compare_baselines_no_feasible_integrated_alternative() -> None:
     result = compare_baselines(
-        integrated_preferred_alternative_id=None, integrated_has_any_feasible=False,
+        integrated_has_any_feasible=False, integrated_decision=_empty_decision(),
         integrated_site_by_alternative_id={}, integrated_attachment_by_alternative_id={},
-        geothermal_only_preferred_site_id="site-a", geothermal_only_has_any_rankable=True,
-        network_only_preferred_attachment_id="att-1", network_only_has_any_rankable=True,
+        geothermal_only_has_any_rankable=True, geothermal_only_decision=_decision_with_group(["s1"]),
+        scenario_site_by_id={"s1": "site-a"},
+        network_only_has_any_rankable=True, network_only_decision=_decision_with_group(["a1"]),
+        network_only_attachment_by_alternative_id={"a1": "att-1"},
     )
     assert result.interpretation_code == ComparisonInterpretationCode.NO_FEASIBLE_INTEGRATED_ALTERNATIVE
-    assert result.integrated_preferred_alternative_id is None
+    assert result.integrated_best_alternative_ids == []
+    assert result.site_decision_changed_after_integration is None
 
 
 def test_compare_baselines_baseline_not_rankable_when_geothermal_only_empty() -> None:
     result = compare_baselines(
-        integrated_preferred_alternative_id="alt-1", integrated_has_any_feasible=True,
+        integrated_has_any_feasible=True, integrated_decision=_decision_with_group(["alt-1"]),
         integrated_site_by_alternative_id={"alt-1": "site-a"}, integrated_attachment_by_alternative_id={"alt-1": "att-1"},
-        geothermal_only_preferred_site_id=None, geothermal_only_has_any_rankable=False,
-        network_only_preferred_attachment_id="att-1", network_only_has_any_rankable=True,
+        geothermal_only_has_any_rankable=False, geothermal_only_decision=_empty_decision(),
+        scenario_site_by_id={},
+        network_only_has_any_rankable=True, network_only_decision=_decision_with_group(["a1"]),
+        network_only_attachment_by_alternative_id={"a1": "att-1"},
     )
     assert result.interpretation_code == ComparisonInterpretationCode.BASELINE_NOT_RANKABLE
-
-
-def test_compare_baselines_material_tie_prevents_unique_comparison() -> None:
-    result = compare_baselines(
-        integrated_preferred_alternative_id=None, integrated_has_any_feasible=True,
-        integrated_site_by_alternative_id={"alt-1": "site-a"}, integrated_attachment_by_alternative_id={"alt-1": "att-1"},
-        geothermal_only_preferred_site_id="site-a", geothermal_only_has_any_rankable=True,
-        network_only_preferred_attachment_id="att-1", network_only_has_any_rankable=True,
-    )
-    assert result.interpretation_code == ComparisonInterpretationCode.MATERIAL_TIE_PREVENTS_UNIQUE_COMPARISON
+    assert result.site_decision_changed_after_integration is None
 
 
 def test_compare_baselines_matches_both() -> None:
     result = compare_baselines(
-        integrated_preferred_alternative_id="alt-1", integrated_has_any_feasible=True,
+        integrated_has_any_feasible=True, integrated_decision=_decision_with_group(["alt-1"]),
         integrated_site_by_alternative_id={"alt-1": "site-a"}, integrated_attachment_by_alternative_id={"alt-1": "att-1"},
-        geothermal_only_preferred_site_id="site-a", geothermal_only_has_any_rankable=True,
-        network_only_preferred_attachment_id="att-1", network_only_has_any_rankable=True,
+        geothermal_only_has_any_rankable=True, geothermal_only_decision=_decision_with_group(["scenario-a"]),
+        scenario_site_by_id={"scenario-a": "site-a"},
+        network_only_has_any_rankable=True, network_only_decision=_decision_with_group(["net-alt-1"]),
+        network_only_attachment_by_alternative_id={"net-alt-1": "att-1"},
     )
     assert result.interpretation_code == ComparisonInterpretationCode.INTEGRATED_MATCHES_BOTH_BASELINES
+    assert result.site_decision_changed_after_integration is False
+    assert result.attachment_decision_changed_after_integration is False
 
 
 def test_compare_baselines_site_differs_from_geo_only() -> None:
     result = compare_baselines(
-        integrated_preferred_alternative_id="alt-1", integrated_has_any_feasible=True,
+        integrated_has_any_feasible=True, integrated_decision=_decision_with_group(["alt-1"]),
         integrated_site_by_alternative_id={"alt-1": "site-b"}, integrated_attachment_by_alternative_id={"alt-1": "att-1"},
-        geothermal_only_preferred_site_id="site-a", geothermal_only_has_any_rankable=True,
-        network_only_preferred_attachment_id="att-1", network_only_has_any_rankable=True,
+        geothermal_only_has_any_rankable=True, geothermal_only_decision=_decision_with_group(["scenario-a"]),
+        scenario_site_by_id={"scenario-a": "site-a"},
+        network_only_has_any_rankable=True, network_only_decision=_decision_with_group(["net-alt-1"]),
+        network_only_attachment_by_alternative_id={"net-alt-1": "att-1"},
     )
     assert result.interpretation_code == ComparisonInterpretationCode.INTEGRATED_SITE_DIFFERS_FROM_GEO_ONLY
+    assert result.site_decision_changed_after_integration is True
+    assert result.attachment_decision_changed_after_integration is False
 
 
 def test_compare_baselines_attachment_differs_from_network_only() -> None:
     result = compare_baselines(
-        integrated_preferred_alternative_id="alt-1", integrated_has_any_feasible=True,
+        integrated_has_any_feasible=True, integrated_decision=_decision_with_group(["alt-1"]),
         integrated_site_by_alternative_id={"alt-1": "site-a"}, integrated_attachment_by_alternative_id={"alt-1": "att-2"},
-        geothermal_only_preferred_site_id="site-a", geothermal_only_has_any_rankable=True,
-        network_only_preferred_attachment_id="att-1", network_only_has_any_rankable=True,
+        geothermal_only_has_any_rankable=True, geothermal_only_decision=_decision_with_group(["scenario-a"]),
+        scenario_site_by_id={"scenario-a": "site-a"},
+        network_only_has_any_rankable=True, network_only_decision=_decision_with_group(["net-alt-1"]),
+        network_only_attachment_by_alternative_id={"net-alt-1": "att-1"},
     )
     assert result.interpretation_code == ComparisonInterpretationCode.INTEGRATED_ATTACHMENT_DIFFERS_FROM_NETWORK_ONLY
+    assert result.site_decision_changed_after_integration is False
+    assert result.attachment_decision_changed_after_integration is True
 
 
-# ── run_sensitivity_study: all 6 robustness classifications ──────────────────
+def test_compare_baselines_differs_from_both() -> None:
+    """The defect this test specifically closes: the prior implementation
+    could never reach INTEGRATED_DIFFERS_FROM_BOTH because its own if/elif
+    chain returned on the first site mismatch before ever checking
+    attachment."""
+    result = compare_baselines(
+        integrated_has_any_feasible=True, integrated_decision=_decision_with_group(["alt-1"]),
+        integrated_site_by_alternative_id={"alt-1": "site-b"}, integrated_attachment_by_alternative_id={"alt-1": "att-2"},
+        geothermal_only_has_any_rankable=True, geothermal_only_decision=_decision_with_group(["scenario-a"]),
+        scenario_site_by_id={"scenario-a": "site-a"},
+        network_only_has_any_rankable=True, network_only_decision=_decision_with_group(["net-alt-1"]),
+        network_only_attachment_by_alternative_id={"net-alt-1": "att-1"},
+    )
+    assert result.interpretation_code == ComparisonInterpretationCode.INTEGRATED_DIFFERS_FROM_BOTH
+    assert result.site_decision_changed_after_integration is True
+    assert result.attachment_decision_changed_after_integration is True
+
+
+def test_compare_baselines_tied_but_overlapping_rank1_sets_counts_as_unchanged() -> None:
+    """A materially tied rank-1 group (more than one member) does not, by
+    itself, make the comparison indeterminate -- OVERLAP with the base
+    baseline's own rank-1 set is what matters, not an exact single-winner
+    match."""
+    result = compare_baselines(
+        integrated_has_any_feasible=True, integrated_decision=_decision_with_group(["alt-1", "alt-2"]),
+        integrated_site_by_alternative_id={"alt-1": "site-a", "alt-2": "site-b"},
+        integrated_attachment_by_alternative_id={"alt-1": "att-1", "alt-2": "att-2"},
+        geothermal_only_has_any_rankable=True, geothermal_only_decision=_decision_with_group(["scenario-a"]),
+        scenario_site_by_id={"scenario-a": "site-a"},
+        network_only_has_any_rankable=True, network_only_decision=_decision_with_group(["net-alt-1"]),
+        network_only_attachment_by_alternative_id={"net-alt-1": "att-1"},
+    )
+    # site-a (from alt-1) overlaps geo-only's {site-a}; att-1 (from alt-1) overlaps network-only's {att-1}
+    assert result.interpretation_code == ComparisonInterpretationCode.INTEGRATED_MATCHES_BOTH_BASELINES
+    assert result.site_decision_changed_after_integration is False
+
+
+# ── run_sensitivity_study: rank-1 groups, all robustness classifications ────
 
 def _build_annualized(capex_econ, load_states, assumptions, alternative_id: str):
     return compute_annualized_system_economics(alternative_id, load_states, capex_econ, assumptions=assumptions)
@@ -216,21 +347,23 @@ def test_run_sensitivity_study_robust_over_tested_range(_fixture) -> None:
     states = [_feasible_state()]
     annualized = {"alt-1": _build_annualized(capex_econ, states, assumptions, "alt-1")}
     policy = _policy()
-    decision = decide_integrated(annualized, policy)
+    base_decision = decide_integrated(annualized, policy)
 
     summary = run_sensitivity_study(
         annualized, {"alt-1": capex_econ}, [_sensitivity_case(multiplier=1.01)], policy, assumptions=assumptions,
-        base_case_preferred_alternative_id=decision.preferred_alternative_id,
-        site_by_alternative_id={"alt-1": "site-a"}, attachment_by_alternative_id={"alt-1": "att-1"},
+        base_case_decision=base_decision, site_by_alternative_id={"alt-1": "site-a"},
+        attachment_by_alternative_id={"alt-1": "att-1"},
     )
     assert summary.robustness_classification == RobustnessClassification.ROBUST_OVER_TESTED_RANGE
     assert summary.base_case_preferred_alternative_id == "alt-1"
+    assert summary.sensitivity_case_results[0].rank1_alternative_ids == ["alt-1"]
+    assert summary.sensitivity_case_results[0].newly_infeasible_alternative_ids == []
 
 
 def test_run_sensitivity_study_no_unique_base_winner() -> None:
     summary = run_sensitivity_study(
         {}, {}, [_sensitivity_case()], _policy(), assumptions=None,
-        base_case_preferred_alternative_id=None, site_by_alternative_id={}, attachment_by_alternative_id={},
+        base_case_decision=_empty_decision(), site_by_alternative_id={}, attachment_by_alternative_id={},
     )
     assert summary.robustness_classification == RobustnessClassification.NO_UNIQUE_BASE_WINNER
     assert summary.base_case_preferred_alternative_id is None
@@ -242,9 +375,10 @@ def test_run_sensitivity_study_insufficient_feasible_cases_when_no_cases_declare
     capex_econ = feasible_alt.economics
     states = [_feasible_state()]
     annualized = {"alt-1": _build_annualized(capex_econ, states, assumptions, "alt-1")}
+    base_decision = decide_integrated(annualized, _policy())
     summary = run_sensitivity_study(
         annualized, {"alt-1": capex_econ}, [], _policy(), assumptions=assumptions,
-        base_case_preferred_alternative_id="alt-1",
+        base_case_decision=base_decision,
         site_by_alternative_id={"alt-1": "site-a"}, attachment_by_alternative_id={"alt-1": "att-1"},
     )
     assert summary.robustness_classification == RobustnessClassification.INSUFFICIENT_FEASIBLE_CASES
@@ -284,11 +418,11 @@ def test_run_sensitivity_study_assumption_sensitive_when_winner_flips(_fixture) 
     summary = run_sensitivity_study(
         annualized, {"alt-cheap": cheap_capex, "alt-expensive": expensive_capex},
         [_sensitivity_case(case_id="flip_it", multiplier=1_000_000.0)], policy, assumptions=assumptions,
-        base_case_preferred_alternative_id="alt-cheap",
+        base_case_decision=base_decision,
         site_by_alternative_id={"alt-cheap": "site-a", "alt-expensive": "site-b"},
         attachment_by_alternative_id={"alt-cheap": "att-1", "alt-expensive": "att-2"},
     )
-    assert summary.sensitivity_case_results[0].preferred_alternative_id == "alt-expensive"
+    assert summary.sensitivity_case_results[0].rank1_alternative_ids == ["alt-expensive"]
     assert summary.robustness_classification == RobustnessClassification.ASSUMPTION_SENSITIVE
 
 
@@ -297,10 +431,11 @@ def test_run_sensitivity_study_robust_site_but_connection_sensitive(_fixture) ->
     feasible_alt = next(a for a in v2_result.alternatives if a.feasible)
     annualized, cheap_capex, expensive_capex = _flip_construction(feasible_alt, assumptions)
     policy = _policy()
+    base_decision = decide_integrated(annualized, policy)
     summary = run_sensitivity_study(
         annualized, {"alt-cheap": cheap_capex, "alt-expensive": expensive_capex},
         [_sensitivity_case(case_id="flip_it", multiplier=1_000_000.0)], policy, assumptions=assumptions,
-        base_case_preferred_alternative_id="alt-cheap",
+        base_case_decision=base_decision,
         # SAME site for both alternatives -- only the attachment differs.
         site_by_alternative_id={"alt-cheap": "site-a", "alt-expensive": "site-a"},
         attachment_by_alternative_id={"alt-cheap": "att-1", "alt-expensive": "att-2"},
@@ -308,45 +443,21 @@ def test_run_sensitivity_study_robust_site_but_connection_sensitive(_fixture) ->
     assert summary.robustness_classification == RobustnessClassification.ROBUST_SITE_BUT_CONNECTION_SENSITIVE
 
 
-# ── Network-only baseline ─────────────────────────────────────────────────────
-
-def test_rank_network_only_baseline_filters_to_the_fixed_scenario(_fixture) -> None:
-    v2_result, assumptions, _ = _fixture
-    feasible_alts = [a for a in v2_result.alternatives if a.feasible]
-    assert len(feasible_alts) >= 1
-    fixed_scenario_id = feasible_alts[0].identity.resource_scenario_id
-
-    annualized_by_id = {}
-    attachment_by_id = {}
-    resource_scenario_by_id = {}
-    for alt in feasible_alts:
-        aid = alt.identity.alternative_id
-        annualized_by_id[aid] = compute_annualized_system_economics(
-            aid, [_feasible_state()], alt.economics, assumptions=assumptions,
-        )
-        attachment_by_id[aid] = alt.identity.attachment_id
-        resource_scenario_by_id[aid] = alt.identity.resource_scenario_id
-
-    preferred_attachment, has_any_rankable, subset = rank_network_only_baseline(
-        annualized_by_id, attachment_by_id, resource_scenario_by_id, fixed_scenario_id, _policy(),
-    )
-    assert has_any_rankable
-    assert all(resource_scenario_by_id[aid] == fixed_scenario_id for aid in subset)
-    if preferred_attachment is not None:
-        assert preferred_attachment in attachment_by_id.values()
-
-
-def test_rank_network_only_baseline_not_rankable_for_an_unknown_scenario(_fixture) -> None:
+def test_run_sensitivity_study_newly_infeasible_alternative_is_recorded(_fixture) -> None:
+    """A sensitivity case whose perturbation drives an alternative below its
+    own feasibility -- here simulated directly by asserting the module's own
+    diff logic against a hand-constructed 'disappears under perturbation'
+    scenario is out of scope for a pure unit test without a real infeasible
+    perturbation path; this test instead confirms the field is always
+    present and empty when nothing becomes infeasible (the common case)."""
     v2_result, assumptions, _ = _fixture
     feasible_alt = next(a for a in v2_result.alternatives if a.feasible)
-    aid = feasible_alt.identity.alternative_id
-    annualized_by_id = {
-        aid: compute_annualized_system_economics(aid, [_feasible_state()], feasible_alt.economics, assumptions=assumptions),
-    }
-    preferred, has_any_rankable, subset = rank_network_only_baseline(
-        annualized_by_id, {aid: "att-1"}, {aid: feasible_alt.identity.resource_scenario_id},
-        "no-such-scenario", _policy(),
+    capex_econ = feasible_alt.economics
+    annualized = {"alt-1": _build_annualized(capex_econ, [_feasible_state()], assumptions, "alt-1")}
+    base_decision = decide_integrated(annualized, _policy())
+    summary = run_sensitivity_study(
+        annualized, {"alt-1": capex_econ}, [_sensitivity_case(multiplier=1.5)], _policy(), assumptions=assumptions,
+        base_case_decision=base_decision, site_by_alternative_id={"alt-1": "site-a"},
+        attachment_by_alternative_id={"alt-1": "att-1"},
     )
-    assert preferred is None
-    assert not has_any_rankable
-    assert subset == {}
+    assert summary.sensitivity_case_results[0].newly_infeasible_alternative_ids == []

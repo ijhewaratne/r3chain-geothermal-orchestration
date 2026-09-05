@@ -16,8 +16,19 @@ smaller 8-file bundle this module originally shipped with. Every added file is
 a thin serialization of data `ResearchExperimentResult` already carries (or, for
 the geothermal-only/network-only breakdowns, data
 `decision.research_comparison`'s own ranking functions already compute and the
-orchestrator now threads through as `geothermal_only_lcoh_by_site_id`/
-`network_only_subset`) -- no new domain computation was added for this revision."""
+orchestrator threads through as `geothermal_only_decision`/
+`geothermal_only_lcoh_by_scenario_id`/`network_only_decision`/`network_only_subset`)
+-- no new domain computation was added for this revision.
+
+## Third revision -- rank-1 SET semantics (this file's own third edit)
+
+`geothermal_only_result.json`/`.csv` now report every eligible SCENARIO
+individually (never collapsed per site -- spec §10.2); `research_comparison
+.json`/`.csv` and `research_findings.md` now expose rank-1 SETS
+(`geothermal_only_best_scenario_ids`, `integrated_best_site_ids`, etc.) rather
+than single winner IDs, matching `decision.research_comparison`'s own
+corrected rank-1-set comparison; `sensitivity_comparison.csv` now records each
+case's own rank-1 group and newly-infeasible alternatives, not one winner."""
 from __future__ import annotations
 
 import hashlib
@@ -192,16 +203,27 @@ def render_annualized_integrated_result_json(result: ResearchExperimentResult) -
 
 
 def render_geothermal_only_result_json(result: ResearchExperimentResult) -> bytes:
+    """Reports every eligible SCENARIO individually (spec §10.2: "do not
+    silently collapse multiple scenarios at one site into one best-site
+    value") -- never a per-site value."""
     payload = {
-        "preferred_site_id": result.geothermal_only_preferred_site_id,
-        "lcoh_eur_per_mwh_by_site_id": result.geothermal_only_lcoh_by_site_id,
+        "rank1_scenario_ids": (
+            list(result.geothermal_only_decision.ranked_alternative_groups[0])
+            if result.geothermal_only_decision.ranked_alternative_groups else []
+        ),
+        "lcoh_eur_per_mwh_by_scenario_id": result.geothermal_only_lcoh_by_scenario_id,
+        "decision": json.loads(result.geothermal_only_decision.model_dump_json()),
     }
     return _json_bytes(payload)
 
 
 def render_network_only_result_json(result: ResearchExperimentResult) -> bytes:
     payload = {
-        "preferred_attachment_id": result.network_only_preferred_attachment_id,
+        "rank1_alternative_ids": (
+            list(result.network_only_decision.ranked_alternative_groups[0])
+            if result.network_only_decision.ranked_alternative_groups else []
+        ),
+        "decision": json.loads(result.network_only_decision.model_dump_json()),
         "alternatives": {
             alt_id: json.loads(annualized.model_dump_json())
             for alt_id, annualized in result.network_only_subset.items()
@@ -252,47 +274,68 @@ def render_annualized_alternative_comparison_csv(result: ResearchExperimentResul
 
 
 def render_geothermal_only_comparison_csv(result: ResearchExperimentResult) -> bytes:
-    header = "site_id,lcoh_eur_per_mwh,is_preferred\n"
+    """One row PER SCENARIO (never per site -- spec §10.2)."""
+    header = "scenario_id,site_id,lcoh_eur_per_mwh,is_rank1\n"
     lines = [header]
-    for site_id in sorted(result.geothermal_only_lcoh_by_site_id):
-        lcoh = result.geothermal_only_lcoh_by_site_id[site_id]
-        is_preferred = site_id == result.geothermal_only_preferred_site_id
-        lines.append(f"{site_id},{lcoh:.6f},{is_preferred}\n")
+    scenario_site_by_id = {s.scenario_id: s.site_id for s in result.referenced_v2_result.package.resource_scenarios}
+    rank1_ids = set(
+        result.geothermal_only_decision.ranked_alternative_groups[0]
+        if result.geothermal_only_decision.ranked_alternative_groups else []
+    )
+    for scenario_id in sorted(result.geothermal_only_lcoh_by_scenario_id):
+        lcoh = result.geothermal_only_lcoh_by_scenario_id[scenario_id]
+        site_id = scenario_site_by_id.get(scenario_id, "")
+        is_rank1 = scenario_id in rank1_ids
+        lines.append(f"{scenario_id},{site_id},{lcoh:.6f},{is_rank1}\n")
     return "".join(lines).encode("utf-8")
 
 
 def render_network_only_comparison_csv(result: ResearchExperimentResult) -> bytes:
-    header = "alternative_id,attachment_id,computable,annualized_system_lcoh_eur_per_mwh,is_preferred\n"
+    header = "alternative_id,attachment_id,computable,annualized_system_lcoh_eur_per_mwh,is_rank1\n"
     lines = [header]
     attachment_by_id = {s.alternative_id: s.attachment_id for s in result.alternative_summaries}
+    rank1_ids = set(
+        result.network_only_decision.ranked_alternative_groups[0]
+        if result.network_only_decision.ranked_alternative_groups else []
+    )
     for alt_id in sorted(result.network_only_subset):
         annualized = result.network_only_subset[alt_id]
         attachment_id = attachment_by_id.get(alt_id, "")
         lcoh = "" if annualized.annualized_system_lcoh_eur_per_mwh is None else f"{annualized.annualized_system_lcoh_eur_per_mwh:.6f}"
-        is_preferred = attachment_id == result.network_only_preferred_attachment_id
-        lines.append(f"{alt_id},{attachment_id},{annualized.computable},{lcoh},{is_preferred}\n")
+        is_rank1 = alt_id in rank1_ids
+        lines.append(f"{alt_id},{attachment_id},{annualized.computable},{lcoh},{is_rank1}\n")
     return "".join(lines).encode("utf-8")
 
 
 def render_research_comparison_csv(result: ResearchExperimentResult) -> bytes:
-    header = "interpretation_code,geothermal_only_preferred_site_id,network_only_preferred_attachment_id,integrated_preferred_alternative_id,explanation\n"
+    header = (
+        "interpretation_code,geothermal_only_best_scenario_ids,network_only_best_attachment_ids,"
+        "integrated_best_alternative_ids,integrated_best_site_ids,integrated_best_attachment_ids,"
+        "site_decision_changed_after_integration,attachment_decision_changed_after_integration,explanation\n"
+    )
     comparison = result.baseline_comparison
     explanation = comparison.explanation.replace(",", ";").replace("\n", " ")
     row = (
-        f"{comparison.interpretation_code.value},{comparison.geothermal_only_preferred_site_id or ''},"
-        f"{comparison.network_only_preferred_attachment_id or ''},{comparison.integrated_preferred_alternative_id or ''},"
+        f"{comparison.interpretation_code.value},{';'.join(comparison.geothermal_only_best_scenario_ids)},"
+        f"{';'.join(comparison.network_only_best_attachment_ids)},{';'.join(comparison.integrated_best_alternative_ids)},"
+        f"{';'.join(comparison.integrated_best_site_ids)},{';'.join(comparison.integrated_best_attachment_ids)},"
+        f"{comparison.site_decision_changed_after_integration!s},{comparison.attachment_decision_changed_after_integration!s},"
         f"{explanation}\n"
     )
     return (header + row).encode("utf-8")
 
 
 def render_sensitivity_comparison_csv(result: ResearchExperimentResult) -> bytes:
-    header = "case_id,preferred_alternative_id,preferred_site_id,preferred_attachment_id\n"
+    header = (
+        "case_id,rank1_alternative_ids,rank1_site_ids,rank1_attachment_ids,"
+        "newly_infeasible_alternative_ids,preferred_alternative_id\n"
+    )
     lines = [header]
     for case_result in result.sensitivity_decision_summary.sensitivity_case_results:
         lines.append(
-            f"{case_result.case_id},{case_result.preferred_alternative_id or ''},"
-            f"{case_result.preferred_site_id or ''},{case_result.preferred_attachment_id or ''}\n"
+            f"{case_result.case_id},{';'.join(case_result.rank1_alternative_ids)},"
+            f"{';'.join(case_result.rank1_site_ids)},{';'.join(case_result.rank1_attachment_ids)},"
+            f"{';'.join(case_result.newly_infeasible_alternative_ids)},{case_result.preferred_alternative_id or ''}\n"
         )
     return "".join(lines).encode("utf-8")
 
@@ -311,20 +354,18 @@ def render_research_findings_markdown(result: ResearchExperimentResult) -> bytes
         f"Referenced v2 study package run: `{result.referenced_v2_result.run_id}`\n\n",
         f"Compatible alternatives evaluated across {len(result.research_config.load_states)} load state(s): "
         f"{len(result.alternative_summaries)}\n\n",
-        "## Best geothermal-only site\n\n",
-        f"`{comparison.geothermal_only_preferred_site_id}`\n\n" if comparison.geothermal_only_preferred_site_id
-        else "No single unique preferred site (materially tied or not rankable).\n\n",
-        "## Best network-only attachment (fixed reference site/scenario)\n\n",
-        f"`{comparison.network_only_preferred_attachment_id}`\n\n" if comparison.network_only_preferred_attachment_id
-        else "No single unique preferred attachment (materially tied or not rankable).\n\n",
+        "## Best geothermal-only scenario(s) (rank-1 group -- never collapsed per site)\n\n",
+        f"{comparison.geothermal_only_best_scenario_ids}\n\n" if comparison.geothermal_only_best_scenario_ids
+        else "No rankable scenario (every scenario failed its own HX boundary).\n\n",
+        "## Best network-only attachment(s) (fixed reference site/scenario, rank-1 group)\n\n",
+        f"{comparison.network_only_best_attachment_ids}\n\n" if comparison.network_only_best_attachment_ids
+        else "No rankable attachment for the declared reference scenario.\n\n",
         "## Integrated rank-1 group\n\n",
     ]
-    if result.integrated_decision.preferred_alternative_id:
-        lines.append(f"`{result.integrated_decision.preferred_alternative_id}`\n\n")
-    elif result.integrated_decision.ranked_alternative_groups:
-        lines.append(f"{result.integrated_decision.ranked_alternative_groups[0]}\n\n")
+    if comparison.integrated_best_alternative_ids:
+        lines.append(f"{comparison.integrated_best_alternative_ids}\n\n")
     else:
-        lines.append("No single unique preferred alternative (materially tied, or none computable).\n\n")
+        lines.append("No computable alternative at all.\n\n")
     lines.append("## Did integration change the site and/or attachment conclusion?\n\n")
     lines.append(f"Interpretation code: `{comparison.interpretation_code.value}`\n\n")
     lines.append(f"{comparison.explanation}\n\n")

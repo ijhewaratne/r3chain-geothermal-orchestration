@@ -226,6 +226,28 @@
       "capex_annualized_once": true
     },
     "annualization_note": "The specification's own illustrative AnnualizationPolicy example uses horizon_hours_per_year=8760.0 (a full calendar year). This experiment declares 5000.0 instead -- NOT a full calendar year, but this experiment's own REPRESENTED geothermal/DH operating-hours horizon, matching config/demo_assumptions.json's own economics.annual_full_load_hours.value (the base_assumptions this layer's annualized economics actually consumes via economics/joint_costing.py::load_base_assumptions(), referenced through joint_study_v2 -> config/joint_study_synthetic_v2.json's own economics.base_assumptions_package_relative_path). The three load_states above are not intended to tile a full 8760-hour calendar year -- only this smaller, explicitly declared operating regime -- so 5000.0 is the correct horizon for THIS experiment, not a deviation from it. The five boolean/enum fields inside annualization are not configurable toggles: they are a checked, honest restatement of what economics/annualized_system_costing.py::compute_annualized_system_economics() always does (every OPEX term included, CAPEX annualized once, useful heat is consumer-delivered heat) -- ResearchExperimentConfig's own validator rejects any other combination.",
+    "baselines": {
+      "geothermal_only": {
+        "enabled": true,
+        "resource_scenario_ids": null,
+        "objective": {
+          "name": "indicative_geothermal_lcoh_at_hx_eur_per_mwh", "direction": "minimize",
+          "absolute_materiality": 0.5, "relative_materiality_fraction": 0.01, "unit": "EUR/MWh",
+          "rationale": "source-side LCOH at the HX boundary only (no connection/network cost) -- ranks resource SCENARIOS individually, never collapsed per site (spec's own explicit rule). Materiality thresholds reused unchanged from decision_policy.objectives[0] below, since both are the same unit and the same order of magnitude.",
+          "source_reference": "config/research_experiment_synthetic.json::decision_policy.objectives[0]"
+        }
+      },
+      "network_only": {
+        "enabled": true,
+        "reference_site_id": "site_alpha",
+        "reference_resource_scenario_id": "scenario_alpha_golden",
+        "eligible_attachment_ids": null
+      },
+      "integrated": {
+        "enabled": true
+      }
+    },
+    "baselines_note": "network_only.reference_site_id/reference_resource_scenario_id is an EXPLICIT, provenance-visible declaration (spec §11.2: 'the policy must name one existing validated synthetic resource scenario and its site') -- workflow/research_experiment.py validates that this scenario genuinely exists and belongs to this site in the referenced v2 package before any load-state evaluation runs. site_alpha/scenario_alpha_golden is the SAME pair a prior lexicographic-auto-selection implementation would have picked (sorted by (surface_site_id, resource_scenario_id), site_alpha/scenario_alpha_golden sorts first among config/joint_study_synthetic_v2.json's own 4 scenarios) -- this declaration makes that choice explicit and auditable rather than changing it. geothermal_only.resource_scenario_ids=null means every scenario in the referenced package is ranked individually (config/joint_study_synthetic_v2.json has two scenarios on one site -- scenario_alpha_golden and scenario_alpha_reduced_flow, both site_alpha -- both are ranked as separate entries, never collapsed to one best-site value).",
     "sensitivity_cases": [
       {
         "case_id": "connection_capex_plus_20pct", "label": "+20% connection-pipe CAPEX",

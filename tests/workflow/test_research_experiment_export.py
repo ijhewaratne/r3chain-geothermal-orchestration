@@ -101,7 +101,7 @@ def test_research_findings_markdown_carries_the_synthetic_disclaimer_and_every_r
     assert "SYNTHETIC" in text
     assert result.run_id in text
     for heading in (
-        "Best geothermal-only site", "Best network-only attachment", "Integrated rank-1 group",
+        "Best geothermal-only scenario", "Best network-only attachment", "Integrated rank-1 group",
         "Did integration change", "Pareto shortlist", "Robustness classification", "Caveats",
     ):
         assert heading in text
@@ -133,20 +133,38 @@ def test_load_states_json_matches_the_declared_config(tmp_path) -> None:
 
 
 def test_geothermal_only_result_json_and_csv_agree(tmp_path) -> None:
+    """Also proves the conformance-round fix directly: both site_alpha
+    scenarios (scenario_alpha_golden, scenario_alpha_reduced_flow) appear as
+    SEPARATE rows -- never collapsed to one best-site value."""
     result, config, raw = _run()
     write_research_experiment_artifacts(result, raw, config, tmp_path)
     result_json = json.loads((tmp_path / GEOTHERMAL_ONLY_RESULT_FILENAME).read_text())
-    assert result_json["preferred_site_id"] == result.geothermal_only_preferred_site_id
+    expected_rank1 = (
+        list(result.geothermal_only_decision.ranked_alternative_groups[0])
+        if result.geothermal_only_decision.ranked_alternative_groups else []
+    )
+    assert result_json["rank1_scenario_ids"] == expected_rank1
     csv_text = (tmp_path / GEOTHERMAL_ONLY_COMPARISON_CSV_FILENAME).read_text()
     csv_rows = [line for line in csv_text.splitlines() if line]
-    assert len(csv_rows) == len(result.geothermal_only_lcoh_by_site_id) + 1  # +1 header
+    assert len(csv_rows) == len(result.geothermal_only_lcoh_by_scenario_id) + 1  # +1 header
+    scenario_ids_in_csv = {row.split(",")[0] for row in csv_rows[1:]}
+    alpha_scenarios = {
+        s.scenario_id for s in result.referenced_v2_result.package.resource_scenarios if s.site_id == "site_alpha"
+    }
+    assert alpha_scenarios & scenario_ids_in_csv == alpha_scenarios, (
+        "both site_alpha scenarios must appear as independent rows"
+    )
 
 
 def test_network_only_result_json_and_csv_agree(tmp_path) -> None:
     result, config, raw = _run()
     write_research_experiment_artifacts(result, raw, config, tmp_path)
     result_json = json.loads((tmp_path / NETWORK_ONLY_RESULT_FILENAME).read_text())
-    assert result_json["preferred_attachment_id"] == result.network_only_preferred_attachment_id
+    expected_rank1 = (
+        list(result.network_only_decision.ranked_alternative_groups[0])
+        if result.network_only_decision.ranked_alternative_groups else []
+    )
+    assert result_json["rank1_alternative_ids"] == expected_rank1
     csv_text = (tmp_path / NETWORK_ONLY_COMPARISON_CSV_FILENAME).read_text()
     csv_rows = [line for line in csv_text.splitlines() if line]
     assert len(csv_rows) == len(result.network_only_subset) + 1  # +1 header

@@ -49,7 +49,6 @@ from ..decision.research_comparison import (
     rank_geothermal_only_baseline,
     rank_network_only_baseline,
     run_sensitivity_study,
-    select_fixed_reference_scenario,
 )
 from ..economics.annualized_system_costing import compute_annualized_system_economics
 from ..economics.assumptions import EconomicAssumptions
@@ -104,13 +103,18 @@ class ResearchExperimentResult(BaseModel):
     referenced_v2_result: JointWorkflowV2Result
     alternative_summaries: list[ResearchExperimentAlternativeSummary]
     integrated_decision: JointDecisionResult
-    geothermal_only_preferred_site_id: str | None
-    geothermal_only_lcoh_by_site_id: dict[str, float]
-    """Every site whose scenario cleared its own HX boundary, keyed by site_id --
-    the exact value `decision.research_comparison.rank_geothermal_only_baseline()`
-    already computes to pick `geothermal_only_preferred_site_id`; threaded through
-    unchanged for the §17 `geothermal_only_result.json`/`.csv` export (RA-ART)."""
-    network_only_preferred_attachment_id: str | None
+    geothermal_only_decision: JointDecisionResult
+    """Ranks SCENARIOS, never sites (spec §10.2) -- its own
+    `ranked_alternative_groups[0]` is the rank-1 scenario group;
+    `preferred_alternative_id` (when non-null) is a scenario_id."""
+    geothermal_only_lcoh_by_scenario_id: dict[str, float]
+    """Every eligible scenario whose own HX coupling cleared, keyed by
+    scenario_id (never collapsed per-site) -- threaded through unchanged for
+    the §17 `geothermal_only_result.json`/`.csv` export (RA-ART)."""
+    network_only_decision: JointDecisionResult
+    """Decided over the fixed-reference-scenario subset -- its own
+    `ranked_alternative_groups[0]` is the rank-1 alternative group (map
+    through `attachment_by_alternative_id` for the rank-1 attachment set)."""
     network_only_subset: dict[str, AnnualizedAlternativeEconomicResult]
     """The fixed-reference-scenario subset of `alternative_summaries` that
     `decision.research_comparison.rank_network_only_baseline()` already filters to
@@ -299,7 +303,41 @@ def run_research_experiment(
         )
     stage_calls.append(StageCallRecord(order=3, stage_name="verify_referenced_study_package", status="success"))
 
-    # ── Stage 3: per-alternative load-state evaluation + annualized economics ──
+    # ── Stage 3: network-only baseline's DECLARED reference must genuinely exist ──
+    # (spec §11.2: "the policy must name one existing validated synthetic resource
+    # scenario and its site" -- an explicit, provenance-visible declaration, never
+    # auto-selected. Checked here because the referenced v2 package's own scenarios
+    # are only known once run_joint_workflow_v2() (Stage 1) has already loaded it.)
+    network_only_policy = research_config.baselines.network_only
+    referenced_scenario = next(
+        (s for s in v2_result.package.resource_scenarios if s.scenario_id == network_only_policy.reference_resource_scenario_id),
+        None,
+    )
+    if referenced_scenario is None or referenced_scenario.site_id != network_only_policy.reference_site_id:
+        detail = (
+            f"reference_resource_scenario_id={network_only_policy.reference_resource_scenario_id!r} not found"
+            if referenced_scenario is None else
+            f"reference_resource_scenario_id={network_only_policy.reference_resource_scenario_id!r} belongs to "
+            f"site_id={referenced_scenario.site_id!r}, not the declared reference_site_id="
+            f"{network_only_policy.reference_site_id!r}"
+        )
+        stage_calls.append(StageCallRecord(
+            order=4, stage_name="verify_network_only_reference", status="failure",
+            failure_code="RESEARCH_EXPERIMENT_NETWORK_ONLY_REFERENCE_INVALID", message=detail,
+        ))
+        return ResearchExperimentFailure(
+            run_id=run_id, failure_code="RESEARCH_EXPERIMENT_NETWORK_ONLY_REFERENCE_INVALID",
+            stage="verify_network_only_reference",
+            message=f"baselines.network_only's declared reference scenario/site is invalid: {detail}",
+            details={
+                "reference_site_id": network_only_policy.reference_site_id,
+                "reference_resource_scenario_id": network_only_policy.reference_resource_scenario_id,
+            },
+            audit=_audit(), created_at=workflow_created_at,
+        )
+    stage_calls.append(StageCallRecord(order=4, stage_name="verify_network_only_reference", status="success"))
+
+    # ── Stage 4: per-alternative load-state evaluation + annualized economics ──
     # RA-LOAD's own duration-equality rule ("sum of all hours_per_year must equal
     # the annualization horizon declared by policy") is now enforced structurally by
     # ResearchExperimentConfig's own validator at Stage 0 parse time (data_contracts
@@ -357,45 +395,45 @@ def run_research_experiment(
             annualized_economics=annualized,
         ))
 
-    # ── Stage 4: integrated decision (reuse, unchanged) ──
+    scenario_site_by_id = {s.scenario_id: s.site_id for s in v2_result.package.resource_scenarios}
+
+    # ── Stage 5: integrated decision (reuse, unchanged) ──
     integrated_decision = decide_integrated(annualized_by_id, research_config.decision_policy)
     stage_calls.append(StageCallRecord(order=len(stage_calls) + 1, stage_name="decide_integrated", status="success"))
     integrated_has_any_feasible = any(a.computable for a in annualized_by_id.values())
 
-    # ── Stage 5: geothermal-only baseline ──
-    geo_only_preferred_site, geo_only_has_any_rankable, geo_only_lcoh_by_site = rank_geothermal_only_baseline(
+    # ── Stage 6: geothermal-only baseline (ranks SCENARIOS, never sites -- spec §10.2) ──
+    geo_only_decision, geo_only_has_any_rankable, geo_only_lcoh_by_scenario = rank_geothermal_only_baseline(
         v2_result.package.resource_scenarios, v2_result.pydoublet_result,
         coupling_assumptions=coupling_assumptions, base_assumptions=base_assumptions,
+        policy=research_config.baselines.geothermal_only,
     )
     stage_calls.append(StageCallRecord(order=len(stage_calls) + 1, stage_name="rank_geothermal_only_baseline", status="success"))
 
-    # ── Stage 6: network-only, fixed-source baseline ──
-    fixed_reference_scenario = select_fixed_reference_scenario(v2_result.package.resource_scenarios)
-    if fixed_reference_scenario is not None:
-        network_only_preferred_attachment, network_only_has_any_rankable, network_only_subset = rank_network_only_baseline(
-            annualized_by_id, attachment_by_id, resource_scenario_by_id,
-            fixed_reference_scenario.scenario_id, research_config.decision_policy,
-        )
-    else:
-        network_only_preferred_attachment, network_only_has_any_rankable, network_only_subset = None, False, {}
+    # ── Stage 7: network-only, fixed-source baseline (DECLARED reference, validated at Stage 3 above) ──
+    network_only_decision, network_only_has_any_rankable, network_only_subset = rank_network_only_baseline(
+        annualized_by_id, resource_scenario_by_id,
+        network_only_policy.reference_resource_scenario_id, research_config.decision_policy,
+    )
     stage_calls.append(StageCallRecord(order=len(stage_calls) + 1, stage_name="rank_network_only_baseline", status="success"))
 
-    # ── Stage 7: cross-baseline comparison ──
+    # ── Stage 8: cross-baseline comparison (rank-1 SET-based -- spec §13) ──
     baseline_comparison = compare_baselines(
-        integrated_preferred_alternative_id=integrated_decision.preferred_alternative_id,
         integrated_has_any_feasible=integrated_has_any_feasible,
+        integrated_decision=integrated_decision,
         integrated_site_by_alternative_id=site_by_id, integrated_attachment_by_alternative_id=attachment_by_id,
-        geothermal_only_preferred_site_id=geo_only_preferred_site,
         geothermal_only_has_any_rankable=geo_only_has_any_rankable,
-        network_only_preferred_attachment_id=network_only_preferred_attachment,
+        geothermal_only_decision=geo_only_decision, scenario_site_by_id=scenario_site_by_id,
         network_only_has_any_rankable=network_only_has_any_rankable,
+        network_only_decision=network_only_decision,
+        network_only_attachment_by_alternative_id=attachment_by_id,
     )
     stage_calls.append(StageCallRecord(order=len(stage_calls) + 1, stage_name="compare_baselines", status="success"))
 
-    # ── Stage 8: sensitivity / robustness ──
+    # ── Stage 9: sensitivity / robustness ──
     sensitivity_summary = run_sensitivity_study(
         annualized_by_id, capex_economics_by_id, research_config.sensitivity_cases, research_config.decision_policy,
-        assumptions=base_assumptions, base_case_preferred_alternative_id=integrated_decision.preferred_alternative_id,
+        assumptions=base_assumptions, base_case_decision=integrated_decision,
         site_by_alternative_id=site_by_id, attachment_by_alternative_id=attachment_by_id,
     )
     stage_calls.append(StageCallRecord(order=len(stage_calls) + 1, stage_name="run_sensitivity_study", status="success"))
@@ -403,9 +441,9 @@ def run_research_experiment(
     return ResearchExperimentResult(
         run_id=run_id, research_config=research_config, referenced_v2_result=v2_result,
         alternative_summaries=alternative_summaries, integrated_decision=integrated_decision,
-        geothermal_only_preferred_site_id=geo_only_preferred_site,
-        geothermal_only_lcoh_by_site_id=geo_only_lcoh_by_site,
-        network_only_preferred_attachment_id=network_only_preferred_attachment,
+        geothermal_only_decision=geo_only_decision,
+        geothermal_only_lcoh_by_scenario_id=geo_only_lcoh_by_scenario,
+        network_only_decision=network_only_decision,
         network_only_subset=network_only_subset,
         baseline_comparison=baseline_comparison, sensitivity_decision_summary=sensitivity_summary,
         audit=_audit(), created_at=workflow_created_at,

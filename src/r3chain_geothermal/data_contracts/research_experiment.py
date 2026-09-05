@@ -56,7 +56,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .joint_study import AssumptionStatus, DecisionPolicy
+from .joint_study import AssumptionStatus, DecisionPolicy, ObjectiveDefinition
 
 RESEARCH_EXPERIMENT_CONTRACT_SCHEMA_VERSION: Literal["1.0.0"] = "1.0.0"
 """Versioned independently of every other layer's own contract schema (matching
@@ -245,6 +245,71 @@ class SensitivityCaseDefinition(BaseModel):
         return self
 
 
+# ── Baseline experiment policy (RA-BASE) ─────────────────────────────────────
+
+class GeothermalOnlyBaselinePolicy(BaseModel):
+    """Governs the geothermal-only baseline (spec §10): ranks resource
+    SCENARIOS, each carrying its own linked site -- "do not silently collapse
+    multiple scenarios at one site into one best-site value" (spec's own
+    explicit words). `objective` is this baseline's own materiality-aware
+    ranking definition (a genuinely different metric,
+    `indicative_geothermal_lcoh_at_hx_eur_per_mwh`, from the integrated
+    decision's own `annualized_system_lcoh_eur_per_mwh` -- reused
+    `ObjectiveDefinition` type, own declared thresholds)."""
+    model_config = _MODEL_CONFIG
+
+    enabled: bool = True
+    resource_scenario_ids: list[str] | None = None
+    """None means every scenario in the referenced v2 package is eligible.
+    When declared, only these scenario_ids are ranked -- never silently
+    including or excluding a scenario the config doesn't name."""
+    objective: ObjectiveDefinition
+
+
+class NetworkOnlyBaselinePolicy(BaseModel):
+    """Governs the network-only, fixed-source baseline (spec §11): "the
+    policy must name one existing validated synthetic resource scenario and
+    its site" -- an explicit, provenance-visible declaration, never an
+    auto-selected default. `workflow.research_experiment` validates that
+    `reference_resource_scenario_id` genuinely belongs to
+    `reference_site_id` in the referenced v2 package (this model cannot
+    check that itself -- the package isn't loaded yet at config-parse time)."""
+    model_config = _MODEL_CONFIG
+
+    enabled: bool = True
+    reference_site_id: str
+    reference_resource_scenario_id: str
+    eligible_attachment_ids: list[str] | None = None
+    """None means every network attachment compatible with the reference
+    site is eligible."""
+
+    @model_validator(mode="after")
+    def _validate(self) -> "NetworkOnlyBaselinePolicy":
+        errors: list[str] = []
+        if not self.reference_site_id:
+            errors.append("reference_site_id must not be empty")
+        if not self.reference_resource_scenario_id:
+            errors.append("reference_resource_scenario_id must not be empty")
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
+
+
+class IntegratedBaselinePolicy(BaseModel):
+    model_config = _MODEL_CONFIG
+    enabled: bool = True
+
+
+class BaselineExperimentPolicy(BaseModel):
+    """Spec §1.7.2's own suggested `BaselineExperimentPolicy` schema, adopted
+    directly (field names/nesting) rather than reinvented."""
+    model_config = _MODEL_CONFIG
+
+    geothermal_only: GeothermalOnlyBaselinePolicy
+    network_only: NetworkOnlyBaselinePolicy
+    integrated: IntegratedBaselinePolicy
+
+
 # ── Experiment configuration (RA-GOV/DATA) ───────────────────────────────────
 
 class ResearchExperimentConfig(BaseModel):
@@ -258,6 +323,7 @@ class ResearchExperimentConfig(BaseModel):
     referenced_study_package_expected_sha256: str = _Sha256Hex
     load_states: list[LoadStateDefinition]
     annualization: AnnualizationPolicy
+    baselines: BaselineExperimentPolicy
     sensitivity_cases: list[SensitivityCaseDefinition]
     decision_policy: DecisionPolicy
     """Reused verbatim from data_contracts.joint_study -- see module docstring.
@@ -458,7 +524,18 @@ class AnnualizedAlternativeEconomicResult(BaseModel):
 
 class ComparisonInterpretationCode(str, Enum):
     """Typed, deterministic, SET-based comparison outcomes (spec's own explicit
-    requirement: never a first-tied-element comparison)."""
+    requirement: "compare sets, not arbitrary first elements of tied groups").
+
+    `MATERIAL_TIE_PREVENTS_UNIQUE_COMPARISON` is retained because the spec
+    requires the full code set to exist, but is STRUCTURALLY UNREACHABLE from
+    `decision.research_comparison.compare_baselines()`'s own current call
+    pattern: disjointness between two rank-1 SETS is always computable once
+    both sets are non-empty (they may contain more than one member -- a tie
+    -- without preventing the disjointness check itself), and
+    `primary_objective_ranking` mode always yields a non-empty rank-1 group
+    whenever at least one alternative is computable. This is disclosed
+    honestly (decision-register) rather than a fabricated test path invented
+    just to exercise it."""
     INTEGRATED_MATCHES_BOTH_BASELINES = "INTEGRATED_MATCHES_BOTH_BASELINES"
     INTEGRATED_SITE_DIFFERS_FROM_GEO_ONLY = "INTEGRATED_SITE_DIFFERS_FROM_GEO_ONLY"
     INTEGRATED_ATTACHMENT_DIFFERS_FROM_NETWORK_ONLY = "INTEGRATED_ATTACHMENT_DIFFERS_FROM_NETWORK_ONLY"
@@ -469,45 +546,79 @@ class ComparisonInterpretationCode(str, Enum):
 
 
 class BaselineComparisonResult(BaseModel):
+    """Spec §13's own suggested field list, adopted directly. Every `*_ids`
+    field is a RANK-1 SET (sorted for determinism), never a single arbitrary
+    winner -- "compare sets, not arbitrary first elements of tied groups"."""
     model_config = _MODEL_CONFIG
 
     contract_schema_version: Literal["1.0.0"] = RESEARCH_EXPERIMENT_CONTRACT_SCHEMA_VERSION
     interpretation_code: ComparisonInterpretationCode
-    geothermal_only_preferred_site_id: str | None
-    network_only_preferred_attachment_id: str | None
-    integrated_preferred_alternative_id: str | None
+    geothermal_only_best_scenario_ids: list[str]
+    network_only_best_attachment_ids: list[str]
+    integrated_best_alternative_ids: list[str]
+    integrated_best_site_ids: list[str]
+    integrated_best_attachment_ids: list[str]
+    site_decision_changed_after_integration: bool | None
+    """True only when the integrated rank-1 site set is DISJOINT from the
+    geothermal-only rank-1 site set; False on any overlap (spec §13's own
+    exact rule); null when either baseline has no feasible/rankable result
+    at all (never a fabricated True/False in that case)."""
+    attachment_decision_changed_after_integration: bool | None
     explanation: str
 
     @model_validator(mode="after")
     def _validate(self) -> "BaselineComparisonResult":
+        errors: list[str] = []
         if not self.explanation:
-            raise ValueError("explanation must not be empty")
-        if (
-            self.interpretation_code == ComparisonInterpretationCode.NO_FEASIBLE_INTEGRATED_ALTERNATIVE
-            and self.integrated_preferred_alternative_id is not None
+            errors.append("explanation must not be empty")
+        no_feasible = self.interpretation_code == ComparisonInterpretationCode.NO_FEASIBLE_INTEGRATED_ALTERNATIVE
+        not_rankable = self.interpretation_code == ComparisonInterpretationCode.BASELINE_NOT_RANKABLE
+        if no_feasible and self.integrated_best_alternative_ids:
+            errors.append("integrated_best_alternative_ids must be empty when interpretation_code is NO_FEASIBLE_INTEGRATED_ALTERNATIVE")
+        if (no_feasible or not_rankable) and (
+            self.site_decision_changed_after_integration is not None
+            or self.attachment_decision_changed_after_integration is not None
         ):
-            raise ValueError(
-                "integrated_preferred_alternative_id must be null when interpretation_code is "
-                "NO_FEASIBLE_INTEGRATED_ALTERNATIVE"
+            errors.append(
+                "site_decision_changed_after_integration/attachment_decision_changed_after_integration must both "
+                "be null when interpretation_code is NO_FEASIBLE_INTEGRATED_ALTERNATIVE or BASELINE_NOT_RANKABLE"
             )
+        if errors:
+            raise ValueError("; ".join(errors))
         return self
 
 
 # ── Sensitivity / robustness (RA-SENS) ───────────────────────────────────────
 
 class SensitivityCaseResult(BaseModel):
+    """Exposes the FULL rank-1 group under this sensitivity case (spec §14.3:
+    "rank-1 group for every sensitivity case"), not merely a single winner.
+    `preferred_alternative_id` is a convenience field, non-null only when the
+    rank-1 group happens to contain exactly one alternative."""
     model_config = _MODEL_CONFIG
 
     contract_schema_version: Literal["1.0.0"] = RESEARCH_EXPERIMENT_CONTRACT_SCHEMA_VERSION
     case_id: str
+    rank1_alternative_ids: list[str]
+    rank1_site_ids: list[str]
+    rank1_attachment_ids: list[str]
+    newly_infeasible_alternative_ids: list[str]
+    """Alternatives `computable=True` in the base (unperturbed) case but not
+    under this perturbation -- spec §14.3's "whether any candidate becomes
+    infeasible"."""
     preferred_alternative_id: str | None
-    preferred_site_id: str | None
-    preferred_attachment_id: str | None
 
     @model_validator(mode="after")
     def _validate(self) -> "SensitivityCaseResult":
+        errors: list[str] = []
         if not self.case_id:
-            raise ValueError("case_id must not be empty")
+            errors.append("case_id must not be empty")
+        if self.preferred_alternative_id is not None and len(self.rank1_alternative_ids) != 1:
+            errors.append("preferred_alternative_id must be null unless rank1_alternative_ids has exactly one member")
+        if self.preferred_alternative_id is not None and self.preferred_alternative_id not in self.rank1_alternative_ids:
+            errors.append("preferred_alternative_id must be a member of rank1_alternative_ids when set")
+        if errors:
+            raise ValueError("; ".join(errors))
         return self
 
 

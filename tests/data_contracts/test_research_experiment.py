@@ -19,9 +19,13 @@ from r3chain_geothermal.data_contracts.research_experiment import (
     AnnualizationPolicy,
     AnnualizedAlternativeEconomicResult,
     BaselineComparisonResult,
+    BaselineExperimentPolicy,
     ComparisonInterpretationCode,
+    GeothermalOnlyBaselinePolicy,
+    IntegratedBaselinePolicy,
     LoadStateDefinition,
     LoadStatePerformanceResult,
+    NetworkOnlyBaselinePolicy,
     ResearchExperimentConfig,
     ResearchExperimentDecisionSummary,
     RobustnessClassification,
@@ -74,12 +78,31 @@ def _annualization_policy(**overrides) -> AnnualizationPolicy:
     return AnnualizationPolicy(**kwargs)
 
 
+def _baseline_policy(**overrides) -> BaselineExperimentPolicy:
+    geo_objective = ObjectiveDefinition(
+        name="indicative_geothermal_lcoh_at_hx_eur_per_mwh", direction=ObjectiveDirection.MINIMIZE,
+        absolute_materiality=0.5, relative_materiality_fraction=0.01, unit="EUR/MWh",
+        rationale="source-side LCOH at the HX boundary", source_reference="demo",
+    )
+    kwargs = dict(
+        geothermal_only=GeothermalOnlyBaselinePolicy(enabled=True, resource_scenario_ids=None, objective=geo_objective),
+        network_only=NetworkOnlyBaselinePolicy(
+            enabled=True, reference_site_id="site_alpha", reference_resource_scenario_id="scenario_alpha_golden",
+            eligible_attachment_ids=None,
+        ),
+        integrated=IntegratedBaselinePolicy(enabled=True),
+    )
+    kwargs.update(overrides)
+    return BaselineExperimentPolicy(**kwargs)
+
+
 def _config(**overrides) -> ResearchExperimentConfig:
     kwargs = dict(
         referenced_study_package_relative_path="config/joint_study_synthetic_v2.json",
         referenced_study_package_expected_sha256="a" * 64,
         load_states=[_load_state()],
         annualization=_annualization_policy(),
+        baselines=_baseline_policy(),
         sensitivity_cases=[_sensitivity_case()],
         decision_policy=_decision_policy(),
     )
@@ -384,8 +407,11 @@ def test_annualized_result_rejects_empty_load_state_results() -> None:
 def test_baseline_comparison_result_valid_case() -> None:
     result = BaselineComparisonResult(
         interpretation_code=ComparisonInterpretationCode.INTEGRATED_MATCHES_BOTH_BASELINES,
-        geothermal_only_preferred_site_id="site-a", network_only_preferred_attachment_id="att-1",
-        integrated_preferred_alternative_id="alt-1", explanation="all three tiers agree on the same choice",
+        geothermal_only_best_scenario_ids=["scenario-a"], network_only_best_attachment_ids=["att-1"],
+        integrated_best_alternative_ids=["alt-1"], integrated_best_site_ids=["site-a"],
+        integrated_best_attachment_ids=["att-1"],
+        site_decision_changed_after_integration=False, attachment_decision_changed_after_integration=False,
+        explanation="all three tiers agree on the same choice",
     )
     assert result.interpretation_code == ComparisonInterpretationCode.INTEGRATED_MATCHES_BOTH_BASELINES
 
@@ -394,17 +420,33 @@ def test_baseline_comparison_result_rejects_empty_explanation() -> None:
     with pytest.raises(ValidationError):
         BaselineComparisonResult(
             interpretation_code=ComparisonInterpretationCode.NO_FEASIBLE_INTEGRATED_ALTERNATIVE,
-            geothermal_only_preferred_site_id=None, network_only_preferred_attachment_id=None,
-            integrated_preferred_alternative_id=None, explanation="",
+            geothermal_only_best_scenario_ids=[], network_only_best_attachment_ids=[],
+            integrated_best_alternative_ids=[], integrated_best_site_ids=[], integrated_best_attachment_ids=[],
+            site_decision_changed_after_integration=None, attachment_decision_changed_after_integration=None,
+            explanation="",
         )
 
 
-def test_baseline_comparison_result_rejects_preferred_alternative_when_none_feasible() -> None:
+def test_baseline_comparison_result_rejects_nonempty_integrated_ids_when_no_feasible_alternative() -> None:
     with pytest.raises(ValidationError):
         BaselineComparisonResult(
             interpretation_code=ComparisonInterpretationCode.NO_FEASIBLE_INTEGRATED_ALTERNATIVE,
-            geothermal_only_preferred_site_id=None, network_only_preferred_attachment_id=None,
-            integrated_preferred_alternative_id="alt-1", explanation="should be rejected",
+            geothermal_only_best_scenario_ids=[], network_only_best_attachment_ids=[],
+            integrated_best_alternative_ids=["alt-1"], integrated_best_site_ids=[], integrated_best_attachment_ids=[],
+            site_decision_changed_after_integration=None, attachment_decision_changed_after_integration=None,
+            explanation="should be rejected",
+        )
+
+
+def test_baseline_comparison_result_rejects_changed_flags_when_not_rankable() -> None:
+    with pytest.raises(ValidationError):
+        BaselineComparisonResult(
+            interpretation_code=ComparisonInterpretationCode.BASELINE_NOT_RANKABLE,
+            geothermal_only_best_scenario_ids=[], network_only_best_attachment_ids=[],
+            integrated_best_alternative_ids=["alt-1"], integrated_best_site_ids=["site-a"],
+            integrated_best_attachment_ids=["att-1"],
+            site_decision_changed_after_integration=False, attachment_decision_changed_after_integration=False,
+            explanation="should be rejected -- changed flags must be null when not rankable",
         )
 
 
@@ -412,8 +454,8 @@ def test_baseline_comparison_result_rejects_preferred_alternative_when_none_feas
 
 def test_sensitivity_case_result_valid() -> None:
     result = SensitivityCaseResult(
-        case_id="capex_plus_20pct", preferred_alternative_id="alt-1",
-        preferred_site_id="site-a", preferred_attachment_id="att-1",
+        case_id="capex_plus_20pct", rank1_alternative_ids=["alt-1"], rank1_site_ids=["site-a"],
+        rank1_attachment_ids=["att-1"], newly_infeasible_alternative_ids=[], preferred_alternative_id="alt-1",
     )
     assert result.case_id == "capex_plus_20pct"
 
@@ -421,7 +463,25 @@ def test_sensitivity_case_result_valid() -> None:
 def test_sensitivity_case_result_rejects_empty_case_id() -> None:
     with pytest.raises(ValidationError):
         SensitivityCaseResult(
-            case_id="", preferred_alternative_id=None, preferred_site_id=None, preferred_attachment_id=None,
+            case_id="", rank1_alternative_ids=[], rank1_site_ids=[], rank1_attachment_ids=[],
+            newly_infeasible_alternative_ids=[], preferred_alternative_id=None,
+        )
+
+
+def test_sensitivity_case_result_rejects_preferred_id_when_rank1_group_has_multiple_members() -> None:
+    with pytest.raises(ValidationError):
+        SensitivityCaseResult(
+            case_id="tied", rank1_alternative_ids=["alt-1", "alt-2"], rank1_site_ids=["site-a", "site-b"],
+            rank1_attachment_ids=["att-1", "att-2"], newly_infeasible_alternative_ids=[],
+            preferred_alternative_id="alt-1",
+        )
+
+
+def test_sensitivity_case_result_rejects_preferred_id_not_in_rank1_group() -> None:
+    with pytest.raises(ValidationError):
+        SensitivityCaseResult(
+            case_id="mismatch", rank1_alternative_ids=["alt-1"], rank1_site_ids=["site-a"],
+            rank1_attachment_ids=["att-1"], newly_infeasible_alternative_ids=[], preferred_alternative_id="alt-2",
         )
 
 
@@ -430,8 +490,8 @@ def test_decision_summary_robust_case() -> None:
         base_case_preferred_alternative_id="alt-1",
         sensitivity_case_results=[
             SensitivityCaseResult(
-                case_id="capex_plus_20pct", preferred_alternative_id="alt-1",
-                preferred_site_id="site-a", preferred_attachment_id="att-1",
+                case_id="capex_plus_20pct", rank1_alternative_ids=["alt-1"], rank1_site_ids=["site-a"],
+                rank1_attachment_ids=["att-1"], newly_infeasible_alternative_ids=[], preferred_alternative_id="alt-1",
             ),
         ],
         robustness_classification=RobustnessClassification.ROBUST_OVER_TESTED_RANGE,
@@ -451,7 +511,8 @@ def test_decision_summary_no_unique_base_winner_requires_null_preferred_id() -> 
 
 def test_decision_summary_rejects_duplicate_sensitivity_case_ids() -> None:
     case = SensitivityCaseResult(
-        case_id="dup", preferred_alternative_id=None, preferred_site_id=None, preferred_attachment_id=None,
+        case_id="dup", rank1_alternative_ids=[], rank1_site_ids=[], rank1_attachment_ids=[],
+        newly_infeasible_alternative_ids=[], preferred_alternative_id=None,
     )
     with pytest.raises(ValidationError):
         ResearchExperimentDecisionSummary(

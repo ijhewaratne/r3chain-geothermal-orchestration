@@ -290,12 +290,33 @@ field was undocumented rather than either implemented or explicitly deferred; an
 §17 "shall publish at least" 19-file artifact list was published as a smaller 8-file bundle. All
 three are now resolved — see `docs/decisions/decision-register.md` IMPL-028 for the full record —
 without touching any scientific calculation: the two threaded-through baseline breakdowns
-(`geothermal_only_lcoh_by_site_id`, `network_only_subset`) and the 15 new artifact renderers are
+(`geothermal_only_lcoh_by_scenario_id`, `network_only_subset`) and the 15 new artifact renderers are
 all thin serializations of data `ResearchExperimentResult` already computed. Full offline suite
 re-run clean after every fix; canonical and v2 golden `run_id`s unaffected. The research-experiment
 layer's own `run_id` changed (config bytes changed via the new `annualization` section) — expected,
 and this layer's own tests derive `run_id` dynamically rather than pinning a golden literal, so
 nothing needed updating for that.
+
+### Decision-layer correction (this session, 2026-09-05, a second, deeper review)
+
+A second review, against the actual pushed commit and the spec's own §10–14 text, found the
+geothermal-only baseline SILENTLY COLLAPSED multiple resource scenarios sharing one site into a
+single best-site value — directly contradicting the spec's own explicit instruction ("do not
+silently collapse multiple scenarios at one site into one best-site value") — plus three related
+decision-layer defects: the network-only reference was auto-selected rather than declared;
+`compare_baselines()` compared single winner IDs rather than rank-1 SETS (the spec's own required
+disjointness semantics); and `INTEGRATED_DIFFERS_FROM_BOTH` was structurally unreachable. All four
+were independently re-verified directly against the spec text and the committed v2 fixture (which
+genuinely has two scenarios on one site, `scenario_alpha_golden`/`scenario_alpha_reduced_flow`,
+both `site_alpha`) before any fix — see `docs/decisions/decision-register.md` IMPL-029 for the full
+record, including the live-verified, scientifically consequential difference this bug actually
+made (the corrected ranking picks a different geothermal-only winner than the buggy per-site
+collapse would have). `decision/research_comparison.py` was substantially rewritten to rank
+scenarios via the existing materiality-aware `decide()` (reused unchanged), derive rank-1 SETS from
+each baseline's own `JointDecisionResult`, and compute disjointness directly. A fifth item (richer
+sensitivity rank-group/infeasibility reporting) was also implemented; the spec's own "maximum
+observed rank change per candidate" sub-item is explicitly descoped and documented, not silently
+dropped. Full offline suite re-run clean; canonical and v2 golden `run_id`s re-confirmed unaffected.
 
 ## MCP and orchestration requirements
 

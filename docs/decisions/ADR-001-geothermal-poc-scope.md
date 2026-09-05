@@ -262,6 +262,15 @@ an explicit `AnnualizationPolicy`/duration-equality rule (§1.7.3), the optional
 artifact list (published as a smaller 8-file bundle). All three resolved without touching any
 scientific calculation — see `docs/decisions/decision-register.md` IMPL-028 for the full record.
 
+**Decision-layer correction (2026-09-05, a second, deeper review):** a second review against the
+committed v2 fixture and the spec's own §10-14 text found the geothermal-only baseline silently
+collapsed multiple resource scenarios sharing one site into a single best-site value — directly
+contradicting the spec's own explicit instruction — plus a non-declared network-only reference, a
+comparison that was not actually set-based, and an unreachable `INTEGRATED_DIFFERS_FROM_BOTH` code.
+All independently re-verified against the spec text before any fix; `decision/research_comparison.py`
+was substantially rewritten to rank scenarios via the existing materiality-aware `decide()` (reused
+unchanged) and derive rank-1 SETS directly. See `docs/decisions/decision-register.md` IMPL-029.
+
 ## Consequences
 
 - Scope creep toward geological placement, weighted scoring, or real Wuppertal data

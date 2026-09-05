@@ -15,54 +15,54 @@ computed `AnnualizedAlternativeEconomicResult` (bypassing
 is shaped for one single-load-state candidate/economics pair, not a
 multi-load-state annualized value -- Phase-0 audit finding).
 
-## The three baselines (RA-BASE)
+## Second conformance round -- rank-1 SET semantics (this module's own second edit)
 
-- **Integrated**: every compatible alternative, decided via the SAME
-  `decide()` call any v2-style decision uses.
-- **Geothermal-only**: ranks SITES (not full alternatives) by a NEW
-  `compute_geothermal_only_lcoh_eur_per_mwh()` -- a genuinely new,
-  narrowly-scoped formula (module docstring below explains why no
-  existing function fits: every existing costing function requires a
-  pandapipes-network-derived `CandidateEvaluationResult`, which a
-  network-free source-side baseline has none of). CAPEX is doublet + HX
-  only (no connection pipes, no DH network); OPEX is doublet-pump
-  electricity only; useful heat is the scenario's own HX-boundary
-  deliverable heat, at the SAME `assumptions.annual_full_load_hours`
-  single-operating-point convention every other single-state economics
-  figure in this project already uses (there is no district-heating
-  network in this baseline, so no load-state concept applies to it).
-- **Network-only, fixed source**: a FILTER of the already-computed
-  integrated alternative set to the one deterministically-chosen fixed
-  site/scenario (module's own `select_fixed_reference_scenario()`,
-  sorted by `(surface_site_id, resource_scenario_id)` -- DEC-015's own
-  established "alternative_id/display order only, never a scientific
-  decision" convention, applied here to choosing a reference
-  deterministically rather than arbitrarily), re-decided via the SAME
-  `decide()` over that subset. No separate evaluation pipeline: this
-  baseline costs nothing extra to compute once the integrated set exists.
+A closer re-read of the spec's own §10-14 (against the actual committed v2
+fixture, which genuinely has two resource scenarios on one site --
+`scenario_alpha_golden`/`scenario_alpha_reduced_flow`, both `site_alpha`)
+found this module's first implementation collapsed the geothermal-only
+baseline to one best-site value (explicitly forbidden: "do not silently
+collapse multiple scenarios at one site into one best-site value"),
+auto-selected the network-only reference instead of using a declared
+config value, compared single winner IDs instead of rank-1 SETS, and could
+never produce `INTEGRATED_DIFFERS_FROM_BOTH`. All four are corrected here:
 
-## Sensitivity (RA-SENS) -- perturbs stored figures, never re-simulates
-
-Each `SensitivityCaseDefinition` perturbs each alternative's ALREADY-
-COMPUTED `AnnualizedAlternativeEconomicResult` inputs (the captured
-`CandidateEconomicResult`'s CAPEX for `connection_capex_multiplier`, or
-each load state's own delivered-heat KPIs for
-`geothermal_deliverable_heat_derating_fraction`) and re-calls
-`economics.annualized_system_costing.compute_annualized_system_economics()`
--- never re-runs pandapipes or the HX coupling. This matches the spec's
-own "small, deterministic what-if" framing: cheap, explicit, and never
-probabilistic."""
+- **Geothermal-only** now ranks SCENARIOS (not sites) via the SAME
+  materiality-aware `decide()` every other baseline already uses -- a
+  throwaway `DecisionPolicy` is constructed from the config's own declared
+  `GeothermalOnlyBaselinePolicy.objective`, then `decide()` is called
+  unchanged. The site set is DERIVED from the resulting rank-1 scenario
+  group, never computed directly.
+- **Network-only** now uses the config's own DECLARED
+  `NetworkOnlyBaselinePolicy.reference_site_id`/`reference_resource_scenario_id`
+  (validated by the orchestrator against the referenced v2 package before
+  this module ever runs) -- `select_fixed_reference_scenario()` is removed.
+- **`compare_baselines()`** now takes rank-1 SETS (already derived by the
+  orchestrator from each baseline's own `JointDecisionResult
+  .ranked_alternative_groups[0]`) and computes disjointness directly,
+  checking BOTH site and attachment before deciding which interpretation
+  code applies -- fixing the unreachable-`INTEGRATED_DIFFERS_FROM_BOTH`
+  defect directly.
+- **Sensitivity** now records each case's own rank-1 group (site/attachment
+  sets derived the same way) plus which alternatives became newly
+  infeasible, not merely a single winner."""
 from __future__ import annotations
 
 from ..adapter import CouplingAssumptions, evaluate_heat_exchanger_coupling
 from ..adapter.heat_exchanger import HeatExchangerCouplingFailure
 from ..contracts.coupling_result import PyDoubletCouplingResult
-from ..data_contracts.joint_study import DecisionPolicy, GeothermalResourceScenario, SiteEconomicInputs
+from ..data_contracts.joint_study import (
+    DecisionPolicy,
+    DecisionPolicyMode,
+    GeothermalResourceScenario,
+    SiteEconomicInputs,
+)
 from ..data_contracts.joint_study_synthetic_v2 import apply_synthetic_derivation
 from ..data_contracts.research_experiment import (
     AnnualizedAlternativeEconomicResult,
     BaselineComparisonResult,
     ComparisonInterpretationCode,
+    GeothermalOnlyBaselinePolicy,
     LoadStatePerformanceResult,
     ResearchExperimentDecisionSummary,
     RobustnessClassification,
@@ -70,7 +70,7 @@ from ..data_contracts.research_experiment import (
     SensitivityCaseResult,
     SensitivityFactorName,
 )
-from ..decision.joint_policy import AlternativeObjectiveValues, decide
+from ..decision.joint_policy import AlternativeObjectiveValues, JointDecisionResult, decide
 from ..economics.annualized_system_costing import compute_annualized_system_economics
 from ..economics.annuity import annuity_factor
 from ..economics.assumptions import EconomicAssumptions
@@ -95,6 +95,14 @@ def _scenario_doublet_capex_eur(economic_inputs: SiteEconomicInputs) -> float:
     return sum(c for c in components if c is not None)
 
 
+def _rank1_group(decision: JointDecisionResult) -> list[str]:
+    """The rank-1 alternative group under primary_objective_ranking mode --
+    empty when there is nothing computable at all. Never the pareto
+    shortlist (a different, secondary diagnostic) and never a single
+    first-tied-element pick."""
+    return list(decision.ranked_alternative_groups[0]) if decision.ranked_alternative_groups else []
+
+
 # ── Integrated decision (reuse, unchanged) ───────────────────────────────────
 
 def build_alternative_objective_values(
@@ -115,7 +123,7 @@ def build_alternative_objective_values(
 
 def decide_integrated(
     annualized_by_alternative_id: dict[str, AnnualizedAlternativeEconomicResult], policy: DecisionPolicy,
-):
+) -> JointDecisionResult:
     """Thin wrapper around the EXISTING, unmodified `decision.joint_policy.decide()`."""
     values = [
         v for v in (
@@ -125,7 +133,7 @@ def decide_integrated(
     return decide(values, policy)
 
 
-# ── Geothermal-only baseline (RA-BASE, new narrowly-scoped formula) ──────────
+# ── Geothermal-only baseline (RA-BASE) -- ranks SCENARIOS, never sites ───────
 
 def compute_geothermal_only_lcoh_eur_per_mwh(
     scenario: GeothermalResourceScenario, golden: PyDoubletCouplingResult, *,
@@ -163,170 +171,176 @@ def compute_geothermal_only_lcoh_eur_per_mwh(
     return total_cost / useful_mwh
 
 
-def select_fixed_reference_scenario(
-    scenarios: list[GeothermalResourceScenario],
-) -> GeothermalResourceScenario | None:
-    """Deterministic, documented choice for the network-only baseline's ONE
-    fixed geothermal source/site (DEC-015's own "display/selection order is
-    never a scientific decision" convention, applied to picking a reference
-    rather than to ranking): sorted by (surface_site_id, resource_scenario_id),
-    first wins. None when `scenarios` is empty."""
-    if not scenarios:
-        return None
-    return min(scenarios, key=lambda s: (s.site_id, s.scenario_id))
-
-
 def rank_geothermal_only_baseline(
     scenarios: list[GeothermalResourceScenario], golden: PyDoubletCouplingResult, *,
     coupling_assumptions: CouplingAssumptions, base_assumptions: EconomicAssumptions,
-) -> tuple[str | None, bool, dict[str, float]]:
-    """Returns (preferred_site_id | None, has_any_rankable, lcoh_by_site_id).
-    `has_any_rankable` is True iff at least one scenario cleared its own HX
-    boundary (`lcoh_by_site` non-empty); `preferred_site_id` is additionally
-    None when `has_any_rankable` is True but more than one site exactly ties
-    at the minimum LCOH -- these two null-but-different states are why both
-    values are returned rather than folding "no unique preference" and "no
-    rankable site at all" into one flag. One scenario per site is assumed
-    (this prototype's committed fixture); if a site has more than one
-    scenario, the LOWEST-LCOH scenario represents that site. Ties (multiple
-    sites at the minimum) make `preferred_site_id` None -- no arbitrary
-    tie-break is invented (mirrors DEC-011's own "materially tied" spirit,
-    applied here as an exact-tie check since no materiality threshold is
-    declared for this baseline)."""
-    lcoh_by_site: dict[str, float] = {}
-    for scenario in scenarios:
+    policy: GeothermalOnlyBaselinePolicy,
+) -> tuple[JointDecisionResult, bool, dict[str, float]]:
+    """Returns (decision, has_any_rankable, lcoh_by_scenario_id). Ranks
+    SCENARIOS (spec §10.2: "do not silently collapse multiple scenarios at
+    one site into one best-site value") via the SAME materiality-aware
+    `decide()` every baseline in this project already uses -- a throwaway
+    `DecisionPolicy` is built from `policy.objective` (this baseline's own
+    declared metric/materiality), never a new ranking algorithm. The caller
+    derives the rank-1 SITE set from `decision.ranked_alternative_groups[0]`
+    (each id there is a scenario_id) plus its own scenario->site map --
+    this function never computes a site-level value itself.
+    `resource_scenario_ids` (when declared) restricts which scenarios are
+    even considered eligible."""
+    eligible = (
+        scenarios if policy.resource_scenario_ids is None
+        else [s for s in scenarios if s.scenario_id in set(policy.resource_scenario_ids)]
+    )
+    lcoh_by_scenario: dict[str, float] = {}
+    for scenario in eligible:
         lcoh = compute_geothermal_only_lcoh_eur_per_mwh(
             scenario, golden, coupling_assumptions=coupling_assumptions, base_assumptions=base_assumptions,
         )
-        if lcoh is None:
-            continue
-        if scenario.site_id not in lcoh_by_site or lcoh < lcoh_by_site[scenario.site_id]:
-            lcoh_by_site[scenario.site_id] = lcoh
+        if lcoh is not None:
+            lcoh_by_scenario[scenario.scenario_id] = lcoh
 
-    if not lcoh_by_site:
-        return None, False, {}
-    best_lcoh = min(lcoh_by_site.values())
-    best_sites = sorted(site_id for site_id, lcoh in lcoh_by_site.items() if lcoh == best_lcoh)
-    preferred = best_sites[0] if len(best_sites) == 1 else None
-    return preferred, True, lcoh_by_site
+    if not lcoh_by_scenario:
+        empty_decision = decide([], DecisionPolicy(
+            mode=DecisionPolicyMode.PRIMARY_OBJECTIVE_RANKING, objectives=[policy.objective],
+            primary_objective=policy.objective.name, tie_breakers=[], allow_shared_rank=True,
+        ))
+        return empty_decision, False, {}
+
+    scenario_policy = DecisionPolicy(
+        mode=DecisionPolicyMode.PRIMARY_OBJECTIVE_RANKING, objectives=[policy.objective],
+        primary_objective=policy.objective.name, tie_breakers=[], allow_shared_rank=True,
+    )
+    values = [
+        AlternativeObjectiveValues(alternative_id=scenario_id, values={policy.objective.name: lcoh})
+        for scenario_id, lcoh in lcoh_by_scenario.items()
+    ]
+    decision = decide(values, scenario_policy)
+    return decision, True, lcoh_by_scenario
 
 
 # ── Network-only, fixed-source baseline (filters the integrated set) ────────
 
 def rank_network_only_baseline(
     annualized_by_alternative_id: dict[str, AnnualizedAlternativeEconomicResult],
-    alternative_attachment_by_id: dict[str, str],
     alternative_resource_scenario_by_id: dict[str, str],
     fixed_resource_scenario_id: str,
     policy: DecisionPolicy,
-) -> tuple[str | None, bool, dict[str, AnnualizedAlternativeEconomicResult]]:
-    """Returns (preferred_attachment_id | None, has_any_rankable, the filtered
-    subset). Filters the already-computed integrated alternative set to
-    those whose resource_scenario_id matches the fixed reference scenario,
-    then re-decides via the SAME decide() over that subset. `has_any_rankable`
-    is True iff at least one alternative in that subset is `computable`
-    (distinct from `preferred_attachment_id is None`, which can also mean
-    "computable but materially tied" -- same two-flag reasoning as
-    rank_geothermal_only_baseline's own docstring)."""
+) -> tuple[JointDecisionResult, bool, dict[str, AnnualizedAlternativeEconomicResult]]:
+    """Returns (decision, has_any_rankable, the filtered subset). Filters the
+    already-computed integrated alternative set to those whose
+    resource_scenario_id matches the DECLARED fixed reference scenario
+    (`data_contracts.research_experiment.NetworkOnlyBaselinePolicy
+    .reference_resource_scenario_id`, validated by the orchestrator against
+    the referenced v2 package before this function is ever called -- this
+    function itself does not re-validate that), then re-decides via the SAME
+    `decide()` over that subset. The caller derives the rank-1 ATTACHMENT set
+    from `decision.ranked_alternative_groups[0]` plus its own
+    alternative->attachment map."""
     subset = {
         aid: a for aid, a in annualized_by_alternative_id.items()
         if alternative_resource_scenario_by_id.get(aid) == fixed_resource_scenario_id
     }
     has_any_rankable = any(a.computable for a in subset.values())
-    if not has_any_rankable:
-        return None, False, subset
     decision = decide_integrated(subset, policy)
-    if decision.preferred_alternative_id is None:
-        return None, True, subset
-    return alternative_attachment_by_id[decision.preferred_alternative_id], True, subset
+    return decision, has_any_rankable, subset
 
 
 # ── Cross-baseline comparison (RA-BASE) ──────────────────────────────────────
 
 def compare_baselines(
     *,
-    integrated_preferred_alternative_id: str | None,
     integrated_has_any_feasible: bool,
+    integrated_decision: JointDecisionResult,
     integrated_site_by_alternative_id: dict[str, str],
     integrated_attachment_by_alternative_id: dict[str, str],
-    geothermal_only_preferred_site_id: str | None,
     geothermal_only_has_any_rankable: bool,
-    network_only_preferred_attachment_id: str | None,
+    geothermal_only_decision: JointDecisionResult,
+    scenario_site_by_id: dict[str, str],
     network_only_has_any_rankable: bool,
+    network_only_decision: JointDecisionResult,
+    network_only_attachment_by_alternative_id: dict[str, str],
 ) -> BaselineComparisonResult:
-    """Deterministic SET-based comparison (never a first-tied-element
-    comparison): each of the three baselines contributes exactly one
-    preferred identifier (or None), compared by equality. Uniqueness is
-    read directly off each `*_preferred_*_id is None` (given its paired
-    `has_any_rankable`/`has_any_feasible` flag is True) -- a separate
-    "is_unique" flag would be redundant with that, since every baseline's
-    own ranking function already returns None exactly when no unique
-    preference exists."""
+    """Genuinely SET-based (spec §13: "compare sets, not arbitrary first
+    elements of tied groups") -- every rank-1 group here is derived from its
+    own `JointDecisionResult.ranked_alternative_groups[0]`, and disjointness
+    is computed directly between the resulting site/attachment sets. Checks
+    BOTH site and attachment before choosing an interpretation code (fixing
+    the prior implementation's unreachable INTEGRATED_DIFFERS_FROM_BOTH
+    defect)."""
     if not integrated_has_any_feasible:
         return BaselineComparisonResult(
             interpretation_code=ComparisonInterpretationCode.NO_FEASIBLE_INTEGRATED_ALTERNATIVE,
-            geothermal_only_preferred_site_id=geothermal_only_preferred_site_id,
-            network_only_preferred_attachment_id=network_only_preferred_attachment_id,
-            integrated_preferred_alternative_id=None,
+            geothermal_only_best_scenario_ids=[], network_only_best_attachment_ids=[],
+            integrated_best_alternative_ids=[], integrated_best_site_ids=[], integrated_best_attachment_ids=[],
+            site_decision_changed_after_integration=None, attachment_decision_changed_after_integration=None,
             explanation="no compatible alternative in the integrated search space was computable "
                         "(every load state feasible) -- there is nothing to compare against either baseline",
         )
+
+    integrated_rank1_alt_ids = sorted(_rank1_group(integrated_decision))
+    integrated_rank1_site_ids = sorted({integrated_site_by_alternative_id[a] for a in integrated_rank1_alt_ids})
+    integrated_rank1_attachment_ids = sorted({integrated_attachment_by_alternative_id[a] for a in integrated_rank1_alt_ids})
+
     if not geothermal_only_has_any_rankable or not network_only_has_any_rankable:
         return BaselineComparisonResult(
             interpretation_code=ComparisonInterpretationCode.BASELINE_NOT_RANKABLE,
-            geothermal_only_preferred_site_id=geothermal_only_preferred_site_id,
-            network_only_preferred_attachment_id=network_only_preferred_attachment_id,
-            integrated_preferred_alternative_id=integrated_preferred_alternative_id,
+            geothermal_only_best_scenario_ids=[], network_only_best_attachment_ids=[],
+            integrated_best_alternative_ids=integrated_rank1_alt_ids,
+            integrated_best_site_ids=integrated_rank1_site_ids,
+            integrated_best_attachment_ids=integrated_rank1_attachment_ids,
+            site_decision_changed_after_integration=None, attachment_decision_changed_after_integration=None,
             explanation="the geothermal-only or network-only baseline had no rankable candidate "
                         "(e.g. every scenario failed its own HX boundary, or the fixed reference "
                         "scenario had no feasible attachment) -- a comparison would be meaningless",
         )
-    if (
-        integrated_preferred_alternative_id is None
-        or geothermal_only_preferred_site_id is None
-        or network_only_preferred_attachment_id is None
-    ):
-        return BaselineComparisonResult(
-            interpretation_code=ComparisonInterpretationCode.MATERIAL_TIE_PREVENTS_UNIQUE_COMPARISON,
-            geothermal_only_preferred_site_id=geothermal_only_preferred_site_id,
-            network_only_preferred_attachment_id=network_only_preferred_attachment_id,
-            integrated_preferred_alternative_id=integrated_preferred_alternative_id,
-            explanation="at least one of the three baselines has no single unique preferred choice "
-                        "(a materially-tied or exactly-tied top group) -- no unique cross-baseline "
-                        "comparison can be made",
-        )
 
-    integrated_site = integrated_site_by_alternative_id[integrated_preferred_alternative_id]
-    integrated_attachment = integrated_attachment_by_alternative_id[integrated_preferred_alternative_id]
-    site_matches = integrated_site == geothermal_only_preferred_site_id
-    attachment_matches = integrated_attachment == network_only_preferred_attachment_id
+    geo_rank1_scenario_ids = sorted(_rank1_group(geothermal_only_decision))
+    geo_rank1_site_ids = {scenario_site_by_id[s] for s in geo_rank1_scenario_ids}
+    network_rank1_alt_ids = _rank1_group(network_only_decision)
+    network_rank1_attachment_ids = {network_only_attachment_by_alternative_id[a] for a in network_rank1_alt_ids}
 
-    if site_matches and attachment_matches:
+    site_changed = set(integrated_rank1_site_ids).isdisjoint(geo_rank1_site_ids)
+    attachment_changed = set(integrated_rank1_attachment_ids).isdisjoint(network_rank1_attachment_ids)
+
+    common = dict(
+        geothermal_only_best_scenario_ids=geo_rank1_scenario_ids,
+        network_only_best_attachment_ids=sorted(network_rank1_attachment_ids),
+        integrated_best_alternative_ids=integrated_rank1_alt_ids,
+        integrated_best_site_ids=integrated_rank1_site_ids,
+        integrated_best_attachment_ids=integrated_rank1_attachment_ids,
+        site_decision_changed_after_integration=site_changed,
+        attachment_decision_changed_after_integration=attachment_changed,
+    )
+
+    if site_changed and attachment_changed:
         return BaselineComparisonResult(
-            interpretation_code=ComparisonInterpretationCode.INTEGRATED_MATCHES_BOTH_BASELINES,
-            geothermal_only_preferred_site_id=geothermal_only_preferred_site_id,
-            network_only_preferred_attachment_id=network_only_preferred_attachment_id,
-            integrated_preferred_alternative_id=integrated_preferred_alternative_id,
-            explanation="the integrated preferred alternative's site and attachment both match the "
-                        "geothermal-only and network-only baselines' own preferred choices",
+            interpretation_code=ComparisonInterpretationCode.INTEGRATED_DIFFERS_FROM_BOTH,
+            explanation=f"the integrated rank-1 site set {integrated_rank1_site_ids} is disjoint from the "
+                        f"geothermal-only rank-1 site set {sorted(geo_rank1_site_ids)}, AND the integrated "
+                        f"rank-1 attachment set {integrated_rank1_attachment_ids} is disjoint from the "
+                        f"network-only rank-1 attachment set {sorted(network_rank1_attachment_ids)}",
+            **common,
         )
-    if not site_matches:
+    if site_changed:
         return BaselineComparisonResult(
             interpretation_code=ComparisonInterpretationCode.INTEGRATED_SITE_DIFFERS_FROM_GEO_ONLY,
-            geothermal_only_preferred_site_id=geothermal_only_preferred_site_id,
-            network_only_preferred_attachment_id=network_only_preferred_attachment_id,
-            integrated_preferred_alternative_id=integrated_preferred_alternative_id,
-            explanation=f"the integrated preferred alternative's site ({integrated_site!r}) differs from "
-                        f"the geothermal-only baseline's preferred site ({geothermal_only_preferred_site_id!r})",
+            explanation=f"the integrated rank-1 site set {integrated_rank1_site_ids} is disjoint from the "
+                        f"geothermal-only rank-1 site set {sorted(geo_rank1_site_ids)} (attachment sets overlap)",
+            **common,
+        )
+    if attachment_changed:
+        return BaselineComparisonResult(
+            interpretation_code=ComparisonInterpretationCode.INTEGRATED_ATTACHMENT_DIFFERS_FROM_NETWORK_ONLY,
+            explanation=f"the integrated rank-1 attachment set {integrated_rank1_attachment_ids} is disjoint "
+                        f"from the network-only rank-1 attachment set {sorted(network_rank1_attachment_ids)} "
+                        f"(site sets overlap)",
+            **common,
         )
     return BaselineComparisonResult(
-        interpretation_code=ComparisonInterpretationCode.INTEGRATED_ATTACHMENT_DIFFERS_FROM_NETWORK_ONLY,
-        geothermal_only_preferred_site_id=geothermal_only_preferred_site_id,
-        network_only_preferred_attachment_id=network_only_preferred_attachment_id,
-        integrated_preferred_alternative_id=integrated_preferred_alternative_id,
-        explanation=f"the integrated preferred alternative's site matches the geothermal-only baseline, "
-                    f"but its attachment ({integrated_attachment!r}) differs from the network-only "
-                    f"baseline's preferred attachment ({network_only_preferred_attachment_id!r})",
+        interpretation_code=ComparisonInterpretationCode.INTEGRATED_MATCHES_BOTH_BASELINES,
+        explanation="the integrated rank-1 site and attachment sets both overlap their respective "
+                    "geothermal-only and network-only baselines' own rank-1 sets",
+        **common,
     )
 
 
@@ -379,14 +393,23 @@ def run_sensitivity_study(
     policy: DecisionPolicy,
     *,
     assumptions: EconomicAssumptions,
-    base_case_preferred_alternative_id: str | None,
+    base_case_decision: JointDecisionResult,
     site_by_alternative_id: dict[str, str],
     attachment_by_alternative_id: dict[str, str],
 ) -> ResearchExperimentDecisionSummary:
-    """`base_case_preferred_alternative_id` is None exactly when the
-    unperturbed (base) integrated decision has no unique winner -- the same
-    "None means not unique" convention every ranking function in this module
-    uses, so no separate uniqueness flag is needed here either."""
+    """Each `SensitivityCaseResult` now carries its own rank-1 GROUP (spec
+    §14.3: "rank-1 group for every sensitivity case"), the sites/attachments
+    it represents, and which alternatives became newly infeasible under that
+    perturbation -- not merely a single winner. Robustness classification
+    uses set OVERLAP (not exact-group equality) against the base case's own
+    rank-1 site/attachment sets, mirroring `compare_baselines()`'s own
+    disjointness convention exactly."""
+    base_rank1_alt_ids = _rank1_group(base_case_decision)
+    base_case_preferred_alternative_id = base_rank1_alt_ids[0] if len(base_rank1_alt_ids) == 1 else None
+    base_rank1_site_ids = {site_by_alternative_id[a] for a in base_rank1_alt_ids}
+    base_rank1_attachment_ids = {attachment_by_alternative_id[a] for a in base_rank1_alt_ids}
+    base_computable_ids = {aid for aid, a in annualized_by_alternative_id.items() if a.computable}
+
     case_results: list[SensitivityCaseResult] = []
     for case in sensitivity_cases:
         perturbed = {
@@ -396,13 +419,24 @@ def run_sensitivity_study(
             for aid, a in annualized_by_alternative_id.items()
         }
         decision = decide_integrated(perturbed, policy)
-        preferred = decision.preferred_alternative_id
+        rank1_alt_ids = sorted(_rank1_group(decision))
+        rank1_site_ids = sorted({site_by_alternative_id[a] for a in rank1_alt_ids})
+        rank1_attachment_ids = sorted({attachment_by_alternative_id[a] for a in rank1_alt_ids})
+        perturbed_computable_ids = {aid for aid, a in perturbed.items() if a.computable}
+        newly_infeasible = sorted(base_computable_ids - perturbed_computable_ids)
         case_results.append(SensitivityCaseResult(
-            case_id=case.case_id, preferred_alternative_id=preferred,
-            preferred_site_id=site_by_alternative_id.get(preferred) if preferred is not None else None,
-            preferred_attachment_id=attachment_by_alternative_id.get(preferred) if preferred is not None else None,
+            case_id=case.case_id, rank1_alternative_ids=rank1_alt_ids, rank1_site_ids=rank1_site_ids,
+            rank1_attachment_ids=rank1_attachment_ids, newly_infeasible_alternative_ids=newly_infeasible,
+            preferred_alternative_id=rank1_alt_ids[0] if len(rank1_alt_ids) == 1 else None,
         ))
 
+    if not base_rank1_alt_ids:
+        return ResearchExperimentDecisionSummary(
+            base_case_preferred_alternative_id=None, sensitivity_case_results=case_results,
+            robustness_classification=RobustnessClassification.NO_UNIQUE_BASE_WINNER,
+            explanation="the base (unperturbed) case has no computable alternative at all -- "
+                        "robustness cannot be classified relative to a winner that does not exist",
+        )
     if base_case_preferred_alternative_id is None:
         return ResearchExperimentDecisionSummary(
             base_case_preferred_alternative_id=None, sensitivity_case_results=case_results,
@@ -416,35 +450,36 @@ def run_sensitivity_study(
             robustness_classification=RobustnessClassification.INSUFFICIENT_FEASIBLE_CASES,
             explanation="no sensitivity cases were declared -- nothing to classify",
         )
-    if any(r.preferred_alternative_id is None for r in case_results):
+    if any(not r.rank1_alternative_ids for r in case_results):
         return ResearchExperimentDecisionSummary(
             base_case_preferred_alternative_id=base_case_preferred_alternative_id, sensitivity_case_results=case_results,
             robustness_classification=RobustnessClassification.INSUFFICIENT_FEASIBLE_CASES,
-            explanation="one or more sensitivity cases had no unique preferred alternative to compare",
+            explanation="one or more sensitivity cases had no computable alternative at all",
         )
 
-    base_site = site_by_alternative_id[base_case_preferred_alternative_id]
-    base_attachment = attachment_by_alternative_id[base_case_preferred_alternative_id]
-    alternative_unchanged = [r.preferred_alternative_id == base_case_preferred_alternative_id for r in case_results]
-
+    alternative_unchanged = [
+        set(r.rank1_alternative_ids) == set(base_rank1_alt_ids) for r in case_results
+    ]
     if all(alternative_unchanged):
         classification = RobustnessClassification.ROBUST_OVER_TESTED_RANGE
         explanation = f"{base_case_preferred_alternative_id!r} remains preferred across every tested sensitivity case"
     else:
-        site_always_matches = all(r.preferred_site_id == base_site for r in case_results)
-        attachment_always_matches = all(r.preferred_attachment_id == base_attachment for r in case_results)
+        site_always_overlaps = all(not base_rank1_site_ids.isdisjoint(r.rank1_site_ids) for r in case_results)
+        attachment_always_overlaps = all(
+            not base_rank1_attachment_ids.isdisjoint(r.rank1_attachment_ids) for r in case_results
+        )
         changed_cases = [r.case_id for r, ok in zip(case_results, alternative_unchanged) if not ok]
-        if site_always_matches and not attachment_always_matches:
+        if site_always_overlaps and not attachment_always_overlaps:
             classification = RobustnessClassification.ROBUST_SITE_BUT_CONNECTION_SENSITIVE
             explanation = (
-                f"the preferred SITE ({base_site!r}) is unchanged across every tested case, but the preferred "
-                f"connection (attachment/route/design) changed under case(s) {changed_cases}"
+                f"the preferred SITE set ({sorted(base_rank1_site_ids)}) overlaps across every tested case, but "
+                f"the preferred connection (attachment/route/design) changed under case(s) {changed_cases}"
             )
-        elif attachment_always_matches and not site_always_matches:
+        elif attachment_always_overlaps and not site_always_overlaps:
             classification = RobustnessClassification.ROBUST_CONNECTION_BUT_SITE_SENSITIVE
             explanation = (
-                f"the preferred connection (attachment {base_attachment!r}) is unchanged across every tested "
-                f"case, but the preferred SITE changed under case(s) {changed_cases}"
+                f"the preferred connection (attachment set {sorted(base_rank1_attachment_ids)}) overlaps across "
+                f"every tested case, but the preferred SITE changed under case(s) {changed_cases}"
             )
         else:
             classification = RobustnessClassification.ASSUMPTION_SENSITIVE
