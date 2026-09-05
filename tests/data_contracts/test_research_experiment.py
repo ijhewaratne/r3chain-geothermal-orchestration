@@ -16,6 +16,7 @@ from r3chain_geothermal.data_contracts.joint_study import (
     ObjectiveDirection,
 )
 from r3chain_geothermal.data_contracts.research_experiment import (
+    AnnualizationPolicy,
     AnnualizedAlternativeEconomicResult,
     BaselineComparisonResult,
     ComparisonInterpretationCode,
@@ -67,11 +68,18 @@ def _sensitivity_case(**overrides) -> SensitivityCaseDefinition:
     return SensitivityCaseDefinition(**kwargs)
 
 
+def _annualization_policy(**overrides) -> AnnualizationPolicy:
+    kwargs = dict(horizon_hours_per_year=2000.0)
+    kwargs.update(overrides)
+    return AnnualizationPolicy(**kwargs)
+
+
 def _config(**overrides) -> ResearchExperimentConfig:
     kwargs = dict(
         referenced_study_package_relative_path="config/joint_study_synthetic_v2.json",
         referenced_study_package_expected_sha256="a" * 64,
         load_states=[_load_state()],
+        annualization=_annualization_policy(),
         sensitivity_cases=[_sensitivity_case()],
         decision_policy=_decision_policy(),
     )
@@ -119,14 +127,23 @@ def test_load_state_definition_rejects_invalid_values(field: str, value) -> None
 
 def test_validate_load_state_durations_flags_duplicate_ids() -> None:
     states = [_load_state(), _load_state()]
-    errors = validate_load_state_durations(states, annual_operating_hours=8000.0)
+    errors = validate_load_state_durations(states, annualization_horizon_hours_per_year=8000.0)
     assert any("unique" in e for e in errors)
 
 
 def test_validate_load_state_durations_flags_overrun() -> None:
     states = [_load_state(annual_duration_hours=9000.0)]
-    errors = validate_load_state_durations(states, annual_operating_hours=8000.0)
-    assert any("exceeds" in e for e in errors)
+    errors = validate_load_state_durations(states, annualization_horizon_hours_per_year=8000.0)
+    assert any("must equal" in e for e in errors)
+
+
+def test_validate_load_state_durations_flags_shortfall() -> None:
+    """The equality rule (RA-LOAD) rejects UNDER-shooting the declared horizon too,
+    not only exceeding it -- a genuine behavior change from the pre-conformance
+    upper-bound-only check."""
+    states = [_load_state(annual_duration_hours=1000.0)]
+    errors = validate_load_state_durations(states, annualization_horizon_hours_per_year=8000.0)
+    assert any("must equal" in e for e in errors)
 
 
 def test_validate_load_state_durations_passes_for_valid_set() -> None:
@@ -135,7 +152,7 @@ def test_validate_load_state_durations_passes_for_valid_set() -> None:
         _load_state(load_state_id="shoulder", annual_duration_hours=3000.0),
         _load_state(load_state_id="base", annual_duration_hours=3000.0),
     ]
-    assert validate_load_state_durations(states, annual_operating_hours=8000.0) == []
+    assert validate_load_state_durations(states, annualization_horizon_hours_per_year=8000.0) == []
 
 
 # ── SensitivityCaseDefinition ─────────────────────────────────────────────────
@@ -184,6 +201,58 @@ def test_research_experiment_config_rejects_duplicate_load_state_ids() -> None:
 def test_research_experiment_config_rejects_duplicate_sensitivity_case_ids() -> None:
     with pytest.raises(ValidationError):
         _config(sensitivity_cases=[_sensitivity_case(), _sensitivity_case()])
+
+
+def test_research_experiment_config_rejects_load_state_duration_mismatch_against_horizon() -> None:
+    """ResearchExperimentConfig now enforces RA-LOAD's equality rule structurally at
+    parse time -- a config whose load_states don't sum to annualization
+    .horizon_hours_per_year is rejected before any workflow stage ever sees it."""
+    with pytest.raises(ValidationError, match="must equal"):
+        _config(
+            load_states=[_load_state(annual_duration_hours=999.0)],
+            annualization=_annualization_policy(horizon_hours_per_year=2000.0),
+        )
+
+
+def test_research_experiment_config_accepts_matching_horizon_across_multiple_states() -> None:
+    config = _config(
+        load_states=[
+            _load_state(load_state_id="peak", annual_duration_hours=1000.0),
+            _load_state(load_state_id="base", annual_duration_hours=1000.0),
+        ],
+        annualization=_annualization_policy(horizon_hours_per_year=2000.0),
+    )
+    assert len(config.load_states) == 2
+
+
+# ── AnnualizationPolicy ───────────────────────────────────────────────────────
+
+def test_annualization_policy_accepts_valid_values() -> None:
+    policy = _annualization_policy()
+    assert policy.horizon_hours_per_year == 2000.0
+    assert policy.useful_heat_boundary == "consumer_delivery"
+
+
+def test_annualization_policy_rejects_non_positive_horizon() -> None:
+    with pytest.raises(ValidationError):
+        _annualization_policy(horizon_hours_per_year=0.0)
+
+
+@pytest.mark.parametrize("field", [
+    "include_dh_pumping_electricity_in_opex", "include_geothermal_pumping_electricity_in_opex",
+    "include_auxiliary_heat_in_opex", "capex_annualized_once",
+])
+def test_annualization_policy_rejects_any_false_flag(field: str) -> None:
+    """These flags are a checked, honest restatement of behavior
+    economics.annualized_system_costing.compute_annualized_system_economics() always
+    implements -- declaring anything else would silently misrepresent actual behavior."""
+    with pytest.raises(ValidationError):
+        _annualization_policy(**{field: False})
+
+
+def test_annualization_policy_rejects_non_consumer_delivery_boundary() -> None:
+    with pytest.raises(ValidationError):
+        AnnualizationPolicy(horizon_hours_per_year=2000.0, useful_heat_boundary="raw_geothermal")
 
 
 # ── LoadStatePerformanceResult ────────────────────────────────────────────────

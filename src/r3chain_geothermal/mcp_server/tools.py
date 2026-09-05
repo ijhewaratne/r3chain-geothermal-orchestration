@@ -163,17 +163,36 @@ _RESEARCH_EXPERIMENT_ARTIFACT_FILENAMES = (
     "referenced_v2_result_snapshot.json",
     "research_experiment_result.json",
     AUDIT_FILENAME,
-    "alternative_annualized_comparison.csv",
-    "research_experiment_report.md",
+    "experiment_input.json",
+    JOINT_STUDY_SNAPSHOT_FILENAME,  # same literal string as joint_workflow_v2's own constant -- not re-imported
+    "load_states.json",
+    "load_state_results.json",
+    "annualized_alternative_comparison.csv",
+    "annualized_integrated_result.json",
+    "geothermal_only_result.json",
+    "geothermal_only_comparison.csv",
+    "network_only_result.json",
+    "network_only_comparison.csv",
+    "research_comparison.json",
+    "research_comparison.csv",
+    "sensitivity_results.json",
+    "sensitivity_comparison.csv",
+    OBJECTIVE_POLICY_FILENAME,  # same literal string as joint_workflow_v2's own constant -- not re-imported
+    PARETO_OR_RANKING_FILENAME,  # same literal string as joint_workflow_v2's own constant -- not re-imported
+    "research_findings.md",
     MANIFEST_FILENAME,
 )
-"""Exactly the 8 filenames a completed (`workflow_status == "completed"`)
-research_experiment run publishes -- mirrors
-workflow/research_experiment_export.py's own
-`write_research_experiment_artifacts()` bundle exactly. Filenames unique to
+"""Exactly the 22 filenames (19 spec-§17-named + referenced_v2_result_snapshot.json
++ research_experiment_result.json + manifest.json) a completed
+(`workflow_status == "completed"`) research_experiment run publishes -- mirrors
+workflow/research_experiment_export.py's own `write_research_experiment_artifacts()`
+bundle exactly (conformance round: the spec's own "shall publish at least" §17 list,
+not the smaller 8-file bundle this tuple originally named). Filenames unique to
 this run type are written as literal strings (not re-imported constants),
 matching `_JOINT_ARTIFACT_FILENAMES`'s own documented precedent for
-NETWORK_CANDIDATES_SVG_FILENAME above."""
+NETWORK_CANDIDATES_SVG_FILENAME above; filenames that happen to share the exact
+same string as an already-imported joint_workflow_v2/core constant reuse that
+import instead of re-typing the literal a second time."""
 
 _ALLOWED_ARTIFACT_FILENAMES = tuple(dict.fromkeys(
     _CANONICAL_ARTIFACT_FILENAMES + _JOINT_ARTIFACT_FILENAMES + _RESEARCH_EXPERIMENT_ARTIFACT_FILENAMES

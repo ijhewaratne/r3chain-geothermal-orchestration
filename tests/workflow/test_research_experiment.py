@@ -119,12 +119,16 @@ def test_malformed_research_experiment_config_fails_before_any_simulation() -> N
     assert result.failure_code == "RESEARCH_EXPERIMENT_CONFIG_INVALID"
 
 
-def test_load_state_durations_exceeding_base_assumptions_hours_fails_loudly() -> None:
+def test_load_state_durations_mismatching_the_declared_horizon_fails_loudly() -> None:
+    """RA-LOAD's equality rule is now enforced structurally by
+    ResearchExperimentConfig itself (data_contracts.research_experiment) at Stage 0
+    parse time -- a mismatch surfaces as RESEARCH_EXPERIMENT_CONFIG_INVALID, before
+    run_joint_workflow_v2() or any simulation ever runs."""
     config = _config()
     config["research_experiment"]["load_states"][0]["annual_duration_hours"] = 999999.0
     result = run_research_experiment(_raw(), config, source_provenance=_provenance(), package_root=_ROOT)
     assert isinstance(result, ResearchExperimentFailure)
-    assert result.failure_code == "RESEARCH_EXPERIMENT_LOAD_STATE_DURATIONS_INVALID"
+    assert result.failure_code == "RESEARCH_EXPERIMENT_CONFIG_INVALID"
 
 
 # ── CLI dispatch ──────────────────────────────────────────────────────────────
@@ -141,7 +145,7 @@ def test_cli_dispatches_to_research_experiment_when_enabled(tmp_path) -> None:
     assert exit_code == EXIT_OK
     assert (output_dir / "research_experiment_result.json").is_file()
     assert (output_dir / "manifest.json").is_file()
-    assert (output_dir / "research_experiment_report.md").is_file()
+    assert (output_dir / "research_findings.md").is_file()
 
 
 def test_cli_run_twice_via_cli_yields_identical_bundle_hash(tmp_path) -> None:

@@ -41,7 +41,6 @@ from ..data_contracts.research_experiment import (
     BaselineComparisonResult,
     ResearchExperimentConfig,
     ResearchExperimentDecisionSummary,
-    validate_load_state_durations,
 )
 from ..decision.joint_policy import JointDecisionResult
 from ..decision.research_comparison import (
@@ -106,7 +105,17 @@ class ResearchExperimentResult(BaseModel):
     alternative_summaries: list[ResearchExperimentAlternativeSummary]
     integrated_decision: JointDecisionResult
     geothermal_only_preferred_site_id: str | None
+    geothermal_only_lcoh_by_site_id: dict[str, float]
+    """Every site whose scenario cleared its own HX boundary, keyed by site_id --
+    the exact value `decision.research_comparison.rank_geothermal_only_baseline()`
+    already computes to pick `geothermal_only_preferred_site_id`; threaded through
+    unchanged for the §17 `geothermal_only_result.json`/`.csv` export (RA-ART)."""
     network_only_preferred_attachment_id: str | None
+    network_only_subset: dict[str, AnnualizedAlternativeEconomicResult]
+    """The fixed-reference-scenario subset of `alternative_summaries` that
+    `decision.research_comparison.rank_network_only_baseline()` already filters to
+    and decides over; threaded through unchanged for the §17
+    `network_only_result.json`/`.csv` export (RA-ART)."""
     baseline_comparison: BaselineComparisonResult
     sensitivity_decision_summary: ResearchExperimentDecisionSummary
     audit: WorkflowAuditRecord
@@ -291,27 +300,16 @@ def run_research_experiment(
     stage_calls.append(StageCallRecord(order=3, stage_name="verify_referenced_study_package", status="success"))
 
     # ── Stage 3: per-alternative load-state evaluation + annualized economics ──
+    # RA-LOAD's own duration-equality rule ("sum of all hours_per_year must equal
+    # the annualization horizon declared by policy") is now enforced structurally by
+    # ResearchExperimentConfig's own validator at Stage 0 parse time (data_contracts
+    # .research_experiment.validate_load_state_durations(), called from
+    # ResearchExperimentConfig._validate()) -- a config that violates it can never
+    # reach this point, so no separate runtime check is repeated here.
     coupling_assumptions = CouplingAssumptions.from_config_dict(config)
     injection_policy = GeothermalInjectionPolicy.from_config_dict(config)
     tolerances = GateTolerances.from_config_dict(config)
     base_assumptions = load_base_assumptions(v2_result.package.economics, package_root)
-
-    duration_errors = validate_load_state_durations(
-        research_config.load_states, annual_operating_hours=base_assumptions.annual_full_load_hours,
-    )
-    if duration_errors:
-        stage_calls.append(StageCallRecord(
-            order=4, stage_name="validate_load_state_durations", status="failure",
-            failure_code="RESEARCH_EXPERIMENT_LOAD_STATE_DURATIONS_INVALID", message="; ".join(duration_errors),
-        ))
-        return ResearchExperimentFailure(
-            run_id=run_id, failure_code="RESEARCH_EXPERIMENT_LOAD_STATE_DURATIONS_INVALID",
-            stage="validate_load_state_durations",
-            message=f"declared load_states are invalid against the referenced base economics' own "
-                    f"annual_full_load_hours ({base_assumptions.annual_full_load_hours!r}): {'; '.join(duration_errors)}",
-            details={"errors": duration_errors}, audit=_audit(), created_at=workflow_created_at,
-        )
-    stage_calls.append(StageCallRecord(order=4, stage_name="validate_load_state_durations", status="success"))
 
     scenarios_by_key = {(s.scenario_id, s.site_id): s for s in v2_result.package.resource_scenarios}
     routes_by_id = {r.route_id: r for r in v2_result.routes}
@@ -365,7 +363,7 @@ def run_research_experiment(
     integrated_has_any_feasible = any(a.computable for a in annualized_by_id.values())
 
     # ── Stage 5: geothermal-only baseline ──
-    geo_only_preferred_site, geo_only_has_any_rankable, _ = rank_geothermal_only_baseline(
+    geo_only_preferred_site, geo_only_has_any_rankable, geo_only_lcoh_by_site = rank_geothermal_only_baseline(
         v2_result.package.resource_scenarios, v2_result.pydoublet_result,
         coupling_assumptions=coupling_assumptions, base_assumptions=base_assumptions,
     )
@@ -374,12 +372,12 @@ def run_research_experiment(
     # ── Stage 6: network-only, fixed-source baseline ──
     fixed_reference_scenario = select_fixed_reference_scenario(v2_result.package.resource_scenarios)
     if fixed_reference_scenario is not None:
-        network_only_preferred_attachment, network_only_has_any_rankable, _ = rank_network_only_baseline(
+        network_only_preferred_attachment, network_only_has_any_rankable, network_only_subset = rank_network_only_baseline(
             annualized_by_id, attachment_by_id, resource_scenario_by_id,
             fixed_reference_scenario.scenario_id, research_config.decision_policy,
         )
     else:
-        network_only_preferred_attachment, network_only_has_any_rankable = None, False
+        network_only_preferred_attachment, network_only_has_any_rankable, network_only_subset = None, False, {}
     stage_calls.append(StageCallRecord(order=len(stage_calls) + 1, stage_name="rank_network_only_baseline", status="success"))
 
     # ── Stage 7: cross-baseline comparison ──
@@ -406,7 +404,9 @@ def run_research_experiment(
         run_id=run_id, research_config=research_config, referenced_v2_result=v2_result,
         alternative_summaries=alternative_summaries, integrated_decision=integrated_decision,
         geothermal_only_preferred_site_id=geo_only_preferred_site,
+        geothermal_only_lcoh_by_site_id=geo_only_lcoh_by_site,
         network_only_preferred_attachment_id=network_only_preferred_attachment,
+        network_only_subset=network_only_subset,
         baseline_comparison=baseline_comparison, sensitivity_decision_summary=sensitivity_summary,
         audit=_audit(), created_at=workflow_created_at,
     )

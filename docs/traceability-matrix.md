@@ -280,6 +280,23 @@ mirroring Workstream K's own Phase-9 checklist item 3; and the same privacy/secr
 full-file-review pass Workstream K's own Phase 9 executed. None of these gaps affect any golden
 value already reproduced — they are verification-completeness items, not defects found.
 
+### Conformance round (this session, 2026-09-05, after the workstream above was first pushed)
+
+A closer, commit-pinned re-read of `docs/specifications/R3CHAIN_FINAL_RESEARCH_ALIGNMENT_IMPLEMENTATION_SPEC.md`
+against the actual code found three genuine literal conformance gaps (not missing architecture):
+an explicit `AnnualizationPolicy`/duration-equality rule the spec's §1.7.3 requires was implemented
+only implicitly as an upper-bound check; the spec's optional `LoadState.required_for_feasibility`
+field was undocumented rather than either implemented or explicitly deferred; and the spec's own
+§17 "shall publish at least" 19-file artifact list was published as a smaller 8-file bundle. All
+three are now resolved — see `docs/decisions/decision-register.md` IMPL-028 for the full record —
+without touching any scientific calculation: the two threaded-through baseline breakdowns
+(`geothermal_only_lcoh_by_site_id`, `network_only_subset`) and the 15 new artifact renderers are
+all thin serializations of data `ResearchExperimentResult` already computed. Full offline suite
+re-run clean after every fix; canonical and v2 golden `run_id`s unaffected. The research-experiment
+layer's own `run_id` changed (config bytes changed via the new `annualization` section) — expected,
+and this layer's own tests derive `run_id` dynamically rather than pinning a golden literal, so
+nothing needed updating for that.
+
 ## MCP and orchestration requirements
 
 | ID | Status | Evidence |
@@ -347,6 +364,10 @@ canonical config and the workshop-negative config from directories outside the r
   deliberately different config), `C5_negative` correctly infeasible, C1-C4 unaffected.
 
 ## Final suite result
+
+**HISTORICAL -- superseded by the "Phase 9 release-candidate verification" section (Workstream K,
+1240/1240 passing, three-job green CI) and by Workstream L above.** Preserved unedited below for
+its own historical record; do not read the figures in this section as the current suite status.
 
 Full offline suite (`.venvs/orchestration`, `python -m pytest -q`), run after every phase and once
 more after this Phase 9 hardening pass (which added the MCP-002 capabilities fix and its own test):

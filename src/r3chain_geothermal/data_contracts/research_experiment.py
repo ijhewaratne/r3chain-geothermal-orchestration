@@ -98,7 +98,21 @@ class LoadStateDefinition(BaseModel):
     steady-state load conditions per integrated alternative"). `demand_scale_fraction`
     scales the v2 study package's own baseline consumer demand (network.blueprint's
     design demand is treated as the peak/1.0 reference); `annual_duration_hours` is
-    this state's own share of the year it represents."""
+    this state's own share of the annualization horizon it represents (see
+    `AnnualizationPolicy.horizon_hours_per_year` below -- the sum of every declared
+    load state's own `annual_duration_hours` must equal that horizon exactly).
+
+    v1.0 schema note: the governing specification's own suggested `LoadState` schema
+    additionally names an optional `required_for_feasibility: bool` field (a state NOT
+    so marked would be a diagnostic-only load level whose own infeasibility would not,
+    by itself, make an alternative non-computable). That field is deliberately NOT
+    implemented here: every load state declared in this v1.0 schema is implicitly
+    mandatory -- `economics.annualized_system_costing.compute_annualized_system_economics()`
+    reports `computable=False` whenever ANY declared state is infeasible, with no
+    per-state override. This experiment's own three states must all be mandatory, so
+    building unused optional-state configurability would be speculative complexity with
+    no current caller (CLAUDE.md). Reserved for a future schema version if a genuinely
+    diagnostic-only, non-mandatory load state is ever needed."""
     model_config = _MODEL_CONFIG
 
     load_state_id: str
@@ -127,26 +141,73 @@ class LoadStateDefinition(BaseModel):
 
 
 def validate_load_state_durations(
-    load_states: list[LoadStateDefinition], *, annual_operating_hours: float,
+    load_states: list[LoadStateDefinition], *, annualization_horizon_hours_per_year: float,
 ) -> list[str]:
     """Returns a list of violation messages (empty if none). Never raises --
     callers (ResearchExperimentConfig's own validator, and workflow-level checks)
-    decide how to surface a non-empty result. Duplicate load_state_id and a total
-    duration exceeding the referenced study package's own annual_operating_hours
-    are both checkable at this purely-structural level; the CHOICE of scale
-    fractions/durations themselves is a labelled synthetic_assumption, not
-    structurally validated here."""
+    decide how to surface a non-empty result. Duplicate load_state_id and the spec's
+    own explicit rule ("sum of all hours_per_year must equal the annualization horizon
+    declared by policy") are both checkable at this purely-structural level; the
+    CHOICE of scale fractions/durations/horizon themselves are a labelled
+    synthetic_assumption, not structurally validated here."""
     errors: list[str] = []
     ids = [s.load_state_id for s in load_states]
     if len(ids) != len(set(ids)):
         errors.append("load_state_id values must be unique across load_states")
     total_hours = sum(s.annual_duration_hours for s in load_states)
-    if total_hours > annual_operating_hours * (1.0 + 1e-9):
+    if not math.isclose(total_hours, annualization_horizon_hours_per_year, rel_tol=1e-9, abs_tol=1e-6):
         errors.append(
-            f"sum of annual_duration_hours ({total_hours!r}) exceeds the referenced study package's own "
-            f"annual_operating_hours ({annual_operating_hours!r})"
+            f"sum of annual_duration_hours ({total_hours!r}) must equal "
+            f"AnnualizationPolicy.horizon_hours_per_year ({annualization_horizon_hours_per_year!r}) exactly"
         )
     return errors
+
+
+# ── Annualization horizon (RA-ECON) ──────────────────────────────────────────
+
+class AnnualizationPolicy(BaseModel):
+    """Explicit, declared counterpart of `economics.annualized_system_costing
+    .compute_annualized_system_economics()`'s own ALREADY-FIXED behavior -- this
+    model does not introduce new configurability; it makes that fixed behavior an
+    honestly stated, checked fact rather than an implicit assumption no config value
+    ever names. `horizon_hours_per_year` need not be the full 8760 h/a calendar year:
+    it is whatever annual operating-hours horizon this experiment's own load states are
+    meant to tile exactly (`validate_load_state_durations()` enforces the equality) --
+    for a synthetic demonstration representing geothermal/DH operating hours rather
+    than a full calendar year, a smaller declared horizon (matching the referenced v2
+    package's own base economics `annual_full_load_hours`) is a legitimate, honestly
+    labelled choice, not an error."""
+    model_config = _MODEL_CONFIG
+
+    horizon_hours_per_year: float
+    useful_heat_boundary: Literal["consumer_delivery"] = "consumer_delivery"
+    include_dh_pumping_electricity_in_opex: bool = True
+    include_geothermal_pumping_electricity_in_opex: bool = True
+    include_auxiliary_heat_in_opex: bool = True
+    capex_annualized_once: bool = True
+
+    @model_validator(mode="after")
+    def _validate(self) -> "AnnualizationPolicy":
+        errors: list[str] = []
+        if self.horizon_hours_per_year <= 0:
+            errors.append(f"horizon_hours_per_year must be > 0, got {self.horizon_hours_per_year!r}")
+        # These five fields describe behavior compute_annualized_system_economics()
+        # always implements -- there is no code path that honors any other
+        # combination. A config declaring otherwise would silently misrepresent what
+        # actually runs, so it is rejected here rather than accepted and ignored.
+        if not self.include_dh_pumping_electricity_in_opex:
+            errors.append("include_dh_pumping_electricity_in_opex must be true (always included by the implementation)")
+        if not self.include_geothermal_pumping_electricity_in_opex:
+            errors.append(
+                "include_geothermal_pumping_electricity_in_opex must be true (always included by the implementation)"
+            )
+        if not self.include_auxiliary_heat_in_opex:
+            errors.append("include_auxiliary_heat_in_opex must be true (always included by the implementation)")
+        if not self.capex_annualized_once:
+            errors.append("capex_annualized_once must be true (the implementation never annualizes CAPEX per load state)")
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
 
 
 # ── Sensitivity (RA-SENS) ─────────────────────────────────────────────────────
@@ -196,6 +257,7 @@ class ResearchExperimentConfig(BaseModel):
     referenced_study_package_relative_path: str
     referenced_study_package_expected_sha256: str = _Sha256Hex
     load_states: list[LoadStateDefinition]
+    annualization: AnnualizationPolicy
     sensitivity_cases: list[SensitivityCaseDefinition]
     decision_policy: DecisionPolicy
     """Reused verbatim from data_contracts.joint_study -- see module docstring.
@@ -219,6 +281,10 @@ class ResearchExperimentConfig(BaseModel):
         case_ids = [c.case_id for c in self.sensitivity_cases]
         if len(case_ids) != len(set(case_ids)):
             errors.append("case_id values must be unique across sensitivity_cases")
+        if self.load_states:
+            errors.extend(validate_load_state_durations(
+                self.load_states, annualization_horizon_hours_per_year=self.annualization.horizon_hours_per_year,
+            ))
         if errors:
             raise ValueError("; ".join(errors))
         return self

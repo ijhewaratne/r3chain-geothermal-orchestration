@@ -122,7 +122,7 @@ def test_research_experiment_artifact_is_retrievable_through_geo_get_artifact(re
     run = tools.run_research_experiment_tool(
         _raw(), _provenance_input(), fixed_config=_research_config(), registry=registry, package_root=_ROOT,
     )
-    result = tools.get_artifact(run.run_id, "research_experiment_report.md", registry=registry)
+    result = tools.get_artifact(run.run_id, "research_findings.md", registry=registry)
     assert "SYNTHETIC" in result.content
 
 

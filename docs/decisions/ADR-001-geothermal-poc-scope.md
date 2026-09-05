@@ -255,6 +255,13 @@ fresh green CI confirmation of this new layer on real GitHub Actions runners (ve
 against this session's local `.venvs/orchestration` environment) -- the same open item D10
 already recorded for the v2 layer's own macOS job remains open here too.
 
+**Conformance round (2026-09-05, after this layer was first pushed):** a closer, commit-pinned
+re-read of the specification against the actual code found three genuine literal gaps —
+an explicit `AnnualizationPolicy`/duration-equality rule (§1.7.3), the optional
+`LoadState.required_for_feasibility` field, and the full §17 "shall publish at least" 19-file
+artifact list (published as a smaller 8-file bundle). All three resolved without touching any
+scientific calculation — see `docs/decisions/decision-register.md` IMPL-028 for the full record.
+
 ## Consequences
 
 - Scope creep toward geological placement, weighted scoring, or real Wuppertal data

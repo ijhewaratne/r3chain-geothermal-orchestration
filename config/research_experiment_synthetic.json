@@ -216,7 +216,16 @@
         "assumption_status": "synthetic_assumption"
       }
     ],
-    "load_states_note": "Three REPRESENTATIVE STEADY-STATE conditions (spec's own explicit scope boundary), never a transient/hourly time series. Durations sum to exactly 5000.0 h/a, matching config/demo_assumptions.json's own economics.annual_full_load_hours.value -- the base_assumptions this layer's annualized economics actually consumes (economics/joint_costing.py::load_base_assumptions(), referenced via joint_study_v2 -> config/joint_study_synthetic_v2.json's own economics.base_assumptions_package_relative_path). The 'base' state (35% demand, largest deliverable-geothermal-heat-over-demand surplus ratio of the three) is the one most likely to exercise network/candidate.py's own documented curtailment-margin risk area (Phase-0 audit finding) -- reported honestly per load state if it occurs, never masked.",
+    "load_states_note": "Three REPRESENTATIVE STEADY-STATE conditions (spec's own explicit scope boundary), never a transient/hourly time series. Durations sum to exactly annualization.horizon_hours_per_year (5000.0 h/a) -- enforced structurally by ResearchExperimentConfig's own validator, not merely documented here. The 'base' state (35% demand, largest deliverable-geothermal-heat-over-demand surplus ratio of the three) is the one most likely to exercise network/candidate.py's own documented curtailment-margin risk area (Phase-0 audit finding) -- reported honestly per load state if it occurs, never masked. All three states are implicitly mandatory (v1.0 schema note, data_contracts/research_experiment.py::LoadStateDefinition): the specification's own optional required_for_feasibility field is not implemented since every state declared here must be mandatory for this experiment's own scientific question -- reserved for a future schema version.",
+    "annualization": {
+      "horizon_hours_per_year": 5000.0,
+      "useful_heat_boundary": "consumer_delivery",
+      "include_dh_pumping_electricity_in_opex": true,
+      "include_geothermal_pumping_electricity_in_opex": true,
+      "include_auxiliary_heat_in_opex": true,
+      "capex_annualized_once": true
+    },
+    "annualization_note": "The specification's own illustrative AnnualizationPolicy example uses horizon_hours_per_year=8760.0 (a full calendar year). This experiment declares 5000.0 instead -- NOT a full calendar year, but this experiment's own REPRESENTED geothermal/DH operating-hours horizon, matching config/demo_assumptions.json's own economics.annual_full_load_hours.value (the base_assumptions this layer's annualized economics actually consumes via economics/joint_costing.py::load_base_assumptions(), referenced through joint_study_v2 -> config/joint_study_synthetic_v2.json's own economics.base_assumptions_package_relative_path). The three load_states above are not intended to tile a full 8760-hour calendar year -- only this smaller, explicitly declared operating regime -- so 5000.0 is the correct horizon for THIS experiment, not a deviation from it. The five boolean/enum fields inside annualization are not configurable toggles: they are a checked, honest restatement of what economics/annualized_system_costing.py::compute_annualized_system_economics() always does (every OPEX term included, CAPEX annualized once, useful heat is consumer-delivered heat) -- ResearchExperimentConfig's own validator rejects any other combination.",
     "sensitivity_cases": [
       {
         "case_id": "connection_capex_plus_20pct", "label": "+20% connection-pipe CAPEX",
