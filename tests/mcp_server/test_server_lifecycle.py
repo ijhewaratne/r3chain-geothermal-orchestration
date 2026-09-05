@@ -120,7 +120,20 @@ def test_real_server_process_cleans_up_its_temp_directory_on_sigterm():
 
     process = subprocess.Popen(
         [sys.executable, "-m", "r3chain_geothermal.mcp_server.server"],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        # docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+        # Phase 7/9: a real macos-latest GitHub Actions CI run timed out
+        # waiting for this process to exit after SIGTERM -- STILL at a
+        # widened 20s, which merely bumping the number again would not fix
+        # with confidence. Root cause diagnosed instead: stdout/stderr were
+        # `subprocess.PIPE` but this test never reads either stream. If the
+        # server (or an import it triggers -- numpy/pandapipes deprecation
+        # warnings are exactly this shape) writes enough bytes to fill the
+        # OS pipe buffer, the child blocks on write() indefinitely, unable
+        # to ever finish handling SIGTERM regardless of how long this test
+        # waits -- no finite timeout fixes a genuine full-pipe deadlock.
+        # DEVNULL removes the possibility entirely: this test only ever
+        # needs the process's exit behaviour, never its output content.
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     try:
         new_dir = None
@@ -136,14 +149,13 @@ def test_real_server_process_cleans_up_its_temp_directory_on_sigterm():
         assert new_dir.exists()
 
         process.send_signal(signal.SIGTERM)
-        # docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
-        # Phase 7/9: a real ubuntu-latest/macos-latest GitHub Actions CI run
-        # observed this exact wait exceed 5s (subprocess.TimeoutExpired) on
-        # a loaded CI runner -- widened to 20s, a CI-environment timing
-        # margin for real process teardown, not a change to what the test
-        # actually proves (the temp directory must still be gone once the
-        # process has exited -- the assertion below is unchanged).
-        process.wait(timeout=20)
+        # 30s: a generous CI-environment timing margin for real process
+        # teardown (unrelated to the pipe-deadlock fix above, which
+        # addresses a different, likely more significant failure mode) --
+        # not a change to what the test actually proves (the temp
+        # directory must still be gone once the process has exited -- the
+        # assertion below is unchanged).
+        process.wait(timeout=30)
 
         assert not new_dir.exists(), "SIGTERM handler did not clean up the registry's temp directory"
     finally:

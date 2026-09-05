@@ -167,26 +167,32 @@ amendment. Real drilling-location determination remains exactly as constrained b
 and the paragraph above -- this amendment corrects the SYNTHETIC methodology's
 honesty and structure, it does not loosen the real-data gate.
 
-**Implementation status (updated 2026-09-04):** Phases 1-7 of the specification's own
+**Implementation status (updated 2026-09-05):** Phases 1-9 of the specification's own
 §21 phased plan are implemented -- corrected contracts/terminology and relationship
 validation (Phase 1); site-linked resource scenarios and site-origin-aware route
 generation, with only compatible combinations evaluated (Phase 2); connection-pipe
 diameter threaded into the pandapipes evaluation itself (Phase 3); corrected
 site/scenario-sourced economics and a materiality-aware Pareto decision policy with
 optional primary-objective ranking (Phase 4); a committed, ready-to-run joint
-configuration with a full audit bundle, reachable by CLI (Phase 5); the same corrected
-layer dispatched through the existing six-tool MCP server, with persistent-registry
-rehydration distinguishing canonical and joint run types (Phase 6); and a diagnosed,
-corrected, empirically Linux-verified cross-platform reproducibility claim, including
-two genuine defects this verification work found and fixed that the specification's own
-diagnosis did not name -- a joint-CLI package-path resolution bug reachable only from an
-external run directory, and two solver-non-convergence unit tests that depended on
-BLAS-backend-specific behaviour rather than a deterministic injected failure (Phase 7).
-Phase 8 (documentation reconciliation, this edit among others) and Phase 9
-(release-candidate verification) remain. Every canonical C1-C4 golden value (`run_id`,
-LCOH set) is unchanged throughout. See
+configuration with the complete §17 audit bundle (16 hashed files + manifest.json),
+reachable by CLI (Phase 5); the same corrected layer dispatched through the existing
+six-tool MCP server, with persistent-registry rehydration distinguishing canonical and
+joint run types (Phase 6); a diagnosed and corrected cross-platform reproducibility
+claim, verified against BOTH local Docker (Linux/arm64) and a real `ubuntu-latest`
+GitHub Actions run -- both `ubuntu-latest` jobs (Python 3.11 and 3.12) now pass
+completely on real x86_64 hardware after the fixes; one macOS-specific CI-timing issue,
+unrelated to the joint-site-connection methodology itself, remains open (Phase 7);
+README/ADR/decision-register/traceability-matrix reconciled against actual current
+behaviour, including a genuine README self-contradiction found and corrected (Phase 8);
+and a full release-candidate verification checklist executed against the corrected code
+(Phase 9). Every canonical C1-C4 golden value (`run_id`, LCOH set) is unchanged
+throughout. **Not yet closed:** a fresh green three-job CI confirmation of the fully
+corrected code (the macOS job's own remaining issue was diagnosed and fixed locally, not
+yet re-confirmed on real CI). See
 `docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md`
-§21 and `docs/decisions/decision-register.md` for the phase-by-phase evidence.
+§21, `docs/traceability-matrix.md`'s own Phase 9 section, and
+`docs/decisions/decision-register.md` (IMPL-023, IMPL-024) for the phase-by-phase
+evidence.
 
 ## Consequences
 

@@ -1,8 +1,12 @@
 # Issue: cross-platform reproducibility verification and correction (REPRO-001..010, AC-J16)
 
-**Status**: **diagnosed and corrected against real `ubuntu-latest`/`macos-latest` GitHub Actions CI
-evidence (run `33918616460`, commit `dc71d7d`). Fixes applied; re-verified locally on macOS; the
-corrected commit has not yet been re-pushed/re-run on CI as of this writing** (2026-09-04,
+**Status**: **the Phase 7 fixes (run `33918616460`, commit `dc71d7d`) were pushed externally
+(commit `9da0bb8`) and re-run on real CI (run `33948931491`): both `ubuntu-latest` jobs (Python 3.11
+AND 3.12) now PASS COMPLETELY, confirming the hash-divergence fix and the third pathological-solver
+fix both hold on genuine x86_64 hardware. One remaining issue, unrelated to this specification's own
+joint-site-connection scope, was found on `macos-latest` (a pre-existing subprocess-lifecycle test's
+own CI-timing margin) -- diagnosed and fixed (see "Update 2026-09-05" below); not yet re-confirmed by
+a fresh CI run** (2026-09-05,
 `docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md` Phase 7/9).
 
 ## Problem (spec §2.5 point 13, §18)
@@ -155,15 +159,48 @@ this closes the gap between that claim and what had actually been tested. `macos
 deliberately NOT tested against 3.12: that specific claim was not verified, and adding it without
 evidence would repeat exactly the mistake REPRO-003 warns against.
 
-## What remains open
+## Update 2026-09-05 — the fixes were confirmed on real CI (partially)
 
-The corrected commit has been verified locally (full macOS suite green -- see
-`docs/decisions/decision-register.md`'s own final entry for the exact count) but has **not yet been
-re-pushed and re-run on real CI** as of this writing -- this session does not push without separate
-authorisation, and the previous push that produced the evidence above was made by a process external
-to this session. Until a green three-job CI run exists for the corrected commit, AC-J16 (cross-platform
-release gate) remains genuinely PARTIAL, not assumed passing: the diagnosis and fixes are complete and
-locally re-verified, but the closing loop -- a real green run confirming them -- has not yet happened.
+The corrected commit above (containing every fix this document describes) was pushed externally as
+`9da0bb8` ("feat: Enhance joint workflow artifacts with new resource and site files" -- also carrying
+the Phase 9 §17 artifact-bundle work, unrelated to this document's own concern) and triggered a real
+GitHub Actions run, `33948931491` (`gh run view 33948931491`). Result:
+
+```
+✓ test (ubuntu-latest, 3.12)  -- PASSED, 12m17s
+✓ test (ubuntu-latest, 3.11)  -- PASSED, 6m45s
+X test (macos-latest, 3.11)   -- FAILED, 6m43s
+```
+
+**Both `ubuntu-latest` jobs now pass completely** -- direct, real confirmation that the hash-divergence
+fix (tier-3 scientific-equivalence assertions replacing the cross-architecture byte-literal) and the
+third pathological-solver-test fix both hold on genuine x86_64 hardware, on both Python versions. This
+is the strongest evidence this document has produced: not a local approximation, but the actual target
+environment passing.
+
+`macos-latest` failed at a DIFFERENT test than any of the five diagnosed above:
+`test_real_server_process_cleans_up_its_temp_directory_on_sigterm`, this time timing out at the
+WIDENED 20-second `process.wait()` (not the original 5s) -- `subprocess.TimeoutExpired`. This is a
+pre-existing MCP-server-lifecycle test, unrelated to the joint-site-connection specification's own
+scope. Since simply widening the number again did not obviously address a genuine timeout (it failed
+at exactly the new limit, not merely close to the old one), the actual root cause was diagnosed
+instead: the test set `stdout=subprocess.PIPE, stderr=subprocess.PIPE` for the real server subprocess
+but never reads either stream anywhere in the test. If the server process (or an import it triggers --
+numpy/pandapipes deprecation warnings are exactly this shape) writes enough bytes to fill the OS pipe
+buffer, the child blocks indefinitely on `write()`, unable to ever finish handling `SIGTERM` -- no
+finite timeout fixes a genuine full-pipe deadlock. **Correction applied:** `stdout`/`stderr` (and
+`stdin`) redirected to `subprocess.DEVNULL` -- this test only ever needs the process's exit behaviour,
+never its output content, so discarding output removes the deadlock possibility entirely. The
+`process.wait()` timeout was also widened further, to 30 seconds, as a genuine (separate) CI-timing
+margin. Re-verified locally on macOS (6/6 tests in this file passing). This session could not trigger
+another real CI run to confirm the fix directly: `gh run rerun` was attempted and blocked by this
+session's own auto-mode classifier (a write action against shared external state) -- reported here
+rather than worked around.
+
+**Current status:** `ubuntu-latest`×{3.11,3.12} confirmed green on real hardware. `macos-latest`'s own
+remaining issue is diagnosed, fixed, and locally re-verified, but not yet re-confirmed by a fresh CI
+run. AC-J16 (cross-platform release gate) is PARTIAL for exactly this one remaining, narrow reason --
+not the broad diagnosis this document originally opened with.
 
 ## What this does NOT claim
 

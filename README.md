@@ -192,14 +192,17 @@ workflow through the *same* CLI:
   why this is a separate top-level entry point rather than a mode inside the single-scenario
   workflow (a Pareto shortlist cannot honestly be forced into a single-ranking result shape).
 
-- **A corrected joint site/connection run (v2)** — **status: Phases 1–7 of
+- **A corrected joint site/connection run (v2)** — **status: Phases 1–9 of
   `docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md` implemented
   (contracts/terminology, site-linked scenarios and routes, executable per-design connection
   diameters, corrected economics/materiality-aware Pareto decision policy, the primary
-  CLI/audit-bundle workflow, MCP dispatch and persistent-registry rehydration, and cross-platform
-  reproducibility verification); consult that specification's own §21 phased plan for exactly which
-  phases remain (8 — documentation reconciliation, in progress; 9 — release-candidate
-  verification).** Corrects the specific methodological gaps `workflow/joint_optimization.py` (v1)
+  CLI/audit-bundle workflow with the complete §17 artifact set, MCP dispatch and persistent-registry
+  rehydration, cross-platform reproducibility diagnosis and correction against real CI evidence, and
+  documentation reconciliation); the one remaining item is a fresh green three-job GitHub Actions run
+  confirming the corrected code on real `ubuntu-latest`/`macos-latest` hardware — see
+  `docs/traceability-matrix.md`'s own "Phase 9 release-candidate verification" section and
+  `docs/issues/cross-platform-reproducibility.md` for the exact current status.** Corrects the
+  specific methodological gaps `workflow/joint_optimization.py` (v1)
   never addressed (spec §2.5): `surface_site_id` is now an explicit, coordinate-bearing
   `SurfaceSite`, not a bare label; each `GeothermalResourceScenario` links to exactly one site (one
   site may carry several scenarios); routes are generated per site/network-attachment pair from

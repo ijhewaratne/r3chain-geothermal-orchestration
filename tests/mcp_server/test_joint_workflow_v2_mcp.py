@@ -178,7 +178,11 @@ def test_joint_artifact_pagination_reassembles_the_full_content(registry):
     assert reassembled == direct
 
 
-def test_geo_get_artifact_lists_all_twelve_joint_files(registry):
+def test_geo_get_artifact_lists_every_joint_file(registry):
+    """Was "...all_twelve_joint_files" before Phase 9's §17 artifact
+    additions grew the bundle from 12 to 17 files (16 hashed + manifest) --
+    the assertion below already reads the live `_JOINT_ARTIFACT_FILENAMES`
+    tuple rather than a hardcoded count, so only this name was stale."""
     run = tools.run_joint_workflow_tool(_raw(), _provenance_input(), fixed_config=_joint_config(), registry=registry, package_root=_ROOT)
     assert set(run.artifact_filenames) == set(tools._JOINT_ARTIFACT_FILENAMES)
     for filename in tools._JOINT_ARTIFACT_FILENAMES:
