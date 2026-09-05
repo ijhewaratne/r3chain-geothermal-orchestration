@@ -351,11 +351,27 @@ def test_strict_json_round_trip_for_success():
 
 
 _FAILURE_SCENARIOS = {
-    BaselineFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED: lambda: _blueprint(consumer_demands_kw={**_DEMANDS, "consumer_1": 1e9}),
+    # THERMAL_PIPEFLOW_NOT_CONVERGED deliberately excluded from this dict --
+    # REPRO-001 (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+    # Phase 7/9): a real ubuntu-latest GitHub Actions CI run (both Python
+    # 3.11 and 3.12) observed the SAME 1e9 kW absurd-demand blueprint
+    # previously used here produce PRESSURE_LIMIT_EXCEEDED instead of
+    # THERMAL_PIPEFLOW_NOT_CONVERGED on real x86_64 hardware -- the exact
+    # "pathological solver failure code" class of platform-sensitivity
+    # REPRO-007 warns against, this time surfacing in THIS round-trip test
+    # rather than the (already-corrected) semantic test in this same file.
+    # See test_strict_json_round_trip_for_thermal_pipeflow_not_converged
+    # below for its own deterministic, injected-failure replacement.
     BaselineFailureCode.CONSUMER_TEMPERATURE_NOT_MET: lambda: _blueprint(pipe_heat_transfer_coefficient_w_per_m2k=10.0),
     BaselineFailureCode.PRESSURE_LIMIT_EXCEEDED: lambda: _blueprint(p_supply_bar_abs=4.4),
     BaselineFailureCode.VELOCITY_LIMIT_EXCEEDED: lambda: _blueprint(p_supply_bar_abs=10.0, trunk_pipe_dn_mm=100.0),
 }
+"""These three remain scenario-driven (not injected): each is a converged
+solve that then fails a plain numeric gate comparison, not a
+solver-convergence outcome -- the real CI run above confirms all three
+pass unmodified with a comfortable, non-borderline margin on real x86_64
+hardware. Only THERMAL_PIPEFLOW_NOT_CONVERGED itself is convergence-
+outcome-dependent and therefore platform-sensitive."""
 
 
 @pytest.mark.parametrize("failure_code", list(_FAILURE_SCENARIOS))
@@ -368,6 +384,30 @@ def test_strict_json_round_trip_for_failure_codes(failure_code):
     dumped = result.model_dump_json()
     payload = _strict_json_loads(dumped)
     assert payload["failure_code"] == failure_code.value
+    restored = parse_baseline_result_json(dumped)
+    assert isinstance(restored, BaselineNetworkFailure)
+    assert restored == result
+
+
+def test_strict_json_round_trip_for_thermal_pipeflow_not_converged(monkeypatch):
+    """REPRO-008: THERMAL_PIPEFLOW_NOT_CONVERGED's own strict-JSON
+    round-trip proof, now via a deterministic injected pandapipes failure
+    (mirrors test_thermal_pipeflow_not_converged_via_injected_solver_failure
+    above) instead of an absurd-demand blueprint whose convergence outcome
+    a real x86_64 CI run proved is platform-sensitive."""
+    import pandapipes
+
+    def _raise_not_converged(*args, **kwargs):
+        raise pandapipes.PipeflowNotConverged("simulated non-convergence, injected for REPRO-008/AC-J16")
+
+    monkeypatch.setattr(pandapipes, "pipeflow", _raise_not_converged)
+    result = run_baseline_evaluation(_blueprint(), tolerances=_tolerances())
+    assert isinstance(result, BaselineNetworkFailure)
+    assert result.failure_code == BaselineFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED
+
+    dumped = result.model_dump_json()
+    payload = _strict_json_loads(dumped)
+    assert payload["failure_code"] == BaselineFailureCode.THERMAL_PIPEFLOW_NOT_CONVERGED.value
     restored = parse_baseline_result_json(dumped)
     assert isinstance(restored, BaselineNetworkFailure)
     assert restored == result

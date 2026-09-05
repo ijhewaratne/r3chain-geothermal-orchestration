@@ -102,33 +102,48 @@ linear solve (commonly below the 13th-15th significant digit), so it
 correctly makes the SAME physical solution, computed on two different
 platforms, hash identically.
 
-**Honesty boundary, updated (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
-Phase 7, REPRO-001..005, docs/issues/cross-platform-reproducibility.md):**
+**Honesty boundary, corrected by real evidence (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+Phase 7/9, REPRO-001..005, docs/issues/cross-platform-reproducibility.md):**
 this constant is a principled, documented, testable mechanism for the
 diagnosed class of noise, verified directly by
 tests/test_hashing.py::test_a_one_ulp_scale_float_difference_produces_the_same_hash
-and test_a_genuinely_different_value_still_changes_the_hash. Originally
-(Phase 2.3) this note said an empirically-reproduced macOS/Linux
-convergence guarantee would require actually re-running the workflow on a
-Linux machine, which that session could not do -- Phase 7 did: this
-project's own canonical golden run was built and tested fresh, from
-source, inside genuine Linux/arm64 containers (Python 3.11 and 3.12,
-OpenBLAS 0.3.31, glibc) via Docker, and reproduced the EXACT SAME
+and test_a_genuinely_different_value_still_changes_the_hash -- but it is
+NOT sufficient to make `bundle_scientific_sha256` byte-identical across
+every CPU architecture, and this module's own PRIOR version of this note
+was wrong to suggest otherwise. What actually happened: Phase 7 verified
+this project's canonical golden run inside genuine Linux/arm64 containers
+(Python 3.11 and 3.12, OpenBLAS, glibc) via Docker and found the IDENTICAL
 `bundle_scientific_sha256`
 (`ee76b2a626f57fd4825c554ac55e57e81e567f86c7bf4acd771cb23a4389f3c8`) this
-project's macOS ARM64 (Apple Accelerate) development environment already
-asserts -- see docs/issues/cross-platform-reproducibility.md for the full
-comparison (package versions, BLAS backend detail, exact containers run).
-A genuinely different CPU architecture (Linux/amd64, matching GitHub
-Actions' own `ubuntu-latest` runners) was still being verified as that
-document was written; it is not assumed passing before its own result is
-recorded. The supported reproducibility boundary remains: identical
-`bundle_scientific_sha256` is expected across platforms/BLAS backends
-whose numerical noise for this project's own linear solves stays below
-the 12th significant figure; a platform whose noise exceeds that (e.g. a
-genuinely different solver algorithm, not just a different BLAS) is
-outside this boundary and would need its own investigation, not a
-silent widening of this constant."""
+project's macOS ARM64 (Apple Accelerate) environment already asserts --
+genuine evidence, but only for ARM64-vs-ARM64. A real `ubuntu-latest`
+GitHub Actions CI run (genuine x86_64 hardware, Python 3.11 AND 3.12, both
+reproducing the SAME divergent value) subsequently showed a DIFFERENT
+`bundle_scientific_sha256`
+(`6e528746c56f2a1ceda9509b2f5ba2d65f1d45c7961caa69a09fa5577b6a9e25`) for
+the identical canonical run -- while `run_id` (a pure hash of INPUT bytes,
+never touched by solver output) and every KPI/ranking value stayed
+identical on every platform tested. This means x86_64's own numerical
+noise for this project's linear solves exceeds the 12th significant
+figure this constant quantizes to -- a genuinely different, real finding,
+not assumed. **This module's own scientific-fingerprint mechanism is
+therefore NOT the tool this project now relies on for cross-platform CI
+comparison**: per this specification's own §18 three-tier model (byte
+hash / scientific fingerprint / scientific equivalence), the tests that
+used to assert an exact cross-platform `bundle_scientific_sha256` literal
+now assert "scientific equivalence" instead (`run_id` plus KPI/ranking
+values within their own already-declared tolerances) -- see
+tests/mcp_server/test_input_provenance_mcp.py's own note for the affected
+tests. `bundle_scientific_sha256` remains exactly as useful as before for
+its ORIGINAL, still-valid purpose: detecting a scientific regression
+BETWEEN two runs on the SAME machine/BLAS backend (e.g. restart-recovery,
+"run twice" determinism checks) -- this finding only narrows the
+cross-architecture claim, it does not weaken same-platform reproducibility
+in any way. Widening `SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES` further
+was deliberately NOT attempted as a fix here: doing so without a genuine
+per-field diff of the actual divergent value (REPRO-002, which would
+require iterative authorized-push CI access this session did not have)
+would be exactly the "guess a new number" REPRO-003 warns against."""
 
 
 def _quantize_float_for_scientific_hash(value: float) -> float:

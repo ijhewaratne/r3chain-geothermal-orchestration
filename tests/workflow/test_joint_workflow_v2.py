@@ -182,12 +182,23 @@ def test_missing_blueprint_config_sections_fail_after_pydoublet_parses():
     assert result.failure_code == "BLUEPRINT_CONSTRUCTION_FAILED"
 
 
-# ── artifact bundle (AUD-001..012) ──────────────────────────────────────────
+# ── artifact bundle (AUD-001..012, §17's full named set -- Phase 9) ─────────
 _EXPECTED_ARTIFACT_FILES = {
-    "pydoublet_input.json", "config_snapshot.json", "joint_study_snapshot.json", "screened_site_connection_routes.json",
+    "pydoublet_input.json", "config_snapshot.json", "joint_study_snapshot.json",
+    "resource_input_index.json", "sites.json", "resource_scenarios.json",
+    "screened_site_connection_routes.json", "site_route_geometry.json",
     "compatible_alternatives.json", "joint_optimization_result.json", "alternative_comparison.csv",
-    "objective_policy.json", "pareto_or_ranking.json", "joint_recommendation.md", "audit.json",
+    "objective_policy.json", "pareto_or_ranking.json", "network_candidates.svg",
+    "joint_recommendation.md", "audit.json",
 }
+"""The complete docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+§17 named set (16 hashed files -- manifest.json is the 17th, never
+self-hashed). Phase 5 originally deferred five of these
+(resource_input_index/sites/resource_scenarios/site_route_geometry.json,
+network_candidates.svg) as redundant sub-content of other files; that
+deferral was withdrawn in Phase 9 once the specification's own literal
+"SHALL publish" wording was read as requiring these named files
+separately."""
 
 
 def test_write_joint_workflow_v2_artifacts_writes_every_file_and_a_valid_manifest(tmp_path):
@@ -243,6 +254,68 @@ def test_alternative_comparison_csv_has_one_row_per_evaluated_alternative(tmp_pa
         rows = list(csv.DictReader(f))
     assert len(rows) == len(result.alternatives)
     assert {row["alternative_id"] for row in rows} == {a.identity.alternative_id for a in result.alternatives}
+
+
+# ── §17 named artifacts, added Phase 9 (originally deferred in Phase 5) ─────
+def test_resource_input_index_json_lists_every_declared_resource_input(tmp_path):
+    result = _run()
+    package_raw = json.loads(_PACKAGE_PATH.read_text())
+    write_joint_workflow_v2_artifacts(result, _raw(), _config(), package_raw, tmp_path)
+    index = json.loads((tmp_path / "resource_input_index.json").read_text())
+    assert isinstance(index, list) and len(index) == len(result.package.resource_inputs)
+    assert {ri["resource_input_id"] for ri in index} == {ri.resource_input_id for ri in result.package.resource_inputs}
+    assert all(len(ri["expected_raw_sha256"]) == 64 for ri in index)
+
+
+def test_sites_json_lists_every_site_including_the_excluded_one(tmp_path):
+    result = _run()
+    package_raw = json.loads(_PACKAGE_PATH.read_text())
+    write_joint_workflow_v2_artifacts(result, _raw(), _config(), package_raw, tmp_path)
+    sites = json.loads((tmp_path / "sites.json").read_text())
+    assert len(sites) == result.counts.site_count == 4
+    assert any(s["availability_status"] == "excluded" for s in sites)
+    assert {s["site_id"] for s in sites} == {s.site_id for s in result.package.sites}
+
+
+def test_resource_scenarios_json_lists_every_scenario_linked_to_its_site(tmp_path):
+    result = _run()
+    package_raw = json.loads(_PACKAGE_PATH.read_text())
+    write_joint_workflow_v2_artifacts(result, _raw(), _config(), package_raw, tmp_path)
+    scenarios = json.loads((tmp_path / "resource_scenarios.json").read_text())
+    assert len(scenarios) == result.counts.resource_scenario_count == 4
+    for s in scenarios:
+        assert s["site_id"]  # every scenario declares which site it belongs to (AC-J03)
+
+
+def test_site_route_geometry_json_declares_the_synthetic_coordinate_basis(tmp_path):
+    """The specification's own explicit requirement: this file must
+    declare the synthetic Cartesian coordinate basis, not merely contain
+    coordinates without stating what system they are in."""
+    result = _run()
+    package_raw = json.loads(_PACKAGE_PATH.read_text())
+    write_joint_workflow_v2_artifacts(result, _raw(), _config(), package_raw, tmp_path)
+    payload = json.loads((tmp_path / "site_route_geometry.json").read_text())
+    assert payload["coordinate_basis"]["kind"] == "synthetic_cartesian"
+    assert payload["coordinate_basis"]["horizontal_unit"] == "m"
+    assert len(payload["routes"]) == result.counts.generated_route_count == 16
+    for route in payload["routes"]:
+        assert len(route["route_geometry"]) >= 2
+        assert route["route_geometry"][0]["kind"] == "synthetic_cartesian"
+
+
+def test_network_candidates_svg_is_valid_and_labelled_synthetic(tmp_path):
+    import xml.dom.minidom as minidom
+
+    result = _run()
+    package_raw = json.loads(_PACKAGE_PATH.read_text())
+    write_joint_workflow_v2_artifacts(result, _raw(), _config(), package_raw, tmp_path)
+    svg_text = (tmp_path / "network_candidates.svg").read_text()
+    minidom.parseString(svg_text)  # raises if not well-formed XML
+    assert "Synthetic schematic — not geographical" in svg_text
+    for site in result.package.sites:
+        assert site.site_id in svg_text
+    for attachment in result.package.network_attachments:
+        assert attachment.attachment_id in svg_text
 
 
 # ── CLI dispatch (AC-J12) ───────────────────────────────────────────────────

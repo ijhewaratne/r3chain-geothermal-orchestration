@@ -136,7 +136,14 @@ def test_real_server_process_cleans_up_its_temp_directory_on_sigterm():
         assert new_dir.exists()
 
         process.send_signal(signal.SIGTERM)
-        process.wait(timeout=5)
+        # docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+        # Phase 7/9: a real ubuntu-latest/macos-latest GitHub Actions CI run
+        # observed this exact wait exceed 5s (subprocess.TimeoutExpired) on
+        # a loaded CI runner -- widened to 20s, a CI-environment timing
+        # margin for real process teardown, not a change to what the test
+        # actually proves (the temp directory must still be gone once the
+        # process has exited -- the assertion below is unchanged).
+        process.wait(timeout=20)
 
         assert not new_dir.exists(), "SIGTERM handler did not clean up the registry's temp directory"
     finally:

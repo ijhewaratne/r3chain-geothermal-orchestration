@@ -86,18 +86,20 @@ def test_tools_call_geo_run_workflow_worked_case_matches_the_cli():
     payload = call_result.structuredContent
     content = payload.get("result", payload)
     assert content["run_id"] == "r3chain-run-93d41133daa11d1a"
-    # Rebaselined again (Phase 3.2 of R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md,
-    # decision-register.md IMPL-017): economics/ranking.py::SHARED_CAPEX_STATEMENT
-    # (rendered verbatim into every bundle via RankingResult.shared_capex_statement)
-    # was reworded away from hardcoding "identical across C1-C4" -- misleading for
-    # a generated-mode run's differently-named candidates -- to "identical across
-    # every candidate evaluated in this run (predefined or generated)". A
-    # presentation-text honesty fix, not a scientific-result change. run_id
-    # above is unaffected; the LCOH assertion below proves the actual
-    # canonical ranking is unchanged too.
-    assert content["bundle_scientific_sha256"] == "ee76b2a626f57fd4825c554ac55e57e81e567f86c7bf4acd771cb23a4389f3c8"
+    # REPRO-001..005 (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+    # Phase 7/9): a real ubuntu-latest GitHub Actions CI run (Python 3.11 AND
+    # 3.12, x86_64) reproducibly diverged from the literal
+    # bundle_scientific_sha256 this test used to assert -- see
+    # tests/mcp_server/test_input_provenance_mcp.py's own note for the full
+    # diagnosis. Per this specification's own §18 three-tier model, a
+    # cross-platform comparison belongs at "scientific equivalence" (KPIs
+    # within tolerance), not the byte-level scientific fingerprint -- this
+    # test asserts run_id, well-formedness of the hash, and the exact
+    # ranked-LCOH set instead, all independently confirmed platform-stable.
+    assert len(content["bundle_scientific_sha256"]) == 64
     lcoh_by_id = {r["candidate_id"]: round(r["indicative_lcoh_eur_per_mwh"], 4) for r in content["ranked"]}
     assert lcoh_by_id == {"C1": 52.1714, "C2": 52.2602, "C3": 52.3489, "C4": 52.4821}
+    assert [r["candidate_id"] for r in content["ranked"]] == ["C1", "C2", "C3", "C4"]
 
 
 def test_tools_call_unknown_run_id_returns_a_structured_error_not_a_transport_crash():

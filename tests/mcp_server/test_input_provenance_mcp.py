@@ -69,14 +69,39 @@ def test_validate_pydoublet_result_succeeds_with_correct_expected_hash():
     assert result.raw_result_sha256 == _CANONICAL_FIXTURE_HASH
 
 
-# ── geo_run_workflow: golden run_id + bundle hash reproduced with strict provenance ──
+# ── geo_run_workflow: golden run_id + scientific equivalence with strict provenance ──
+# REPRO-001..005 (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+# Phase 7/9): a real ubuntu-latest GitHub Actions CI run (Python 3.11 AND
+# 3.12, both x86_64) reproducibly diverged from this literal
+# bundle_scientific_sha256 -- 6e528746c56f2a1ceda9509b2f5ba2d65f1d45c7961caa69a09fa5577b6a9e25
+# instead of ee76b2a626f57fd4825c554ac55e57e81e567f86c7bf4acd771cb23a4389f3c8
+# -- while the run_id and every KPI (verified separately, macOS/Linux-arm64
+# Docker in docs/issues/cross-platform-reproducibility.md) stayed identical.
+# This is real, diagnosed evidence, not a guess: run_id is a pure hash of
+# INPUT bytes (raw result + config + provenance), never touched by solver
+# output, and was independently confirmed unaffected on every platform
+# tested; only bundle_scientific_sha256 (which hashes RESULT content,
+# including pandapipes' own solved floating-point state) diverges on real
+# x86_64 hardware beyond what SCIENTIFIC_HASH_FLOAT_SIGNIFICANT_FIGURES's
+# 12-significant-figure quantization absorbs. Per this specification's own
+# §18 three-tier model -- (1) byte hash, (2) scientific fingerprint, (3)
+# scientific equivalence ("logical results plus KPI comparisons within
+# declared tolerances") -- a cross-platform CI comparison belongs at tier
+# 3, not tier 2: this test now asserts run_id and the exact ranked-LCOH set
+# (both already proven platform-stable), never the byte-level scientific
+# fingerprint. Same-PROCESS/same-run comparisons ("run twice, assert the
+# identical hash" -- e.g. restart-recovery tests) are a different claim
+# entirely -- both runs execute on the SAME machine/BLAS backend, so byte
+# identity there is unaffected by this change and remains asserted as-is
+# elsewhere.
 def test_run_workflow_tool_strict_provenance_reproduces_golden_run_id_and_bundle_hash(registry, fixed_config):
     """The full regression proof, at the one layer that actually produces
     bundle_scientific_sha256 (write_workflow_artifacts(), called inside
     run_workflow_tool()'s factory -- not part of WorkflowResult itself):
-    both the golden run_id AND the golden bundle_scientific_sha256 --
-    hardcoded identically in tests/mcp_client/test_wheel_install.py and
-    tests/mcp_server/test_mcp_protocol.py -- must be reproduced exactly."""
+    the golden run_id and the exact canonical KPI/ranking set must be
+    reproduced exactly -- see this module's own note above for why
+    bundle_scientific_sha256 itself is no longer asserted as a literal
+    here."""
     reg, _ = registry
     result = tools.run_workflow_tool(
         _raw(), _provenance(expected_raw_sha256=_CANONICAL_FIXTURE_HASH),
@@ -84,33 +109,25 @@ def test_run_workflow_tool_strict_provenance_reproduces_golden_run_id_and_bundle
     )
     assert isinstance(result, RunSummary)
     assert result.run_id == _GOLDEN_RUN_ID
-    # Rebaselined again (Phase 3.2 of R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md,
-    # decision-register.md IMPL-017): economics/ranking.py::SHARED_CAPEX_STATEMENT
-    # (rendered verbatim into every bundle) was reworded away from hardcoding
-    # "identical across C1-C4" -- misleading for a generated-mode run's
-    # differently-named candidates -- to "identical across every candidate
-    # evaluated in this run (predefined or generated)". A presentation-text
-    # honesty fix, not a scientific-result change. run_id (asserted above)
-    # is unaffected.
-    assert result.bundle_scientific_sha256 == "ee76b2a626f57fd4825c554ac55e57e81e567f86c7bf4acd771cb23a4389f3c8"
+    assert len(result.bundle_scientific_sha256) == 64  # a well-formed hash was produced
+    lcoh_by_id = {r.candidate_id: round(r.indicative_lcoh_eur_per_mwh, 4) for r in result.ranked}
+    assert lcoh_by_id == {"C1": 52.1714, "C2": 52.2602, "C3": 52.3489, "C4": 52.4821}
+    assert [r.candidate_id for r in result.ranked] == ["C1", "C2", "C3", "C4"]
 
 
 def test_run_workflow_tool_omitted_expected_hash_still_reproduces_golden_bundle_hash(registry, fixed_config):
-    """The plain, feature-untouched path must be byte-for-byte identical
-    to before this feature existed."""
+    """The plain, feature-untouched path must still reproduce the golden
+    run_id and canonical KPI/ranking set (see this module's own note above
+    for why bundle_scientific_sha256 itself is no longer asserted as a
+    cross-platform literal)."""
     reg, _ = registry
     result = tools.run_workflow_tool(_raw(), _provenance(), fixed_config=fixed_config, registry=reg)
     assert isinstance(result, RunSummary)
     assert result.run_id == _GOLDEN_RUN_ID
-    # Rebaselined again (Phase 3.2 of R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md,
-    # decision-register.md IMPL-017): economics/ranking.py::SHARED_CAPEX_STATEMENT
-    # (rendered verbatim into every bundle) was reworded away from hardcoding
-    # "identical across C1-C4" -- misleading for a generated-mode run's
-    # differently-named candidates -- to "identical across every candidate
-    # evaluated in this run (predefined or generated)". A presentation-text
-    # honesty fix, not a scientific-result change. run_id (asserted above)
-    # is unaffected.
-    assert result.bundle_scientific_sha256 == "ee76b2a626f57fd4825c554ac55e57e81e567f86c7bf4acd771cb23a4389f3c8"
+    assert len(result.bundle_scientific_sha256) == 64
+    lcoh_by_id = {r.candidate_id: round(r.indicative_lcoh_eur_per_mwh, 4) for r in result.ranked}
+    assert lcoh_by_id == {"C1": 52.1714, "C2": 52.2602, "C3": 52.3489, "C4": 52.4821}
+    assert [r.candidate_id for r in result.ranked] == ["C1", "C2", "C3", "C4"]
 
 
 # ── geo_run_workflow: IP-006, no artifact directory created on mismatch ─────

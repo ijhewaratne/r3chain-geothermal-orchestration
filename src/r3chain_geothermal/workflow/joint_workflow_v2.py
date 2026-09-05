@@ -85,18 +85,24 @@ JOINT_WORKFLOW_V2_CONTRACT_SCHEMA_VERSION: Literal["1.0.0"] = "1.0.0"
 PYDOUBLET_INPUT_FILENAME = "pydoublet_input.json"
 CONFIG_SNAPSHOT_FILENAME = "config_snapshot.json"
 JOINT_STUDY_SNAPSHOT_FILENAME = "joint_study_snapshot.json"
+RESOURCE_INPUT_INDEX_FILENAME = "resource_input_index.json"
+SITES_FILENAME = "sites.json"
+RESOURCE_SCENARIOS_FILENAME = "resource_scenarios.json"
 SCREENED_ROUTES_FILENAME = "screened_site_connection_routes.json"
+SITE_ROUTE_GEOMETRY_FILENAME = "site_route_geometry.json"
 COMPATIBLE_ALTERNATIVES_FILENAME = "compatible_alternatives.json"
 JOINT_RESULT_FILENAME = "joint_optimization_result.json"
 ALTERNATIVE_COMPARISON_CSV_FILENAME = "alternative_comparison.csv"
 OBJECTIVE_POLICY_FILENAME = "objective_policy.json"
 PARETO_OR_RANKING_FILENAME = "pareto_or_ranking.json"
+NETWORK_CANDIDATES_SVG_FILENAME = "network_candidates.svg"
 JOINT_RECOMMENDATION_MD_FILENAME = "joint_recommendation.md"
 AUDIT_FILENAME = "audit.json"
 MANIFEST_FILENAME = "manifest.json"
 
 _JSON_FILENAMES = frozenset((
-    PYDOUBLET_INPUT_FILENAME, CONFIG_SNAPSHOT_FILENAME, JOINT_STUDY_SNAPSHOT_FILENAME, SCREENED_ROUTES_FILENAME,
+    PYDOUBLET_INPUT_FILENAME, CONFIG_SNAPSHOT_FILENAME, JOINT_STUDY_SNAPSHOT_FILENAME, RESOURCE_INPUT_INDEX_FILENAME,
+    SITES_FILENAME, RESOURCE_SCENARIOS_FILENAME, SCREENED_ROUTES_FILENAME, SITE_ROUTE_GEOMETRY_FILENAME,
     COMPATIBLE_ALTERNATIVES_FILENAME, JOINT_RESULT_FILENAME, OBJECTIVE_POLICY_FILENAME, PARETO_OR_RANKING_FILENAME,
     AUDIT_FILENAME,
 ))
@@ -107,17 +113,15 @@ _CORE_SCIENTIFIC_FILENAMES = (
 """AUD-001: declared inputs (pydoublet_input, config_snapshot,
 joint_study_snapshot) and calculated results (joint_optimization_result)
 preserved separately, plus the audit trail -- the minimum every bundle
-this module writes must contain."""
-
-_DEFERRED_ARTIFACTS_NOTE = (
-    "resource_input_index.json, sites.json, resource_scenarios.json and site_route_geometry.json are "
-    "NOT produced separately -- their content is already fully present, byte-for-byte, inside "
-    "joint_study_snapshot.json (the whole validated package) and screened_site_connection_routes.json "
-    "(full route_geometry per route); a redundant extra file was judged out of proportion to this "
-    "phase. network_candidates.svg (a visual diagram) is deferred -- not attempted in this phase, "
-    "following the same 'stated limitation, not silently absent' precedent v1's own "
-    "location_shortlist.geojson omission already established."
-)
+this module writes must contain. The full completed bundle (see
+write_joint_workflow_v2_artifacts()) additionally publishes every file
+S17 of docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+names -- resource_input_index.json/sites.json/resource_scenarios.json/
+site_route_geometry.json/network_candidates.svg were originally deferred
+here as redundant with joint_study_snapshot.json/screened_site_connection_routes.json;
+that deferral was withdrawn (Phase 9) once the specification's own literal
+"SHALL publish" wording was read as requiring these named files
+separately, not merely as recoverable sub-content of a larger file."""
 
 
 class JointWorkflowV2Counts(BaseModel):
@@ -586,6 +590,76 @@ def render_compatible_alternatives_json(result: JointWorkflowV2Result) -> bytes:
     return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
+# ── S17 named artifacts, added Phase 9 (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+# §17's own literal "SHALL publish" list) -- each of these five files was
+# previously deferred as redundant sub-content of joint_study_snapshot.json/
+# screened_site_connection_routes.json; that deferral is withdrawn here.
+# None invents new data: every field below is read straight from the
+# already-validated JointStudyPackage/routes this run already computed.
+def render_resource_input_index_json(package: JointStudyPackage) -> bytes:
+    payload = [
+        json.loads(ri.model_dump_json())
+        for ri in sorted(package.resource_inputs, key=lambda ri: ri.resource_input_id)
+    ]
+    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def render_sites_json(package: JointStudyPackage) -> bytes:
+    payload = [json.loads(s.model_dump_json()) for s in sorted(package.sites, key=lambda s: s.site_id)]
+    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def render_resource_scenarios_json(package: JointStudyPackage) -> bytes:
+    payload = [
+        json.loads(s.model_dump_json())
+        for s in sorted(package.resource_scenarios, key=lambda s: s.scenario_id)
+    ]
+    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def render_site_route_geometry_json(package: JointStudyPackage, routes: list[SiteConnectionRoute]) -> bytes:
+    """Every route's own geometry, alongside an EXPLICIT declaration of the
+    coordinate basis it is expressed in (`package.coordinate_reference`) --
+    the specification's own explicit requirement that this file "declare
+    the synthetic Cartesian coordinate basis." Includes every generated
+    route (accepted and rejected), not only accepted ones -- the same full
+    scope screened_site_connection_routes.json already covers, extracted
+    here into its own dedicated, geometry-focused file."""
+    payload = {
+        "coordinate_basis": json.loads(package.coordinate_reference.model_dump_json()),
+        "routes": [
+            {
+                "route_id": r.route_id,
+                "surface_site_id": r.site_id,
+                "attachment_id": r.attachment_id,
+                "screening_status": r.screening_status.value,
+                "route_kind": r.route_kind.value,
+                "paired_trench_length_m": r.paired_trench_length_m,
+                "route_geometry": [json.loads(pt.model_dump_json()) for pt in r.route_geometry],
+            }
+            for r in sorted(routes, key=lambda r: r.route_id)
+        ],
+    }
+    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def render_network_candidates_svg(
+    package: JointStudyPackage, routes: list[SiteConnectionRoute], compatible_alternative_ids: frozenset[str],
+) -> bytes:
+    """A SYNTHETIC network diagram -- surface sites, network attachments,
+    and every generated route (accepted, drawn solid; rejected, drawn
+    dashed) in the package's own synthetic Cartesian coordinate system.
+    Deliberately schematic: axis-scaled to the actual synthetic
+    coordinates so relative distances are meaningful WITHIN this
+    demonstration, but explicitly labelled SYNTHETIC in the image itself
+    (title, legend, and a full-width disclaimer banner) so it can never be
+    mistaken for a real geographic/GIS map -- the same synthetic-only
+    Cartesian coordinate system this package's own `coordinate_reference`
+    already declares, never real-world coordinates."""
+    from .site_routing_svg import render_network_candidates_svg as _render  # local import: pure rendering helper, no cycle
+    return _render(package, routes, compatible_alternative_ids)
+
+
 def render_joint_recommendation_markdown(result: JointWorkflowV2Result) -> bytes:
     lines: list[str] = []
     lines.append("# R3-CHAIN corrected synthetic joint site/connection optimisation (v2)")
@@ -661,7 +735,6 @@ def render_joint_recommendation_markdown(result: JointWorkflowV2Result) -> bytes
             lines.append("No unique preferred alternative -- rank 1 contains more than one materially tied alternative (DEC-011).")
     lines.append("")
 
-    lines.append(_DEFERRED_ARTIFACTS_NOTE)
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
@@ -758,12 +831,20 @@ def write_joint_workflow_v2_artifacts(
     hash_records[AUDIT_FILENAME] = _hash_record_for_json_bytes(audit_bytes)
 
     if isinstance(result, JointWorkflowV2Result):
+        compatible_alternative_ids = frozenset(a.identity.alternative_id for a in result.alternatives)
         extra: dict[str, bytes] = {
+            RESOURCE_INPUT_INDEX_FILENAME: render_resource_input_index_json(result.package),
+            SITES_FILENAME: render_sites_json(result.package),
+            RESOURCE_SCENARIOS_FILENAME: render_resource_scenarios_json(result.package),
             SCREENED_ROUTES_FILENAME: render_screened_routes_json(result),
+            SITE_ROUTE_GEOMETRY_FILENAME: render_site_route_geometry_json(result.package, result.routes),
             COMPATIBLE_ALTERNATIVES_FILENAME: render_compatible_alternatives_json(result),
             ALTERNATIVE_COMPARISON_CSV_FILENAME: render_alternative_comparison_csv(result),
             OBJECTIVE_POLICY_FILENAME: render_objective_policy_json(result),
             PARETO_OR_RANKING_FILENAME: render_pareto_or_ranking_json(result),
+            NETWORK_CANDIDATES_SVG_FILENAME: render_network_candidates_svg(
+                result.package, result.routes, compatible_alternative_ids,
+            ),
             JOINT_RECOMMENDATION_MD_FILENAME: render_joint_recommendation_markdown(result),
         }
         for filename, data in extra.items():

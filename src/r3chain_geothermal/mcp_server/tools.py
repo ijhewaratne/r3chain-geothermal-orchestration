@@ -61,7 +61,11 @@ from ..workflow.joint_workflow_v2 import (
     JOINT_STUDY_SNAPSHOT_FILENAME,
     OBJECTIVE_POLICY_FILENAME,
     PARETO_OR_RANKING_FILENAME,
+    RESOURCE_INPUT_INDEX_FILENAME,
+    RESOURCE_SCENARIOS_FILENAME,
     SCREENED_ROUTES_FILENAME,
+    SITE_ROUTE_GEOMETRY_FILENAME,
+    SITES_FILENAME,
     JointWorkflowV2Failure,
     JointWorkflowV2Result,
     is_joint_study_v2_enabled,
@@ -122,20 +126,26 @@ _JOINT_ARTIFACT_FILENAMES = (
     PYDOUBLET_INPUT_FILENAME,
     CONFIG_SNAPSHOT_FILENAME,
     JOINT_STUDY_SNAPSHOT_FILENAME,
+    RESOURCE_INPUT_INDEX_FILENAME,
+    SITES_FILENAME,
+    RESOURCE_SCENARIOS_FILENAME,
     SCREENED_ROUTES_FILENAME,
+    SITE_ROUTE_GEOMETRY_FILENAME,
     COMPATIBLE_ALTERNATIVES_FILENAME,
     JOINT_RESULT_FILENAME,
     ALTERNATIVE_COMPARISON_CSV_FILENAME,
     OBJECTIVE_POLICY_FILENAME,
     PARETO_OR_RANKING_FILENAME,
+    NETWORK_CANDIDATES_SVG_FILENAME,  # same literal string as joint_workflow_v2's own constant -- not re-imported
     JOINT_RECOMMENDATION_MD_FILENAME,
     AUDIT_FILENAME,
     MANIFEST_FILENAME,
 )
-"""Exactly the 12 filenames a completed (`workflow_status == "completed"`)
+"""Exactly the 17 filenames a completed (`workflow_status == "completed"`)
 joint_site_connection run publishes -- mirrors workflow/joint_workflow_v2.py's
-own `write_joint_workflow_v2_artifacts()` bundle exactly (11 hashed files
-plus manifest.json itself, which never hashes itself)."""
+own `write_joint_workflow_v2_artifacts()` bundle exactly (16 hashed files,
+the full docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
+§17 set, plus manifest.json itself, which never hashes itself)."""
 
 _ALLOWED_ARTIFACT_FILENAMES = tuple(dict.fromkeys(_CANONICAL_ARTIFACT_FILENAMES + _JOINT_ARTIFACT_FILENAMES))
 """docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md

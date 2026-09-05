@@ -214,11 +214,14 @@ workflow through the *same* CLI:
   `JointStudyPackage` JSON file — see `config/demo_assumptions_joint_study_v2.json` and
   `config/joint_study_synthetic_v2.json`) and from `geo_run_workflow` (the SAME six-tool MCP server,
   a discriminated `workflow_mode: joint_site_connection` success shape, no seventh tool). Publishes
-  its own, separately-hash-audited artifact bundle
-  (`joint_optimization_result.json`, `joint_study_snapshot.json`,
-  `screened_site_connection_routes.json`, `compatible_alternatives.json`,
-  `alternative_comparison.csv`, `objective_policy.json`, `pareto_or_ranking.json`,
-  `joint_recommendation.md`, `audit.json`, `manifest.json`) at the same `--output-dir`, and survives
+  its own, separately-hash-audited artifact bundle -- the complete
+  specification §17 set (`resource_input_index.json`, `sites.json`, `resource_scenarios.json`,
+  `joint_study_snapshot.json`, `screened_site_connection_routes.json`, `site_route_geometry.json`
+  (declares the synthetic Cartesian coordinate basis explicitly), `compatible_alternatives.json`,
+  `joint_optimization_result.json`, `alternative_comparison.csv`, `objective_policy.json`,
+  `pareto_or_ranking.json`, `network_candidates.svg` (a synthetic-labelled schematic diagram, never
+  implying real geographic/GIS accuracy), `joint_recommendation.md`, `audit.json`, `manifest.json`,
+  `pydoublet_input.json` and `config_snapshot.json`) at the same `--output-dir`, and survives
   an MCP server restart via the same persistent-registry rehydration path the canonical workflow
   already uses. Every artifact carries the same synthetic disclaimer v1's own artifacts do — this
   remains a **synthetic scenario/site/connection/design comparison**, never a geological
@@ -240,10 +243,12 @@ r3chain-geothermal-demo \
   --provenance config/demo_source_provenance.json \
   --output-dir artifacts/generated-candidates-demo
 
-# Corrected joint site/connection run (v2) -- must be run with the repository
-# root as the working directory (config/demo_assumptions_joint_study_v2.json's
-# own joint_study_v2.package_path is a package-relative path resolved
-# against --config's own location, config/joint_study_synthetic_v2.json).
+# Corrected joint site/connection run (v2) -- can be run from ANY working
+# directory: joint_study_v2.package_path is resolved relative to --config's
+# own file location (config_path.resolve().parent.parent), never the
+# process's cwd, so this works identically from the repository root (as
+# below) or from a completely external run directory, e.g.
+# --config "$(pwd)/config/demo_assumptions_joint_study_v2.json".
 r3chain-geothermal-demo \
   --input fixtures/pydoublet/repaired_result.json \
   --config config/demo_assumptions_joint_study_v2.json \

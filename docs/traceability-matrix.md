@@ -169,18 +169,70 @@ the decision-level record. Summary, at the phase level, as of this document's ow
 | 2 | Site-linked scenarios/routes; compatible-only enumeration | PASS — AC-J02–AC-J07 proven, `tests/workflow/test_joint_phase2.py` |
 | 3 | Executable per-design connection diameter | PASS — AC-J08 proven, `tests/network/test_candidate.py` |
 | 4 | Corrected economics; materiality-aware Pareto decision policy | PASS — AC-J09–AC-J11 proven, `tests/workflow/test_joint_phase4.py`, `tests/decision/test_joint_policy.py` |
-| 5 | Ready-to-run config; full audit bundle; CLI dispatch | PASS — AC-J12 proven twice into independent output directories, `tests/workflow/test_joint_workflow_v2.py` |
+| 5 | Ready-to-run config; full audit bundle; CLI dispatch | PASS — AC-J12 proven twice into independent output directories, `tests/workflow/test_joint_workflow_v2.py`. The bundle publishes the complete §17 named set (16 hashed files): `resource_input_index.json`, `sites.json`, `resource_scenarios.json`, `site_route_geometry.json` (declares the synthetic Cartesian coordinate basis explicitly) and `network_candidates.svg` (a synthetic-labelled schematic diagram) were originally deferred as redundant sub-content of other files -- that deferral was withdrawn (Phase 9) once §17's own "SHALL publish" wording was read as requiring these named files separately, not merely as recoverable sub-content. |
 | 6 | MCP dispatch (six tools, unchanged count); persistent-registry rehydration | PASS — AC-J13/AC-J14 proven, `tests/mcp_server/test_joint_workflow_v2_mcp.py` |
-| 7 | Cross-platform reproducibility diagnosis and correction | **PARTIAL** — Linux/arm64 (Python 3.11 and 3.12) verified clean via local Docker. Linux/amd64 was attempted via local emulation (Rosetta) but abandoned after 5 hours (4h43m CPU, zero output) as impractical on this host — not a real result either way, and not one this document treats as evidence. The real GitHub Actions `ubuntu-latest` runner (genuine hardware, not emulated) is the correct mechanism for that specific architecture gap and has not been triggered (requires a push, authorised separately). See `docs/issues/cross-platform-reproducibility.md`. |
-| 8 | Documentation reconciliation | IN PROGRESS — this edit, and the README/ADR-001/decision-register edits alongside it |
-| 9 | Release-candidate verification | NOT STARTED |
+| 7 | Cross-platform reproducibility diagnosis and correction | **PARTIAL, diagnosis and fixes complete, awaiting a green re-run** — Linux/arm64 (Python 3.11 and 3.12) verified clean via local Docker (insufficient on its own, see below). A commit containing this session's work was pushed externally and triggered a REAL `ubuntu-latest`/`macos-latest` GitHub Actions run (`33918616460`) that failed all three jobs: 4 `bundle_scientific_sha256` cross-architecture divergences + 1 previously-missed pathological-solver test on both `ubuntu-latest` jobs, plus 1 unrelated CI-timing flake on `macos-latest`. All five diagnosed and corrected (see `docs/issues/cross-platform-reproducibility.md` for the full evidence and fix record) -- re-verified locally on macOS, not yet re-confirmed by a fresh green CI run (this session does not push without separate authorisation). |
+| 8 | Documentation reconciliation | PASS — this edit and the README/ADR-001/decision-register/traceability-matrix edits alongside it; a genuine README self-contradiction (claimed "must run from repo root" after Phase 7's own fix removed that constraint) found and corrected; AC-J17 claim audit found no real-drilling/six-axis overclaims anywhere. |
+| 9 | Release-candidate verification | PASS, pending a final green CI confirmation (tracked under Phase 7 above) — see this document's own "Phase 9 release-candidate verification" section below for the executed checklist and evidence. |
 
 Every canonical C1-C4 golden value (`run_id r3chain-run-93d41133daa11d1a`, the exact LCOH set) is
 unchanged throughout this workstream, re-verified after every phase — this workstream never
 modifies `workflow/core.py`'s own canonical execution path or `workflow/joint_optimization.py` (v1).
 No test was removed or weakened to reach a green suite anywhere in this workstream (CLAUDE.md); the
-two REPRO-009 test broadenings in Phase 7 are documented exactly, in place, as principled corrections
-approved by the specification itself, not silent dilutions.
+three REPRO-009 test broadenings (two in Phase 7, a third found and fixed in Phase 9 via real CI
+evidence) are documented exactly, in place, as principled corrections approved by the specification
+itself, not silent dilutions.
+
+### Phase 9 release-candidate verification (this session, against HEAD as of this edit)
+
+Executed against the corrected working tree, following the specification's own §21 Phase 9 checklist:
+
+1. **Targeted + full test suite** — 1240 collected, 1240 passed, 0 failed, exit code 0, macOS/Python
+   3.11.16, ~9-10 minutes wall-clock (consistent with every prior full-suite run this session).
+2. **`git diff --check`** — clean, on both tracked changes and untracked new files.
+3. **Wheel build + clean-environment install** — a fresh `python -m build --wheel`, installed via
+   `python3.11 -m venv` (genuinely new, outside any project-managed environment) with the `mcp` extra.
+4. **Canonical CLI outside the repository** — `run_id r3chain-run-93d41133daa11d1a`; ranked LCOH
+   `{"C1": 52.1714, "C2": 52.2602, "C3": 52.3489, "C4": 52.4821}` reproduced exactly.
+5. **Joint v2 CLI outside the repository, run twice** — `run_id r3chain-run-99e7f5ea0fb38a12` both
+   times; identical `bundle_scientific_sha256`; the complete 16-file §17 artifact set published both
+   times (`resource_input_index.json`, `sites.json`, `resource_scenarios.json`, `joint_study_snapshot.json`,
+   `screened_site_connection_routes.json`, `site_route_geometry.json`, `compatible_alternatives.json`,
+   `joint_optimization_result.json`, `alternative_comparison.csv`, `objective_policy.json`,
+   `pareto_or_ranking.json`, `network_candidates.svg`, `joint_recommendation.md`, `audit.json`,
+   `pydoublet_input.json`, `config_snapshot.json`).
+6. **Scripted MCP client** (`r3chain-geothermal-mcp-demo`, a genuine live stdio round-trip) —
+   `execution_route: mcp`, golden canonical `run_id` reproduced.
+7. **MCP restart recovery** — a persistent `RunRegistry` holding both a canonical and a joint run,
+   closed and rebuilt against the same root (simulating a server restart): zero rehydration warnings,
+   both run types correctly rehydrated (`run_type` discriminator intact), identical
+   `bundle_scientific_sha256` for each, and a third call to each confirms `reused_existing_run=True`
+   (no recomputation).
+8. **Full artifact pagination through MCP** — every one of the 17 joint artifacts (16 hashed files +
+   `manifest.json`) and every one of the 8 canonical artifacts retrieved via `geo_get_artifact`
+   pagination (`offset`/`limit` loop until `next_offset is None`) and reassembled byte-for-byte
+   identical to the on-disk file.
+9. **Real-data readiness negative test** (`tests/data_contracts/test_readiness_gate.py`, the two
+   `incomplete`-package tests) — passed: an incomplete real package returns
+   `DATA_REQUIREMENTS_NOT_MET` with zero solver/ranking calls, never a silent synthetic fallback.
+10. **Internal-error-boundary tests** (AC-J18, both canonical and joint) — passed: an injected
+    deterministic exception after package/input validation surfaces as `UNEXPECTED_ERROR`, never a
+    scientific infeasibility code, publishes no completed run, exposes no partial artifact.
+11. **Privacy/secret/personal-path scan** — clean across every changed/new file (no API keys, private
+    keys, tokens, or leaked absolute personal/temp-directory paths); one stray `build/` setuptools
+    cache directory (from this session's own wheel-build verification, not committed) found and
+    removed twice.
+12. **Manifest/hash validation** — every `ManifestRecord`/`JointWorkflowV2ManifestRecord` constructed
+    during the above self-validates (`bundle_scientific_sha256` recomputation, no self-hashing,
+    per-file byte/scientific hash pairs) — covered structurally by every test and CLI run above, none
+    of which could have produced a result without passing that validation.
+13. **Every changed/new file inspected** — the complete file list for this specific closure pass is a
+    clean, reviewable 13-file diff (`git diff --stat`, since nothing is staged/committed in this
+    session per its own standing instruction); every file was authored or edited directly in this
+    session, not generated blind.
+
+**Not yet closed**: a fresh green three-job GitHub Actions run against this corrected commit (tracked
+under Phase 7 above, requires a push this session does not perform without separate authorisation).
 
 ## MCP and orchestration requirements
 
