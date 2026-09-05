@@ -271,6 +271,27 @@ All independently re-verified against the spec text before any fix; `decision/re
 was substantially rewritten to rank scenarios via the existing materiality-aware `decide()` (reused
 unchanged) and derive rank-1 SETS directly. See `docs/decisions/decision-register.md` IMPL-029.
 
+**Final scientific-conformance round (2026-09-05, a third, letter-by-letter review):** a third
+review, structured against explicit lettered requirements A-O, found the prior two rounds had
+already correctly implemented most items (verified by direct re-inspection before any further
+edit, not assumed) but two genuine gaps remained: `network_only.eligible_attachment_ids` was
+declared in configuration but never actually referenced by any code (a documentation-only
+field), and the spec's own §14.3 "maximum observed rank change for each base candidate" metric,
+previously descoped in IMPL-029 as disproportionate, was implemented as requested rather than
+left descoped. Both fixed without any new simulation or re-derived ranking — see
+`docs/decisions/decision-register.md` IMPL-030 for the full record. This round also strengthens,
+rather than changes, prior disclosures already made in IMPL-029/IMPL-028:
+`MATERIAL_TIE_PREVENTS_UNIQUE_COMPARISON` is **RESERVED/DEPRECATED under set-based comparison
+semantics** — rank-1 ties no longer prevent baseline comparison, since disjointness between two
+rank-1 SETS is always computable once both are non-empty; the enum member is retained (the spec
+requires the full code set to exist) but no runtime path in `compare_baselines()` reaches it, and
+no test claims to exercise it. The declared 5000 h/a annualization horizon (D9/IMPL-028) is
+reaffirmed as this experiment's own REPRESENTED operating regime, never a claim of a full
+8760-hour chronological calendar-year simulation. The geothermal-derating sensitivity case is
+reaffirmed as a deterministic economic what-if that never re-runs pandapipes or the HX evaluator
+and therefore cannot discover new technical infeasibility on its own — a documented boundary, not
+a silent one (`decision/research_comparison.py::_apply_sensitivity_case()`).
+
 ## Consequences
 
 - Scope creep toward geological placement, weighted scoring, or real Wuppertal data

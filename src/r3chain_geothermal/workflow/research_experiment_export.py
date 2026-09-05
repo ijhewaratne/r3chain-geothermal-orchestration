@@ -78,6 +78,14 @@ OBJECTIVE_POLICY_FILENAME = "objective_policy.json"
 PARETO_OR_RANKING_FILENAME = "pareto_or_ranking.json"
 RESEARCH_FINDINGS_MD_FILENAME = "research_findings.md"
 
+# ── Beyond the spec's own literal §17 list: an explicit reviewer convenience ──
+SENSITIVITY_RANK_CHANGES_CSV_FILENAME = "sensitivity_rank_changes.csv"
+"""Not one of the spec's own §17-named files -- an ADDITIONAL export (spec
+§14.3's "maximum observed rank change for each base candidate", already
+present inside `sensitivity_results.json`'s own `candidate_rank_sensitivity`
+field) so a reviewer can inspect per-candidate rank movement directly,
+without opening the aggregate JSON file."""
+
 RESEARCH_EXPERIMENT_SYNTHETIC_DISCLAIMER = (
     "This is a SYNTHETIC demonstration: every site, resource scenario, route, design, load state and "
     "sensitivity case here is explicitly invented for this prototype. It contains no real Wuppertal (or "
@@ -340,6 +348,22 @@ def render_sensitivity_comparison_csv(result: ResearchExperimentResult) -> bytes
     return "".join(lines).encode("utf-8")
 
 
+def render_sensitivity_rank_changes_csv(result: ResearchExperimentResult) -> bytes:
+    """spec §14.3's "maximum observed rank change for each base candidate" --
+    one row per candidate ever evaluated, matching `CandidateRankSensitivity`
+    exactly (see `data_contracts.research_experiment` for field semantics)."""
+    header = "alternative_id,base_rank,max_rank_change,became_infeasible_in_any_case,restored_to_feasibility_in_any_case\n"
+    lines = [header]
+    for entry in result.sensitivity_decision_summary.candidate_rank_sensitivity:
+        base_rank = "" if entry.base_rank is None else str(entry.base_rank)
+        max_rank_change = "" if entry.max_rank_change is None else str(entry.max_rank_change)
+        lines.append(
+            f"{entry.alternative_id},{base_rank},{max_rank_change},"
+            f"{entry.became_infeasible_in_any_case},{entry.restored_to_feasibility_in_any_case}\n"
+        )
+    return "".join(lines).encode("utf-8")
+
+
 # ── research_findings.md ──────────────────────────────────────────────────────
 
 def render_research_findings_markdown(result: ResearchExperimentResult) -> bytes:
@@ -377,16 +401,39 @@ def render_research_findings_markdown(result: ResearchExperimentResult) -> bytes
     else:
         lines.append("Empty (no feasible/computable alternative).\n\n")
     lines.append("## Robustness classification\n\n")
-    lines.append(f"`{sensitivity.robustness_classification.value}`\n\n")
+    lines.append(f"`{sensitivity.robustness_classification.value}` (bounded to the tested range below -- "
+                  "never a claim of global or uncertainty-proof robustness)\n\n")
     lines.append(f"{sensitivity.explanation}\n\n")
+    lines.append("## Maximum observed rank change per candidate\n\n")
+    if sensitivity.candidate_rank_sensitivity:
+        lines.append("| alternative_id | base_rank | max_rank_change | became_infeasible_in_any_case | "
+                      "restored_to_feasibility_in_any_case |\n|---|---|---|---|---|\n")
+        for c in sensitivity.candidate_rank_sensitivity:
+            lines.append(
+                f"| `{c.alternative_id}` | {c.base_rank if c.base_rank is not None else 'n/a'} | "
+                f"{c.max_rank_change if c.max_rank_change is not None else 'n/a'} | "
+                f"{c.became_infeasible_in_any_case} | {c.restored_to_feasibility_in_any_case} |\n"
+            )
+        lines.append("\n")
+    else:
+        lines.append("No candidates evaluated.\n\n")
     lines.append("## Caveats\n\n")
+    horizon = result.research_config.annualization.horizon_hours_per_year
     lines.append(
         "- Synthetic geology and costs: every site, resource scenario, route, design and cost figure here "
         "is explicitly invented for this prototype, never real Wuppertal (or any other real place's) data.\n"
         "- Steady-state PyDoublet boundary: one deterministic doublet coupling result, not an hourly or "
         "transient simulation.\n"
-        "- Representative load states, not a full time series: three steady-state conditions summing to "
-        "the declared annualization horizon, never a transient/hourly demand profile.\n"
+        f"- Represented operating horizon: {horizon:g} h/a -- the load states above are declared to sum "
+        "exactly to this figure. This is NOT the 8760 h/a calendar year (a full year of chronological "
+        "hours); it is this experiment's own smaller, explicitly declared representative operating regime, "
+        "and is never described as a complete 8760-hour chronological simulation.\n"
+        "- Geothermal-derating sensitivity is a deterministic economic what-if, not a re-evaluated physical "
+        "state: it re-derives economics only from already-computed KPIs and never re-runs pandapipes or the "
+        "HX evaluator, so it cannot discover new technical infeasibility on its own; it holds "
+        "dh_hydraulic_pumping_power_kw at its base-case value as a documented simplification. It represents "
+        "synthetic geothermal-availability uncertainty, never a geological exploration-risk model and never "
+        "a new PyDoublet simulation.\n"
         "- No exploration risk: the sensitivity study is a small, explicit, deterministic set of what-if "
         "multipliers, never a probabilistic P10/P50/P90 estimate.\n"
         "- Not a real Wuppertal recommendation: this compares synthetic alternatives against each other; "
@@ -453,6 +500,7 @@ def write_research_experiment_artifacts(
             NETWORK_ONLY_COMPARISON_CSV_FILENAME: render_network_only_comparison_csv,
             RESEARCH_COMPARISON_CSV_FILENAME: render_research_comparison_csv,
             SENSITIVITY_COMPARISON_CSV_FILENAME: render_sensitivity_comparison_csv,
+            SENSITIVITY_RANK_CHANGES_CSV_FILENAME: render_sensitivity_rank_changes_csv,
         }
         for filename, render in csv_renderers.items():
             data = render(result)

@@ -252,23 +252,34 @@ workflow through the *same* CLI:
   (CAPEX/annuity once, OPEX/auxiliary/pumping summed across states), and reuses
   `decision/joint_policy.py`'s existing `decide()`/`pareto_shortlist()` decision machinery
   completely unchanged for the primary ranking objective (`annualized_system_lcoh_eur_per_mwh`).
-  Compares that integrated result against a geothermal-only baseline (source-side LCOH at the
-  HX boundary only, no connection/network cost) and a network-only baseline (one fixed
-  geothermal source/site, varying only the connection), producing one of seven typed
-  interpretation codes, and runs a small deterministic (never probabilistic) sensitivity study
-  classified into one of six typed robustness outcomes. Reachable identically from the CLI
+  Compares that integrated result against a geothermal-only baseline (ranks resource SCENARIOS
+  individually by source-side LCOH at the HX boundary — never collapsed per site, even when
+  more than one scenario shares a site) and a network-only baseline (one EXPLICITLY declared
+  reference site/scenario in configuration, optionally further restricted to a declared set of
+  eligible attachments — never auto-selected), producing one of seven typed interpretation codes
+  derived from rank-1 SET disjointness (`MATERIAL_TIE_PREVENTS_UNIQUE_COMPARISON` is reserved/
+  deprecated under this set-based semantics and structurally unreachable), and runs a small
+  deterministic (never probabilistic) sensitivity study classified into one of six typed
+  robustness outcomes, bounded to the tested range, plus a maximum-observed-rank-change and
+  restored-to-feasibility metric per candidate. Reachable identically from the CLI
   (`research_experiment.enabled=true` — see `config/research_experiment_synthetic.json`, itself
   a copy of `config/demo_assumptions_joint_study_v2.json` plus one new section, checked BEFORE
   `joint_study_v2` in dispatch since a research-experiment config also carries that section) and
   from `geo_run_workflow` (the SAME six-tool MCP server, a discriminated
   `workflow_mode: research_experiment` success shape, no seventh tool). Publishes its own
-  artifact bundle (`pydoublet_input.json`, `config_snapshot.json`,
-  `referenced_v2_result_snapshot.json`, `research_experiment_result.json`,
-  `alternative_annualized_comparison.csv`, `research_experiment_report.md`, `audit.json`,
-  `manifest.json`) at the same `--output-dir`, and survives an MCP server restart via the same
-  persistent-registry rehydration path. Every artifact carries the same synthetic disclaimer
-  v1/v2's own artifacts do — never a drilling-site recommendation, never a claim that any
-  result is assumption-robust beyond the specific sensitivity cases actually tested.
+  23-file artifact bundle (`pydoublet_input.json`, `config_snapshot.json`,
+  `referenced_v2_result_snapshot.json`, `research_experiment_result.json`, `experiment_input.json`,
+  `load_states.json`, `load_state_results.json`, `annualized_alternative_comparison.csv`,
+  `annualized_integrated_result.json`, `geothermal_only_result.json`,
+  `geothermal_only_comparison.csv`, `network_only_result.json`, `network_only_comparison.csv`,
+  `research_comparison.json`, `research_comparison.csv`, `sensitivity_results.json`,
+  `sensitivity_comparison.csv`, `sensitivity_rank_changes.csv`, `objective_policy.json`,
+  `pareto_or_ranking.json`, `research_findings.md`, `audit.json`, `manifest.json`) at the same
+  `--output-dir`, and survives an MCP server restart via the same persistent-registry
+  rehydration path. Every artifact carries the same synthetic disclaimer v1/v2's own artifacts
+  do — never a drilling-site recommendation, never a claim that any result is assumption-robust
+  beyond the specific sensitivity cases actually tested, and the declared 5000 h/a annualization
+  horizon is never described as a full 8760-hour chronological calendar-year simulation.
 
 Try it directly:
 

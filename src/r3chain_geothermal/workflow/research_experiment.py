@@ -414,6 +414,8 @@ def run_research_experiment(
     network_only_decision, network_only_has_any_rankable, network_only_subset = rank_network_only_baseline(
         annualized_by_id, resource_scenario_by_id,
         network_only_policy.reference_resource_scenario_id, research_config.decision_policy,
+        alternative_attachment_by_id=attachment_by_id,
+        eligible_attachment_ids=network_only_policy.eligible_attachment_ids,
     )
     stage_calls.append(StageCallRecord(order=len(stage_calls) + 1, stage_name="rank_network_only_baseline", status="success"))
 

@@ -45,7 +45,29 @@ never produce `INTEGRATED_DIFFERS_FROM_BOTH`. All four are corrected here:
   defect directly.
 - **Sensitivity** now records each case's own rank-1 group (site/attachment
   sets derived the same way) plus which alternatives became newly
-  infeasible, not merely a single winner."""
+  infeasible, not merely a single winner.
+
+## Third conformance round -- eligible-attachment filter + rank-change metric
+
+Two further gaps found by direct code inspection (never assumed correct
+merely because a prior round claimed the layer complete):
+
+- `NetworkOnlyBaselinePolicy.eligible_attachment_ids` was declared in the
+  contract but never referenced anywhere in this module (a documentation-
+  only field). `rank_network_only_baseline()` now takes
+  `alternative_attachment_by_id`/`eligible_attachment_ids` and genuinely
+  filters the network-only subset by attachment membership when declared
+  (`None` still means "use every eligible attachment," matching this
+  project's established null-means-unrestricted filter convention). This
+  filter applies ONLY to the network-only baseline's own subset -- the
+  INTEGRATED search (`decide_integrated()`) is never passed this filter and
+  its own universe is unaffected.
+- `CandidateRankSensitivity`/`_compute_candidate_rank_sensitivity()` add the
+  spec's own §14.3 "maximum observed rank change for each base candidate"
+  metric, plus the symmetric "restored to feasibility" case item H asks for
+  -- computed purely from each already-computed `JointDecisionResult`'s own
+  `ranked_alternative_groups` (via `_rank_index_by_alternative_id()`), never
+  a re-derived ranking or new simulation."""
 from __future__ import annotations
 
 from ..adapter import CouplingAssumptions, evaluate_heat_exchanger_coupling
@@ -61,6 +83,7 @@ from ..data_contracts.joint_study_synthetic_v2 import apply_synthetic_derivation
 from ..data_contracts.research_experiment import (
     AnnualizedAlternativeEconomicResult,
     BaselineComparisonResult,
+    CandidateRankSensitivity,
     ComparisonInterpretationCode,
     GeothermalOnlyBaselinePolicy,
     LoadStatePerformanceResult,
@@ -225,20 +248,31 @@ def rank_network_only_baseline(
     alternative_resource_scenario_by_id: dict[str, str],
     fixed_resource_scenario_id: str,
     policy: DecisionPolicy,
+    *,
+    alternative_attachment_by_id: dict[str, str],
+    eligible_attachment_ids: list[str] | None = None,
 ) -> tuple[JointDecisionResult, bool, dict[str, AnnualizedAlternativeEconomicResult]]:
     """Returns (decision, has_any_rankable, the filtered subset). Filters the
-    already-computed integrated alternative set to those whose
+    already-computed INTEGRATED alternative set (never mutating or
+    restricting it -- this function only ever builds a NEW, separate `subset`
+    dict; the caller's own `annualized_by_alternative_id` and any integrated
+    decision built from it are completely unaffected) to those whose
     resource_scenario_id matches the DECLARED fixed reference scenario
     (`data_contracts.research_experiment.NetworkOnlyBaselinePolicy
     .reference_resource_scenario_id`, validated by the orchestrator against
     the referenced v2 package before this function is ever called -- this
-    function itself does not re-validate that), then re-decides via the SAME
-    `decide()` over that subset. The caller derives the rank-1 ATTACHMENT set
-    from `decision.ranked_alternative_groups[0]` plus its own
+    function itself does not re-validate that), AND -- when declared --
+    whose attachment_id is one of `eligible_attachment_ids`
+    (`NetworkOnlyBaselinePolicy`'s own filter; `None` means every attachment
+    compatible with the reference site/scenario is eligible, matching this
+    project's established "null means unrestricted" convention). Re-decides
+    via the SAME `decide()` over that subset. The caller derives the rank-1
+    ATTACHMENT set from `decision.ranked_alternative_groups[0]` plus its own
     alternative->attachment map."""
     subset = {
         aid: a for aid, a in annualized_by_alternative_id.items()
         if alternative_resource_scenario_by_id.get(aid) == fixed_resource_scenario_id
+        and (eligible_attachment_ids is None or alternative_attachment_by_id.get(aid) in set(eligible_attachment_ids))
     }
     has_any_rankable = any(a.computable for a in subset.values())
     decision = decide_integrated(subset, policy)
@@ -367,12 +401,26 @@ def _apply_sensitivity_case(
             annualized.alternative_id, annualized.load_state_results, perturbed_capex, assumptions=assumptions,
         )
 
-    # GEOTHERMAL_DELIVERABLE_HEAT_DERATING_FRACTION: derate each load state's
-    # own injected geothermal heat; auxiliary heat rises to cover exactly the
-    # shortfall so total_heat_delivered_kw (fixed by consumer demand) is
-    # unchanged -- geothermal_curtailed_heat_kw is untouched (curtailment is
-    # about excess above what is usable, unrelated to a derating of the
-    # delivered fraction).
+    # GEOTHERMAL_DELIVERABLE_HEAT_DERATING_FRACTION -- explicit honesty boundary
+    # (spec item G): this path re-derives ECONOMICS only from already-computed
+    # KPIs. It never re-runs pandapipes or the HX evaluator, so it structurally
+    # cannot discover a new technical infeasibility (a candidate already
+    # infeasible in the base case stays infeasible here; a candidate feasible
+    # in the base case can never newly fail a hard gate under this
+    # perturbation). Auxiliary heat rises to cover exactly the geothermal
+    # shortfall, so total_heat_delivered_kw (fixed by consumer demand) is
+    # unchanged and mass/energy balance is exact for every load state --
+    # geothermal_curtailed_heat_kw is untouched (curtailment is about excess
+    # above what is usable, unrelated to a derating of the delivered
+    # fraction). The one documented simplification: dh_hydraulic_pumping_power_kw
+    # is held at its base-case value rather than re-derived for the (slightly
+    # smaller) actual injected geothermal mass flow under derating -- re-deriving
+    # it would require re-running pandapipes per (case x load-state x
+    # alternative), which this project's synthetic sensitivity design
+    # deliberately does not do for ANY sensitivity case (see module docstring).
+    # This sensitivity therefore represents a synthetic geothermal-availability
+    # what-if on the ECONOMIC boundary, not a re-evaluated hydraulic/thermal
+    # state, a geological exploration-risk model, or a new PyDoublet simulation.
     perturbed_states: list[LoadStatePerformanceResult] = []
     for state in annualized.load_state_results:
         derated_injected = state.geothermal_injected_heat_kw * case.multiplier
@@ -384,6 +432,46 @@ def _apply_sensitivity_case(
     return compute_annualized_system_economics(
         annualized.alternative_id, perturbed_states, representative_capex_economics, assumptions=assumptions,
     )
+
+
+def _rank_index_by_alternative_id(decision: JointDecisionResult) -> dict[str, int]:
+    """1-based rank-GROUP index per computable alternative (rank 1 = the
+    first/best group) -- reads `decide()`'s own already-computed
+    `ranked_alternative_groups` verbatim, never a re-derived ranking."""
+    return {
+        aid: rank_index + 1
+        for rank_index, group in enumerate(decision.ranked_alternative_groups)
+        for aid in group
+    }
+
+
+def _compute_candidate_rank_sensitivity(
+    all_alternative_ids: set[str], base_rank_by_id: dict[str, int], case_rank_by_id_list: list[dict[str, int]],
+) -> list[CandidateRankSensitivity]:
+    """spec §14.3's "maximum observed rank change for each base candidate" --
+    computed over every candidate ever evaluated (not only those ranked in
+    the base case), so a candidate that only appears under a perturbation is
+    still reported (`restored_to_feasibility_in_any_case`)."""
+    results: list[CandidateRankSensitivity] = []
+    for aid in sorted(all_alternative_ids):
+        base_rank = base_rank_by_id.get(aid)
+        rank_changes: list[int] = []
+        became_infeasible = False
+        restored = False
+        for case_rank_by_id in case_rank_by_id_list:
+            case_rank = case_rank_by_id.get(aid)
+            if base_rank is not None and case_rank is None:
+                became_infeasible = True
+            elif base_rank is None and case_rank is not None:
+                restored = True
+            elif base_rank is not None and case_rank is not None:
+                rank_changes.append(abs(case_rank - base_rank))
+        results.append(CandidateRankSensitivity(
+            alternative_id=aid, base_rank=base_rank,
+            max_rank_change=max(rank_changes) if rank_changes else None,
+            became_infeasible_in_any_case=became_infeasible, restored_to_feasibility_in_any_case=restored,
+        ))
+    return results
 
 
 def run_sensitivity_study(
@@ -403,14 +491,20 @@ def run_sensitivity_study(
     perturbation -- not merely a single winner. Robustness classification
     uses set OVERLAP (not exact-group equality) against the base case's own
     rank-1 site/attachment sets, mirroring `compare_baselines()`'s own
-    disjointness convention exactly."""
+    disjointness convention exactly. `candidate_rank_sensitivity` (spec
+    §14.3's own "maximum observed rank change for each base candidate")
+    is computed for every candidate ever evaluated, on EVERY return path --
+    it never depends on a unique base winner existing, since rank movement
+    is meaningful even when the base case itself is tied."""
     base_rank1_alt_ids = _rank1_group(base_case_decision)
     base_case_preferred_alternative_id = base_rank1_alt_ids[0] if len(base_rank1_alt_ids) == 1 else None
     base_rank1_site_ids = {site_by_alternative_id[a] for a in base_rank1_alt_ids}
     base_rank1_attachment_ids = {attachment_by_alternative_id[a] for a in base_rank1_alt_ids}
     base_computable_ids = {aid for aid, a in annualized_by_alternative_id.items() if a.computable}
+    base_rank_by_id = _rank_index_by_alternative_id(base_case_decision)
 
     case_results: list[SensitivityCaseResult] = []
+    case_rank_by_id_list: list[dict[str, int]] = []
     for case in sensitivity_cases:
         perturbed = {
             aid: _apply_sensitivity_case(
@@ -419,6 +513,7 @@ def run_sensitivity_study(
             for aid, a in annualized_by_alternative_id.items()
         }
         decision = decide_integrated(perturbed, policy)
+        case_rank_by_id_list.append(_rank_index_by_alternative_id(decision))
         rank1_alt_ids = sorted(_rank1_group(decision))
         rank1_site_ids = sorted({site_by_alternative_id[a] for a in rank1_alt_ids})
         rank1_attachment_ids = sorted({attachment_by_alternative_id[a] for a in rank1_alt_ids})
@@ -430,9 +525,14 @@ def run_sensitivity_study(
             preferred_alternative_id=rank1_alt_ids[0] if len(rank1_alt_ids) == 1 else None,
         ))
 
+    candidate_rank_sensitivity = _compute_candidate_rank_sensitivity(
+        set(annualized_by_alternative_id.keys()), base_rank_by_id, case_rank_by_id_list,
+    )
+
     if not base_rank1_alt_ids:
         return ResearchExperimentDecisionSummary(
             base_case_preferred_alternative_id=None, sensitivity_case_results=case_results,
+            candidate_rank_sensitivity=candidate_rank_sensitivity,
             robustness_classification=RobustnessClassification.NO_UNIQUE_BASE_WINNER,
             explanation="the base (unperturbed) case has no computable alternative at all -- "
                         "robustness cannot be classified relative to a winner that does not exist",
@@ -440,6 +540,7 @@ def run_sensitivity_study(
     if base_case_preferred_alternative_id is None:
         return ResearchExperimentDecisionSummary(
             base_case_preferred_alternative_id=None, sensitivity_case_results=case_results,
+            candidate_rank_sensitivity=candidate_rank_sensitivity,
             robustness_classification=RobustnessClassification.NO_UNIQUE_BASE_WINNER,
             explanation="the base (unperturbed) case has no single unique preferred alternative -- "
                         "robustness cannot be classified relative to a winner that does not exist",
@@ -447,12 +548,14 @@ def run_sensitivity_study(
     if not case_results:
         return ResearchExperimentDecisionSummary(
             base_case_preferred_alternative_id=base_case_preferred_alternative_id, sensitivity_case_results=[],
+            candidate_rank_sensitivity=candidate_rank_sensitivity,
             robustness_classification=RobustnessClassification.INSUFFICIENT_FEASIBLE_CASES,
             explanation="no sensitivity cases were declared -- nothing to classify",
         )
     if any(not r.rank1_alternative_ids for r in case_results):
         return ResearchExperimentDecisionSummary(
             base_case_preferred_alternative_id=base_case_preferred_alternative_id, sensitivity_case_results=case_results,
+            candidate_rank_sensitivity=candidate_rank_sensitivity,
             robustness_classification=RobustnessClassification.INSUFFICIENT_FEASIBLE_CASES,
             explanation="one or more sensitivity cases had no computable alternative at all",
         )
@@ -491,5 +594,6 @@ def run_sensitivity_study(
 
     return ResearchExperimentDecisionSummary(
         base_case_preferred_alternative_id=base_case_preferred_alternative_id, sensitivity_case_results=case_results,
+        candidate_rank_sensitivity=candidate_rank_sensitivity,
         robustness_classification=classification, explanation=explanation,
     )

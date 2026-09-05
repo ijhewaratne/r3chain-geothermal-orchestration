@@ -177,14 +177,15 @@ _RESEARCH_EXPERIMENT_ARTIFACT_FILENAMES = (
     "research_comparison.csv",
     "sensitivity_results.json",
     "sensitivity_comparison.csv",
+    "sensitivity_rank_changes.csv",  # beyond the spec's own §17 list -- item I's max-observed-rank-change metric
     OBJECTIVE_POLICY_FILENAME,  # same literal string as joint_workflow_v2's own constant -- not re-imported
     PARETO_OR_RANKING_FILENAME,  # same literal string as joint_workflow_v2's own constant -- not re-imported
     "research_findings.md",
     MANIFEST_FILENAME,
 )
-"""Exactly the 22 filenames (19 spec-§17-named + referenced_v2_result_snapshot.json
-+ research_experiment_result.json + manifest.json) a completed
-(`workflow_status == "completed"`) research_experiment run publishes -- mirrors
+"""Exactly the 23 filenames (19 spec-§17-named + referenced_v2_result_snapshot.json
++ research_experiment_result.json + manifest.json + sensitivity_rank_changes.csv) a
+completed (`workflow_status == "completed"`) research_experiment run publishes -- mirrors
 workflow/research_experiment_export.py's own `write_research_experiment_artifacts()`
 bundle exactly (conformance round: the spec's own "shall publish at least" §17 list,
 not the smaller 8-file bundle this tuple originally named). Filenames unique to

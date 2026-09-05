@@ -318,6 +318,35 @@ sensitivity rank-group/infeasibility reporting) was also implemented; the spec's
 observed rank change per candidate" sub-item is explicitly descoped and documented, not silently
 dropped. Full offline suite re-run clean; canonical and v2 golden `run_id`s re-confirmed unaffected.
 
+### Final scientific-conformance round (this session, 2026-09-05, a third, letter-by-letter review)
+
+A third review, structured against explicit lettered requirements A–O, warned not to assume the
+prior two rounds' local corrections were already correct. Direct re-inspection (not assumption)
+confirmed most items — including A, B, D, E (geothermal-only scenario-level ranking, the declared
+network-only reference, set-based comparison, all four interpretation codes reachable), J, K
+(annualization horizon semantics, LCOH physical/economic boundary), L (artifact bundle coverage)
+and N (no scientific logic in the MCP layer) — were already correctly implemented and needed no
+further code change. Two genuine gaps remained: `network_only.eligible_attachment_ids` was
+declared in `NetworkOnlyBaselinePolicy` but never referenced by any code in `src/` (a
+documentation-only field, confirmed by direct search before any fix); and the spec's own §14.3
+"maximum observed rank change for each base candidate" metric, previously descoped in the round
+above as disproportionate, is now implemented as the user explicitly requested rather than left
+descoped, together with item H's symmetric "restored to feasibility" case. Both are computed
+purely from each already-computed `JointDecisionResult`'s own `ranked_alternative_groups` — no
+re-derived ranking, no new pandapipes/HX re-simulation. Item G (geothermal-derating sensitivity
+honesty) required no new physics: the derating path already re-derives economics only from
+already-computed KPIs and never re-runs pandapipes, so it structurally cannot fabricate new
+infeasibility; this is now stated explicitly rather than left implicit, alongside the one
+documented simplification (`dh_hydraulic_pumping_power_kw` held at its base-case value). Item F's
+wording is strengthened, not changed: `MATERIAL_TIE_PREVENTS_UNIQUE_COMPARISON` is
+**RESERVED/DEPRECATED under set-based comparison semantics — rank-1 ties no longer prevent
+baseline comparison**. See `docs/decisions/decision-register.md` IMPL-030 for the full record,
+including the one bug this round's own implementation caught before any test ran: the final
+(non-early-return) construction path inside `run_sensitivity_study()` initially omitted threading
+`candidate_rank_sensitivity` through, found and fixed by direct code re-inspection. Full offline
+suite re-run clean after every fix in this round; canonical and v2 golden `run_id`s re-confirmed
+unaffected.
+
 ## MCP and orchestration requirements
 
 | ID | Status | Evidence |

@@ -20,6 +20,7 @@ from r3chain_geothermal.data_contracts.research_experiment import (
     AnnualizedAlternativeEconomicResult,
     BaselineComparisonResult,
     BaselineExperimentPolicy,
+    CandidateRankSensitivity,
     ComparisonInterpretationCode,
     GeothermalOnlyBaselinePolicy,
     IntegratedBaselinePolicy,
@@ -494,6 +495,12 @@ def test_decision_summary_robust_case() -> None:
                 rank1_attachment_ids=["att-1"], newly_infeasible_alternative_ids=[], preferred_alternative_id="alt-1",
             ),
         ],
+        candidate_rank_sensitivity=[
+            CandidateRankSensitivity(
+                alternative_id="alt-1", base_rank=1, max_rank_change=0,
+                became_infeasible_in_any_case=False, restored_to_feasibility_in_any_case=False,
+            ),
+        ],
         robustness_classification=RobustnessClassification.ROBUST_OVER_TESTED_RANGE,
         explanation="alt-1 remains preferred across every tested sensitivity case",
     )
@@ -504,6 +511,7 @@ def test_decision_summary_no_unique_base_winner_requires_null_preferred_id() -> 
     with pytest.raises(ValidationError):
         ResearchExperimentDecisionSummary(
             base_case_preferred_alternative_id="alt-1", sensitivity_case_results=[],
+            candidate_rank_sensitivity=[],
             robustness_classification=RobustnessClassification.NO_UNIQUE_BASE_WINNER,
             explanation="should be rejected",
         )
@@ -517,6 +525,7 @@ def test_decision_summary_rejects_duplicate_sensitivity_case_ids() -> None:
     with pytest.raises(ValidationError):
         ResearchExperimentDecisionSummary(
             base_case_preferred_alternative_id=None, sensitivity_case_results=[case, case],
+            candidate_rank_sensitivity=[],
             robustness_classification=RobustnessClassification.ASSUMPTION_SENSITIVE,
             explanation="duplicate case ids should be rejected",
         )

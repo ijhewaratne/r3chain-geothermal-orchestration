@@ -633,12 +633,58 @@ class RobustnessClassification(str, Enum):
     INSUFFICIENT_FEASIBLE_CASES = "INSUFFICIENT_FEASIBLE_CASES"
 
 
+class CandidateRankSensitivity(BaseModel):
+    """Per-candidate rank-movement summary across every declared sensitivity
+    case (spec §14.3: "maximum observed rank change for each base
+    candidate"). `base_rank`/each case's own rank are 1-based rank-GROUP
+    indices from `decision.joint_policy.decide()`'s own
+    `ranked_alternative_groups` (rank 1 = the first/best group; materially
+    tied alternatives share one rank, matching this project's established
+    ranking convention) -- never a re-derived or invented ranking."""
+    model_config = _MODEL_CONFIG
+
+    alternative_id: str
+    base_rank: int | None
+    """Null when this candidate was not computable at all in the base
+    (unperturbed) case."""
+    max_rank_change: int | None
+    """max(abs(case_rank - base_rank)) over every sensitivity case where the
+    candidate was computable in BOTH the base case and that case. Null when
+    there is no such case (e.g. the candidate was never computable in the
+    base case, or became/was infeasible in every declared case) -- an
+    infeasible candidate is never assigned an ordinary numeric rank change,
+    per `became_infeasible_in_any_case` below instead."""
+    became_infeasible_in_any_case: bool
+    """True when this candidate was computable in the base case but not
+    computable under at least one declared sensitivity case."""
+    restored_to_feasibility_in_any_case: bool
+    """The symmetric case: not computable in the base case, but computable
+    under at least one declared sensitivity case -- reported honestly
+    rather than only tracking one direction."""
+
+    @model_validator(mode="after")
+    def _validate(self) -> "CandidateRankSensitivity":
+        errors: list[str] = []
+        if not self.alternative_id:
+            errors.append("alternative_id must not be empty")
+        if self.base_rank is not None and self.base_rank < 1:
+            errors.append(f"base_rank must be >= 1 when set, got {self.base_rank!r}")
+        if self.max_rank_change is not None and self.max_rank_change < 0:
+            errors.append(f"max_rank_change must be >= 0 when set, got {self.max_rank_change!r}")
+        if self.base_rank is None and self.max_rank_change is not None:
+            errors.append("max_rank_change must be null when base_rank is null (not computable in the base case)")
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
+
+
 class ResearchExperimentDecisionSummary(BaseModel):
     model_config = _MODEL_CONFIG
 
     contract_schema_version: Literal["1.0.0"] = RESEARCH_EXPERIMENT_CONTRACT_SCHEMA_VERSION
     base_case_preferred_alternative_id: str | None
     sensitivity_case_results: list[SensitivityCaseResult]
+    candidate_rank_sensitivity: list[CandidateRankSensitivity]
     robustness_classification: RobustnessClassification
     explanation: str
 
@@ -660,6 +706,9 @@ class ResearchExperimentDecisionSummary(BaseModel):
         case_ids = [c.case_id for c in self.sensitivity_case_results]
         if len(case_ids) != len(set(case_ids)):
             errors.append("case_id values must be unique across sensitivity_case_results")
+        rank_sensitivity_ids = [c.alternative_id for c in self.candidate_rank_sensitivity]
+        if len(rank_sensitivity_ids) != len(set(rank_sensitivity_ids)):
+            errors.append("alternative_id values must be unique across candidate_rank_sensitivity")
         if errors:
             raise ValueError("; ".join(errors))
         return self

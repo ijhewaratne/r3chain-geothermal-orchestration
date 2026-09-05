@@ -32,6 +32,7 @@ from r3chain_geothermal.data_contracts.research_experiment import (
 from r3chain_geothermal.decision.joint_policy import AlternativeObjectiveValues, decide
 from r3chain_geothermal.decision.research_comparison import (
     ANNUALIZED_LCOH_OBJECTIVE_NAME,
+    _apply_sensitivity_case,
     compare_baselines,
     compute_geothermal_only_lcoh_eur_per_mwh,
     decide_integrated,
@@ -179,18 +180,55 @@ def test_rank_network_only_baseline_filters_to_the_declared_reference(_fixture) 
 
     annualized_by_id = {}
     resource_scenario_by_id = {}
+    attachment_by_id = {}
     for alt in feasible_alts:
         aid = alt.identity.alternative_id
         annualized_by_id[aid] = compute_annualized_system_economics(
             aid, [_feasible_state()], alt.economics, assumptions=assumptions,
         )
         resource_scenario_by_id[aid] = alt.identity.resource_scenario_id
+        attachment_by_id[aid] = alt.identity.attachment_id
 
     decision, has_any_rankable, subset = rank_network_only_baseline(
         annualized_by_id, resource_scenario_by_id, fixed_scenario_id, _policy(),
+        alternative_attachment_by_id=attachment_by_id,
     )
     assert has_any_rankable
     assert all(resource_scenario_by_id[aid] == fixed_scenario_id for aid in subset)
+
+
+def test_rank_network_only_baseline_eligible_attachment_ids_filters_subset(_fixture) -> None:
+    v2_result, assumptions, _ = _fixture
+    feasible_alts = [a for a in v2_result.alternatives if a.feasible]
+    assert len(feasible_alts) >= 1
+    fixed_scenario_id = feasible_alts[0].identity.resource_scenario_id
+    same_scenario_alts = [a for a in feasible_alts if a.identity.resource_scenario_id == fixed_scenario_id]
+
+    annualized_by_id = {}
+    resource_scenario_by_id = {}
+    attachment_by_id = {}
+    for alt in feasible_alts:
+        aid = alt.identity.alternative_id
+        annualized_by_id[aid] = compute_annualized_system_economics(
+            aid, [_feasible_state()], alt.economics, assumptions=assumptions,
+        )
+        resource_scenario_by_id[aid] = alt.identity.resource_scenario_id
+        attachment_by_id[aid] = alt.identity.attachment_id
+
+    excluded_attachment_id = same_scenario_alts[0].identity.attachment_id
+    eligible_attachment_ids = sorted({
+        a.identity.attachment_id for a in same_scenario_alts
+        if a.identity.attachment_id != excluded_attachment_id
+    })
+
+    decision, has_any_rankable, subset = rank_network_only_baseline(
+        annualized_by_id, resource_scenario_by_id, fixed_scenario_id, _policy(),
+        alternative_attachment_by_id=attachment_by_id,
+        eligible_attachment_ids=eligible_attachment_ids if eligible_attachment_ids else None,
+    )
+    assert all(attachment_by_id[aid] != excluded_attachment_id for aid in subset)
+    if eligible_attachment_ids:
+        assert all(attachment_by_id[aid] in set(eligible_attachment_ids) for aid in subset)
 
 
 def test_rank_network_only_baseline_not_rankable_for_an_unknown_scenario(_fixture) -> None:
@@ -202,6 +240,7 @@ def test_rank_network_only_baseline_not_rankable_for_an_unknown_scenario(_fixtur
     }
     decision, has_any_rankable, subset = rank_network_only_baseline(
         annualized_by_id, {aid: feasible_alt.identity.resource_scenario_id}, "no-such-scenario", _policy(),
+        alternative_attachment_by_id={aid: feasible_alt.identity.attachment_id},
     )
     assert not has_any_rankable
     assert subset == {}
@@ -461,3 +500,128 @@ def test_run_sensitivity_study_newly_infeasible_alternative_is_recorded(_fixture
         attachment_by_alternative_id={"alt-1": "att-1"},
     )
     assert summary.sensitivity_case_results[0].newly_infeasible_alternative_ids == []
+
+
+# ── Item I: maximum observed rank change + restored-to-feasibility ──────────
+
+def test_run_sensitivity_study_flip_produces_max_rank_change_of_one(_fixture) -> None:
+    """The flip-construction case (alt-cheap rank 1 in base, alt-expensive
+    rank 1 under the perturbation) must report max_rank_change=1 for BOTH
+    candidates -- neither was ever infeasible, so the metric is a plain
+    |case_rank - base_rank| delta over one declared sensitivity case."""
+    v2_result, assumptions, _ = _fixture
+    feasible_alt = next(a for a in v2_result.alternatives if a.feasible)
+    annualized, cheap_capex, expensive_capex = _flip_construction(feasible_alt, assumptions)
+    policy = _policy()
+    base_decision = decide_integrated(annualized, policy)
+    assert base_decision.preferred_alternative_id == "alt-cheap"
+
+    summary = run_sensitivity_study(
+        annualized, {"alt-cheap": cheap_capex, "alt-expensive": expensive_capex},
+        [_sensitivity_case(case_id="flip_it", multiplier=1_000_000.0)], policy, assumptions=assumptions,
+        base_case_decision=base_decision,
+        site_by_alternative_id={"alt-cheap": "site-a", "alt-expensive": "site-b"},
+        attachment_by_alternative_id={"alt-cheap": "att-1", "alt-expensive": "att-2"},
+    )
+    by_id = {c.alternative_id: c for c in summary.candidate_rank_sensitivity}
+    assert by_id["alt-cheap"].base_rank == 1
+    assert by_id["alt-expensive"].base_rank == 2
+    assert by_id["alt-cheap"].max_rank_change == 1
+    assert by_id["alt-expensive"].max_rank_change == 1
+    assert not by_id["alt-cheap"].became_infeasible_in_any_case
+    assert not by_id["alt-expensive"].became_infeasible_in_any_case
+    assert not by_id["alt-cheap"].restored_to_feasibility_in_any_case
+    assert not by_id["alt-expensive"].restored_to_feasibility_in_any_case
+
+
+def test_run_sensitivity_study_robust_over_tested_range_reports_zero_rank_change(_fixture) -> None:
+    v2_result, assumptions, _ = _fixture
+    feasible_alt = next(a for a in v2_result.alternatives if a.feasible)
+    capex_econ = feasible_alt.economics
+    annualized = {"alt-1": _build_annualized(capex_econ, [_feasible_state()], assumptions, "alt-1")}
+    policy = _policy()
+    base_decision = decide_integrated(annualized, policy)
+    summary = run_sensitivity_study(
+        annualized, {"alt-1": capex_econ}, [_sensitivity_case(multiplier=1.01)], policy, assumptions=assumptions,
+        base_case_decision=base_decision, site_by_alternative_id={"alt-1": "site-a"},
+        attachment_by_alternative_id={"alt-1": "att-1"},
+    )
+    entry = summary.candidate_rank_sensitivity[0]
+    assert entry.alternative_id == "alt-1"
+    assert entry.base_rank == 1
+    assert entry.max_rank_change == 0
+    assert not entry.became_infeasible_in_any_case
+    assert not entry.restored_to_feasibility_in_any_case
+
+
+def test_compute_candidate_rank_sensitivity_flags_became_infeasible_and_restored() -> None:
+    """Direct unit test of the pure helper (no organic sensitivity factor in
+    this layer can flip physical feasibility -- item G's own honesty
+    guarantee) -- proves the metric's own infeasibility/restoration handling
+    in isolation, matching this project's established precedent of testing
+    a private helper directly (see tests/network/test_baseline.py)."""
+    from r3chain_geothermal.decision.research_comparison import _compute_candidate_rank_sensitivity
+
+    results = _compute_candidate_rank_sensitivity(
+        all_alternative_ids={"alt-a", "alt-b", "alt-c"},
+        base_rank_by_id={"alt-a": 1, "alt-b": 2},
+        case_rank_by_id_list=[{"alt-a": 1, "alt-c": 2}, {"alt-a": 2}],
+    )
+    by_id = {r.alternative_id: r for r in results}
+
+    assert by_id["alt-a"].base_rank == 1
+    assert by_id["alt-a"].max_rank_change == 1
+    assert not by_id["alt-a"].became_infeasible_in_any_case
+    assert not by_id["alt-a"].restored_to_feasibility_in_any_case
+
+    assert by_id["alt-b"].base_rank == 2
+    assert by_id["alt-b"].max_rank_change is None
+    assert by_id["alt-b"].became_infeasible_in_any_case
+    assert not by_id["alt-b"].restored_to_feasibility_in_any_case
+
+    assert by_id["alt-c"].base_rank is None
+    assert by_id["alt-c"].max_rank_change is None
+    assert not by_id["alt-c"].became_infeasible_in_any_case
+    assert by_id["alt-c"].restored_to_feasibility_in_any_case
+
+
+def test_geothermal_derating_sensitivity_preserves_pumping_power_and_energy_balance(_fixture) -> None:
+    """Item G's own honesty guarantee, proven directly: the geothermal-
+    derating case must never change dh_hydraulic_pumping_power_kw from its
+    base-case value (the documented simplification), and injected +
+    auxiliary heat must exactly equal the base case's own
+    total_heat_delivered_kw for every load state -- i.e. this sensitivity
+    path can never fabricate a new technical infeasibility on its own."""
+    v2_result, assumptions, _ = _fixture
+    feasible_alt = next(a for a in v2_result.alternatives if a.feasible)
+    capex_econ = feasible_alt.economics
+    base_state = _feasible_state()
+    annualized = {"alt-1": _build_annualized(capex_econ, [base_state], assumptions, "alt-1")}
+    policy = _policy()
+    base_decision = decide_integrated(annualized, policy)
+
+    derate_case = _sensitivity_case(
+        case_id="geo_derate_10pct",
+        factor_name=SensitivityFactorName.GEOTHERMAL_DELIVERABLE_HEAT_DERATING_FRACTION, multiplier=0.9,
+    )
+    summary = run_sensitivity_study(
+        annualized, {"alt-1": capex_econ}, [derate_case], policy, assumptions=assumptions,
+        base_case_decision=base_decision, site_by_alternative_id={"alt-1": "site-a"},
+        attachment_by_alternative_id={"alt-1": "att-1"},
+    )
+    assert summary.sensitivity_case_results[0].newly_infeasible_alternative_ids == []
+    entry = summary.candidate_rank_sensitivity[0]
+    assert not entry.became_infeasible_in_any_case
+
+    perturbed = _apply_sensitivity_case(
+        annualized["alt-1"], capex_econ, derate_case, assumptions=assumptions,
+    )
+    assert perturbed.computable
+    perturbed_state = perturbed.load_state_results[0]
+    assert perturbed_state.dh_hydraulic_pumping_power_kw == pytest.approx(base_state.dh_hydraulic_pumping_power_kw)
+    assert (
+        perturbed_state.geothermal_injected_heat_kw + perturbed_state.auxiliary_heat_kw
+        == pytest.approx(base_state.total_heat_delivered_kw)
+    )
+    assert perturbed_state.total_heat_delivered_kw == pytest.approx(base_state.total_heat_delivered_kw)
+    assert perturbed_state.geothermal_injected_heat_kw < base_state.geothermal_injected_heat_kw
