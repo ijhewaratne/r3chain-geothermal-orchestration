@@ -137,7 +137,14 @@ def test_real_server_process_cleans_up_its_temp_directory_on_sigterm():
     )
     try:
         new_dir = None
-        deadline = time.monotonic() + 5.0
+        # 15s: widened from an original 5.0s after two real macos-latest CI
+        # runs (2026-09-05) failed with "server subprocess never created its
+        # temp directory in time" on an otherwise-unrelated docs-only push --
+        # a loaded/slow CI runner can take longer than 5s just to import
+        # pandapipes/numpy before the server ever reaches its own registry
+        # temp-directory creation. Not a change to what the test proves (the
+        # directory must still appear and later be cleaned up on SIGTERM).
+        deadline = time.monotonic() + 15.0
         while time.monotonic() < deadline:
             after = set(Path(tempfile.gettempdir()).glob("r3chain-mcp-*"))
             created = after - before
