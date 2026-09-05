@@ -345,7 +345,11 @@ including the one bug this round's own implementation caught before any test ran
 (non-early-return) construction path inside `run_sensitivity_study()` initially omitted threading
 `candidate_rank_sensitivity` through, found and fixed by direct code re-inspection. Full offline
 suite re-run clean after every fix in this round; canonical and v2 golden `run_id`s re-confirmed
-unaffected.
+unaffected. **Closed:** pushed as commit `37454f20ceac05a384b621e44acfa5cb647743ce` on
+`feature/complete-synthetic-prototype`; GitHub Actions run
+[33985239005](https://github.com/ijhewaratne/r3chain-geothermal-orchestration/actions/runs/33985239005)
+— all three required jobs green (`test (macos-latest, 3.11)`, `test (ubuntu-latest, 3.11)`,
+`test (ubuntu-latest, 3.12)`), `conclusion: success`.
 
 ## MCP and orchestration requirements
 
