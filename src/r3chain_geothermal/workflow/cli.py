@@ -113,6 +113,13 @@ from ..contracts import SourceProvenance
 from .artifacts import write_workflow_artifacts
 from .core import WorkflowConfigurationError, WorkflowFailure, WorkflowResult, run_workflow, validate_config_structure
 from .csv_export import render_candidate_comparison_csv
+from .fixed_interface_workflow import (
+    FixedInterfaceSiteOptimizationFailure,
+    FixedInterfaceSiteOptimizationResult,
+    is_fixed_interface_site_optimization_enabled,
+    run_fixed_interface_site_optimization,
+    write_fixed_interface_site_optimization_artifacts,
+)
 from .joint_workflow import (
     JointOptimizationWorkflowFailure,
     JointOptimizationWorkflowResult,
@@ -431,6 +438,75 @@ def _run_joint_study_v2_cli(
     return EXIT_OK
 
 
+def _run_fixed_interface_site_optimization_cli(
+    pydoublet_raw_result: dict[str, Any], config: dict[str, Any], source_provenance: SourceProvenance,
+    output_dir: Path, config_path: Path,
+) -> int:
+    """The fixed-DH-interface-drilling-site-optimization analogue of
+    `_run_joint_study_v2_cli` -- dispatched whenever
+    `config["fixed_interface_site_optimization"]["enabled"]` is true.
+    `package_root` is derived exactly the same way (`config_path.resolve()
+    .parent.parent`, never `Path.cwd()`) for the same documented reason."""
+    package_root = config_path.resolve().parent.parent
+    try:
+        package_path = (package_root / config["fixed_interface_site_optimization"]["package_path"]).resolve()
+        package_raw = json.loads(package_path.read_text(encoding="utf-8"))
+        if not isinstance(package_raw, dict):
+            package_raw = {}
+    except (KeyError, OSError, ValueError):
+        package_raw = {}
+
+    result = run_fixed_interface_site_optimization(
+        pydoublet_raw_result, config, source_provenance=source_provenance, package_root=package_root,
+    )
+
+    try:
+        parent_dir = output_dir.parent if str(output_dir.parent) else Path(".")
+        parent_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.tmp-", dir=str(parent_dir)))
+    except OSError as exc:
+        print(f"error: failed to create a temporary working directory: {exc}", file=sys.stderr)
+        return EXIT_ARTIFACT_PUBLICATION_FAILURE
+
+    try:
+        write_fixed_interface_site_optimization_artifacts(result, pydoublet_raw_result, config, package_raw, temp_dir)
+        _publish_temp_dir(temp_dir, output_dir)
+    except Exception as exc:  # noqa: BLE001 -- any publication-stage failure maps to one exit code
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        print(f"error: failed to publish the artifact bundle: {exc}", file=sys.stderr)
+        return EXIT_ARTIFACT_PUBLICATION_FAILURE
+
+    if isinstance(result, FixedInterfaceSiteOptimizationFailure):
+        print(f"fixed-interface drilling-site optimization stopped: {result.failure_code}: {result.message}", file=sys.stderr)
+        print(f"run_id: {result.run_id}", file=sys.stderr)
+        print(f"bundle published (failure audit trail): {output_dir}", file=sys.stderr)
+        return EXIT_WORKFLOW_FAILURE
+
+    assert isinstance(result, FixedInterfaceSiteOptimizationResult)
+    c = result.counts
+    print(f"run_id: {result.run_id}")
+    print(f"fixed DH integration point: {result.fixed_integration_station.station_id}")
+    print(
+        f"candidate drilling sites={c.site_count} scenarios={c.resource_scenario_count} "
+        f"routes={c.generated_route_count}({c.accepted_route_count} accepted) "
+        f"possible={c.possible_alternative_count} compatible={c.compatible_alternative_count} "
+        f"evaluated={c.evaluated_alternative_count} feasible={c.feasible_alternative_count}"
+    )
+    if result.decision.preferred_alternative_id:
+        preferred = next(
+            a for a in result.alternatives if a.identity.alternative_id == result.decision.preferred_alternative_id
+        )
+        print(f"preferred drilling site: {preferred.identity.surface_site_id} (scenario {preferred.identity.resource_scenario_id})")
+    elif result.decision.pareto_shortlist_alternative_ids:
+        print(f"Pareto shortlist ({len(result.decision.pareto_shortlist_alternative_ids)} non-dominated candidate sites):")
+        for alt_id in result.decision.pareto_shortlist_alternative_ids:
+            print(f"  {alt_id}")
+    else:
+        print("no feasible candidate drilling site -- no recommendation (synthetic demonstration only)")
+    print(f"bundle published: {output_dir}")
+    return EXIT_OK
+
+
 def _run_research_experiment_cli(
     pydoublet_raw_result: dict[str, Any], config: dict[str, Any], source_provenance: SourceProvenance,
     output_dir: Path, config_path: Path,
@@ -500,6 +576,11 @@ def run_cli(argv: list[str]) -> int:
     except (_CliInputError, WorkflowConfigurationError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_INPUT_ERROR
+
+    if is_fixed_interface_site_optimization_enabled(config):
+        return _run_fixed_interface_site_optimization_cli(
+            pydoublet_raw_result, config, source_provenance, output_dir, args.config,
+        )
 
     if is_research_experiment_enabled(config):
         return _run_research_experiment_cli(pydoublet_raw_result, config, source_provenance, output_dir, args.config)

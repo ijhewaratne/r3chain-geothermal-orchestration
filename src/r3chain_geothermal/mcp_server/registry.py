@@ -77,6 +77,11 @@ from ..workflow import (
     WorkflowAuditRecord,
     parse_workflow_result_json,
 )
+from ..workflow.fixed_interface_workflow import (
+    FIXED_INTERFACE_RESULT_FILENAME,
+    FixedInterfaceWorkflowManifestRecord,
+    parse_fixed_interface_workflow_result_json,
+)
 from ..workflow.joint_workflow_v2 import (
     JOINT_RESULT_FILENAME,
     JointWorkflowV2ManifestRecord,
@@ -88,9 +93,11 @@ from ..workflow.research_experiment_export import (
     ResearchExperimentManifestRecord,
 )
 from .schemas import (
+    FixedInterfaceWorkflowSummary,
     JointWorkflowSummary,
     ResearchExperimentSummary,
     RunSummary,
+    summarize_fixed_interface_site_optimization_result,
     summarize_joint_workflow_v2_result,
     summarize_research_experiment_result,
     summarize_workflow_result,
@@ -136,7 +143,7 @@ class RegistryClosedError(Exception):
 @dataclass(frozen=True)
 class RunEntry:
     run_id: str
-    summary: "RunSummary | JointWorkflowSummary | ResearchExperimentSummary"
+    summary: "RunSummary | JointWorkflowSummary | ResearchExperimentSummary | FixedInterfaceWorkflowSummary"
     audit: WorkflowAuditRecord
     artifact_dir: Path
     """This run's own directory, server-owned -- `run_id` is always
@@ -337,6 +344,8 @@ class RunRegistry:
             return self._load_research_experiment_run_entry(run_id, run_dir, manifest_raw)
         if run_type == "joint_site_connection":
             return self._load_joint_run_entry(run_id, run_dir, manifest_raw)
+        if run_type == "fixed_interface_site_optimization":
+            return self._load_fixed_interface_site_optimization_run_entry(run_id, run_dir, manifest_raw)
         return self._load_canonical_run_entry(run_id, run_dir, manifest_raw)
 
     def _load_canonical_run_entry(self, run_id: str, run_dir: Path, manifest_raw: dict) -> RunEntry:
@@ -385,6 +394,30 @@ class RunRegistry:
             run_id=run_id, summary=summary, audit=boundary.audit,
             artifact_dir=run_dir, artifact_filenames=artifact_filenames, created_at=manifest.created_at,
             run_type="joint_site_connection",
+        )
+
+    def _load_fixed_interface_site_optimization_run_entry(self, run_id: str, run_dir: Path, manifest_raw: dict) -> RunEntry:
+        manifest = FixedInterfaceWorkflowManifestRecord(**manifest_raw)
+        if manifest.run_id != run_id:
+            raise ValueError(f"manifest run_id {manifest.run_id!r} does not match directory name {run_id!r}")
+        for filename, record in manifest.files.items():
+            file_path = run_dir / filename
+            if not file_path.is_file():
+                raise ValueError(f"declared file {filename!r} is missing on disk")
+            actual_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+            if actual_hash != record.byte_sha256:
+                raise ValueError(f"{filename!r} on-disk byte hash does not match the manifest's own record")
+        result_path = run_dir / FIXED_INTERFACE_RESULT_FILENAME
+        if not result_path.is_file():
+            raise ValueError(f"missing {FIXED_INTERFACE_RESULT_FILENAME}")
+        boundary = parse_fixed_interface_workflow_result_json(result_path.read_text(encoding="utf-8"))
+        artifact_filenames = frozenset(manifest.files) | {MANIFEST_FILENAME}
+        summary = summarize_fixed_interface_site_optimization_result(boundary, artifact_filenames, reused_existing_run=True)
+        summary = summary.model_copy(update={"bundle_scientific_sha256": manifest.bundle_scientific_sha256})
+        return RunEntry(
+            run_id=run_id, summary=summary, audit=boundary.audit,
+            artifact_dir=run_dir, artifact_filenames=artifact_filenames, created_at=manifest.created_at,
+            run_type="fixed_interface_site_optimization",
         )
 
     def _load_research_experiment_run_entry(self, run_id: str, run_dir: Path, manifest_raw: dict) -> RunEntry:
@@ -497,6 +530,7 @@ class RunRegistry:
         manifest_cls = {
             "joint_site_connection": JointWorkflowV2ManifestRecord,
             "research_experiment": ResearchExperimentManifestRecord,
+            "fixed_interface_site_optimization": FixedInterfaceWorkflowManifestRecord,
         }.get(manifest_raw.get("run_type"), ManifestRecord)
         manifest = manifest_cls(**manifest_raw)
         if manifest.run_id != run_id:

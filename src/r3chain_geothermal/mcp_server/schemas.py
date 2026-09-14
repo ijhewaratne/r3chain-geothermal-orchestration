@@ -15,6 +15,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..contracts import CouplingWarning
 from ..workflow import WorkflowAuditRecord, WorkflowFailure, WorkflowResult
+from ..workflow.fixed_interface_workflow import (
+    FixedInterfaceSiteOptimizationFailure,
+    FixedInterfaceSiteOptimizationResult,
+)
 from ..workflow.joint_workflow_v2 import JointWorkflowV2Failure, JointWorkflowV2Result
 from ..workflow.research_experiment import ResearchExperimentFailure, ResearchExperimentResult
 from .errors import ToolError
@@ -73,6 +77,11 @@ class CapabilitiesSummary(BaseModel):
     """DSP-001: GeothermalInjectionPolicy.auxiliary_policy's accepted values."""
     available_injection_sizing_policies: list[str]
     """DSP-005: GeothermalInjectionPolicy.injection_sizing_policy's accepted values."""
+    fixed_interface_site_optimization_enabled: bool
+    """The fixed-DH-interface-drilling-site-optimization-layer analogue of
+    joint_study_v2_enabled/research_experiment_enabled above: whether
+    `fixed_config["fixed_interface_site_optimization"]["enabled"]` is true
+    right now."""
     candidate_generation_modes: list[str]
     """CAN-001 (R3CHAIN_GEOTHERMAL_PROTOTYPE_COMPLETION_SPEC.md Phase
     3.2): "predefined" (config/demo_assumptions.json's own fixed C1-C4)
@@ -92,11 +101,13 @@ class CapabilitiesSummary(BaseModel):
     supported_workflow_modes: list[str]
     """MCP-001 (docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
     Phase 6, extended by the R3-CHAIN Final Research-Alignment
-    Implementation Specification's own Phase 6): always
-    `["canonical", "joint_site_connection", "research_experiment"]` -- every
-    workflow_mode value this SERVER IMPLEMENTATION can dispatch
-    geo_run_workflow to, mirroring candidate_generation_modes' own
-    "implementation capability, not current config" convention."""
+    Implementation Specification's own Phase 6, and by the fixed-DH-
+    interface drilling-site-optimization correction): always
+    `["canonical", "joint_site_connection", "research_experiment",
+    "fixed_interface_site_optimization"]` -- every workflow_mode value this
+    SERVER IMPLEMENTATION can dispatch geo_run_workflow to, mirroring
+    candidate_generation_modes' own "implementation capability, not
+    current config" convention."""
     joint_study_v2_enabled: bool
     """Whether THIS server's own currently loaded fixed_config actually
     has `joint_study_v2.enabled == true` -- i.e., whether calling
@@ -294,8 +305,90 @@ def summarize_research_experiment_result(
     )
 
 
+class FixedInterfaceWorkflowSummary(BaseModel):
+    """`geo_run_workflow`'s (and `geo_get_run_summary`'s) success return
+    for a `fixed_interface_site_optimization`-enabled run -- the
+    drilling-site-optimization analogue of `JointWorkflowSummary`. Every
+    count/decision field is `None` when `workflow_status == "stopped"`,
+    exactly mirroring `JointWorkflowSummary`'s own convention."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    status: Literal["success"] = "success"
+    workflow_mode: Literal["fixed_interface_site_optimization"] = "fixed_interface_site_optimization"
+    run_id: str
+    workflow_status: Literal["completed", "stopped"]
+    stopping_failure_code: str | None
+    fixed_dh_integration_point_id: str | None
+    """The resolved `FixedHeatIntegrationStation.station_id` -- `None`
+    only when the run stopped before station resolution."""
+    site_count: int | None
+    resource_scenario_count: int | None
+    route_count: int | None
+    compatible_alternative_count: int | None
+    evaluated_alternative_count: int | None
+    feasible_alternative_count: int | None
+    pareto_shortlist_alternative_ids: list[str]
+    ranked_alternative_groups: list[list[str]]
+    preferred_alternative_id: str | None
+    preferred_drilling_site_id: str | None
+    """The preferred alternative's own `surface_site_id` -- reported
+    separately from `preferred_alternative_id` so a caller never has to
+    parse the alternative_id string to answer "which SITE won" (task's own
+    instruction: never phrase the output as "best attachment"/"best
+    junction" -- this field states the site directly)."""
+    decision_policy_mode: Literal["pareto_only", "primary_objective_ranking"] | None
+    artifact_filenames: list[str]
+    bundle_scientific_sha256: str
+    reused_existing_run: bool
+
+
+def summarize_fixed_interface_site_optimization_result(
+    result: "FixedInterfaceSiteOptimizationResult | FixedInterfaceSiteOptimizationFailure",
+    artifact_filenames: frozenset[str], *, reused_existing_run: bool,
+) -> FixedInterfaceWorkflowSummary:
+    """The fixed-interface analogue of `summarize_joint_workflow_v2_result()`
+    -- the ONE place a `FixedInterfaceSiteOptimizationResult`/`...Failure`
+    is mapped to the compact `FixedInterfaceWorkflowSummary` shape, reused
+    identically by `mcp_server/tools.py` and `mcp_server/registry.py`'s
+    own rehydration path."""
+    if isinstance(result, FixedInterfaceSiteOptimizationFailure):
+        return FixedInterfaceWorkflowSummary(
+            run_id=result.run_id, workflow_status="stopped", stopping_failure_code=result.failure_code,
+            fixed_dh_integration_point_id=None, site_count=None, resource_scenario_count=None, route_count=None,
+            compatible_alternative_count=None, evaluated_alternative_count=None, feasible_alternative_count=None,
+            pareto_shortlist_alternative_ids=[], ranked_alternative_groups=[], preferred_alternative_id=None,
+            preferred_drilling_site_id=None, decision_policy_mode=None,
+            artifact_filenames=sorted(artifact_filenames), bundle_scientific_sha256="",
+            reused_existing_run=reused_existing_run,
+        )
+    c = result.counts
+    preferred_site_id: str | None = None
+    if result.decision.preferred_alternative_id is not None:
+        preferred_site_id = next(
+            (a.identity.surface_site_id for a in result.alternatives
+             if a.identity.alternative_id == result.decision.preferred_alternative_id),
+            None,
+        )
+    return FixedInterfaceWorkflowSummary(
+        run_id=result.run_id, workflow_status="completed", stopping_failure_code=None,
+        fixed_dh_integration_point_id=result.fixed_integration_station.station_id,
+        site_count=c.site_count, resource_scenario_count=c.resource_scenario_count,
+        route_count=c.accepted_route_count, compatible_alternative_count=c.compatible_alternative_count,
+        evaluated_alternative_count=c.evaluated_alternative_count, feasible_alternative_count=c.feasible_alternative_count,
+        pareto_shortlist_alternative_ids=list(result.decision.pareto_shortlist_alternative_ids),
+        ranked_alternative_groups=[list(group) for group in result.decision.ranked_alternative_groups],
+        preferred_alternative_id=result.decision.preferred_alternative_id,
+        preferred_drilling_site_id=preferred_site_id,
+        decision_policy_mode=result.decision.mode.value,
+        artifact_filenames=sorted(artifact_filenames), bundle_scientific_sha256="",
+        reused_existing_run=reused_existing_run,
+    )
+
+
 _AnyRunSummary = Annotated[
-    Union[RunSummary, JointWorkflowSummary, ResearchExperimentSummary], Field(discriminator="workflow_mode"),
+    Union[RunSummary, JointWorkflowSummary, ResearchExperimentSummary, FixedInterfaceWorkflowSummary],
+    Field(discriminator="workflow_mode"),
 ]
 """A nested discriminated union (pydantic's own documented pattern): every
 member shares `status == "success"` as a LITERAL, so `status` alone

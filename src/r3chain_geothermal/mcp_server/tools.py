@@ -53,6 +53,24 @@ from ..workflow import (
     run_workflow,
     write_workflow_artifacts,
 )
+from ..workflow.fixed_interface_workflow import (
+    CANDIDATE_ECONOMICS_FILENAME,
+    CANDIDATE_NETWORK_FEASIBILITY_FILENAME,
+    CANDIDATE_SITES_CSV_FILENAME,
+    CANDIDATE_SITES_JSON_FILENAME,
+    DRILLING_SITE_RANKING_CSV_FILENAME,
+    DRILLING_SITE_RANKING_JSON_FILENAME,
+    FIXED_INTERFACE_RESULT_FILENAME,
+    FIXED_STATION_FILENAME,
+    GEOTHERMAL_RESULTS_FILENAME,
+    RESEARCH_FINDINGS_FILENAME,
+    FixedInterfaceSiteOptimizationFailure,
+    FixedInterfaceSiteOptimizationResult,
+    is_fixed_interface_site_optimization_enabled,
+    resolve_fixed_interface_workflow_run_id,
+    run_fixed_interface_site_optimization,
+    write_fixed_interface_site_optimization_artifacts,
+)
 from ..workflow.joint_workflow_v2 import (
     ALTERNATIVE_COMPARISON_CSV_FILENAME,
     COMPATIBLE_ALTERNATIVES_FILENAME,
@@ -88,6 +106,7 @@ from .schemas import (
     ArtifactSlice,
     AuditSummary,
     CapabilitiesSummary,
+    FixedInterfaceWorkflowSummary,
     JointWorkflowSummary,
     PyDoubletValidationSummary,
     ResearchExperimentSummary,
@@ -95,6 +114,7 @@ from .schemas import (
     SourceProvenanceInput,
     _CALCULATION_MODES,
     _SOURCE_FORMAT_HINTS,
+    summarize_fixed_interface_site_optimization_result,
     summarize_joint_workflow_v2_result,
     summarize_research_experiment_result,
     summarize_workflow_result,
@@ -195,8 +215,30 @@ NETWORK_CANDIDATES_SVG_FILENAME above; filenames that happen to share the exact
 same string as an already-imported joint_workflow_v2/core constant reuse that
 import instead of re-typing the literal a second time."""
 
+_FIXED_INTERFACE_ARTIFACT_FILENAMES = (
+    PYDOUBLET_INPUT_FILENAME,
+    CONFIG_SNAPSHOT_FILENAME,
+    JOINT_STUDY_SNAPSHOT_FILENAME,  # same literal string as joint_workflow_v2's own constant -- not re-imported
+    FIXED_INTERFACE_RESULT_FILENAME,
+    FIXED_STATION_FILENAME,
+    CANDIDATE_SITES_JSON_FILENAME,
+    CANDIDATE_SITES_CSV_FILENAME,
+    GEOTHERMAL_RESULTS_FILENAME,
+    CANDIDATE_NETWORK_FEASIBILITY_FILENAME,
+    CANDIDATE_ECONOMICS_FILENAME,
+    DRILLING_SITE_RANKING_JSON_FILENAME,
+    DRILLING_SITE_RANKING_CSV_FILENAME,
+    RESEARCH_FINDINGS_FILENAME,  # same literal string as research_experiment_export's own constant -- not re-imported
+    AUDIT_FILENAME,
+    MANIFEST_FILENAME,
+)
+"""Exactly the filenames a completed `fixed_interface_site_optimization`
+run publishes -- mirrors workflow/fixed_interface_workflow.py's own
+`write_fixed_interface_site_optimization_artifacts()` bundle exactly."""
+
 _ALLOWED_ARTIFACT_FILENAMES = tuple(dict.fromkeys(
     _CANONICAL_ARTIFACT_FILENAMES + _JOINT_ARTIFACT_FILENAMES + _RESEARCH_EXPERIMENT_ARTIFACT_FILENAMES
+    + _FIXED_INTERFACE_ARTIFACT_FILENAMES
 ))
 """docs/specifications/R3CHAIN_CORRECTED_JOINT_SITE_CONNECTION_IMPLEMENTATION_SPEC.md
 Phase 6 (MCP-005): the union of both workflow modes' own filenames --
@@ -262,9 +304,12 @@ def get_capabilities(*, fixed_config: dict[str, Any], registry: RunRegistry) -> 
         available_shortfall_policies=["cost_shortfall", "strict_infeasible"],
         available_injection_sizing_policies=["fixed_design_temperature", "self_consistent"],
         candidate_generation_modes=["predefined", "generated"],
-        supported_workflow_modes=["canonical", "joint_site_connection", "research_experiment"],
+        supported_workflow_modes=[
+            "canonical", "joint_site_connection", "research_experiment", "fixed_interface_site_optimization",
+        ],
         joint_study_v2_enabled=is_joint_study_v2_enabled(fixed_config),
         research_experiment_enabled=is_research_experiment_enabled(fixed_config),
+        fixed_interface_site_optimization_enabled=is_fixed_interface_site_optimization_enabled(fixed_config),
     )
 
 
@@ -492,6 +537,72 @@ def run_joint_workflow_tool(
     return entry.summary
 
 
+def run_fixed_interface_site_optimization_tool(
+    pydoublet_raw_result: dict[str, Any],
+    source_provenance: SourceProvenanceInput,
+    *,
+    fixed_config: dict[str, Any],
+    registry: RunRegistry,
+    package_root: Path,
+) -> FixedInterfaceWorkflowSummary | ToolError:
+    """The fixed-DH-interface-drilling-site-optimization analogue of
+    `run_joint_workflow_tool()` above, following the exact same shape --
+    reuses `run_fixed_interface_site_optimization()`/`write_fixed_
+    interface_site_optimization_artifacts()` unchanged, never re-deriving
+    anything about the physics, economics or decision logic."""
+    provenance = _source_provenance_from_input(source_provenance)
+    run_id, package_raw_for_run_id = resolve_fixed_interface_workflow_run_id(
+        pydoublet_raw_result, fixed_config, source_provenance=provenance, package_root=package_root,
+    )
+
+    def _factory() -> RunEntry:
+        try:
+            result = run_fixed_interface_site_optimization(
+                pydoublet_raw_result, fixed_config, source_provenance=provenance, package_root=package_root,
+                expected_raw_sha256=source_provenance.expected_raw_sha256,
+            )
+        except Exception as exc:  # noqa: BLE001 -- the narrow "unexpected" boundary, module docstring
+            raise _UnexpectedWorkflowError(str(exc)) from exc
+
+        if (
+            isinstance(result, FixedInterfaceSiteOptimizationFailure)
+            and result.failure_code == "PYDOUBLET_RAW_HASH_MISMATCH"
+        ):
+            raise _ProvenanceMismatchError(result.message, result.details)
+
+        staging_dir = registry.new_artifact_dir(run_id)
+        package_raw = package_raw_for_run_id if package_raw_for_run_id is not None else {}
+        manifest = write_fixed_interface_site_optimization_artifacts(
+            result, pydoublet_raw_result, fixed_config, package_raw, staging_dir,
+        )
+        all_filenames = frozenset(manifest.files.keys()) | {MANIFEST_FILENAME}
+        run_dir = registry.publish_artifact_dir(run_id, staging_dir)
+        summary = summarize_fixed_interface_site_optimization_result(result, all_filenames, reused_existing_run=False)
+        summary = summary.model_copy(update={"bundle_scientific_sha256": manifest.bundle_scientific_sha256})
+        return RunEntry(
+            run_id=run_id, summary=summary, audit=result.audit,
+            artifact_dir=run_dir, artifact_filenames=all_filenames,
+            created_at=datetime.now(timezone.utc), run_type="fixed_interface_site_optimization",
+        )
+
+    try:
+        entry, reused = registry.get_or_run(run_id, _factory)
+    except _UnexpectedWorkflowError as exc:
+        return ToolError(
+            code=ToolErrorCode.UNEXPECTED_ERROR, message=str(exc), stage="run_fixed_interface_site_optimization",
+            recoverable=False,
+        )
+    except _ProvenanceMismatchError as exc:
+        return ToolError(
+            code=ToolErrorCode.PYDOUBLET_VALIDATION_FAILED, message=exc.message,
+            stage="input_provenance_validation", recoverable=True, details=exc.details,
+        )
+
+    if reused:
+        return entry.summary.model_copy(update={"reused_existing_run": True})
+    return entry.summary
+
+
 def run_research_experiment_tool(
     pydoublet_raw_result: dict[str, Any],
     source_provenance: SourceProvenanceInput,
@@ -560,17 +671,20 @@ def dispatch_run_workflow(
     fixed_config: dict[str, Any],
     registry: RunRegistry,
     package_root: Path | None = None,
-) -> RunSummary | JointWorkflowSummary | ResearchExperimentSummary | ToolError:
+) -> RunSummary | JointWorkflowSummary | ResearchExperimentSummary | FixedInterfaceWorkflowSummary | ToolError:
     """MCP-002: the ONE dispatch point `server.py`'s own `geo_run_workflow`
     tool wrapper (and `GEO_TOOL_REGISTRY["geo_run_workflow"]`) calls --
-    checks `fixed_config["research_experiment"]["enabled"]` FIRST (the
-    most specific layer, mirroring `workflow/cli.py::run_cli()`'s own
-    ordering -- a research-experiment config also carries its own
-    joint_study_v2 section), then `fixed_config["joint_study_v2"]["enabled"]`
-    (the exact same config-driven mode switch `workflow/cli.py
-    ::is_joint_study_v2_enabled` already established for the CLI), and
-    routes to `run_research_experiment_tool()`, `run_joint_workflow_tool()`,
-    or, unchanged, `run_workflow_tool()`.
+    checks `fixed_config["fixed_interface_site_optimization"]["enabled"]`
+    FIRST (its own distinct top-level config key, never combined with a
+    joint_study_v2/research_experiment config), then
+    `fixed_config["research_experiment"]["enabled"]` (a research-experiment
+    config also carries its own joint_study_v2 section), then
+    `fixed_config["joint_study_v2"]["enabled"]` (the exact same
+    config-driven mode switch `workflow/cli.py::is_joint_study_v2_enabled`
+    already established for the CLI), and routes to
+    `run_fixed_interface_site_optimization_tool()`,
+    `run_research_experiment_tool()`, `run_joint_workflow_tool()`, or,
+    unchanged, `run_workflow_tool()`.
     `package_root` defaults to `Path.cwd()` ONLY here, at the one call
     site that actually needs a real default -- mirrors
     `workflow/cli.py::_run_joint_study_v2_cli()`'s own documented choice:
@@ -580,6 +694,11 @@ def dispatch_run_workflow(
     enabled. `build_server()` exposes `package_root` as its own test-only
     seam (matching `config`/`config_path`) for a caller that needs an
     explicit, cwd-independent root."""
+    if is_fixed_interface_site_optimization_enabled(fixed_config):
+        return run_fixed_interface_site_optimization_tool(
+            pydoublet_raw_result, source_provenance, fixed_config=fixed_config, registry=registry,
+            package_root=package_root if package_root is not None else Path.cwd(),
+        )
     if is_research_experiment_enabled(fixed_config):
         return run_research_experiment_tool(
             pydoublet_raw_result, source_provenance, fixed_config=fixed_config, registry=registry,
@@ -596,7 +715,7 @@ def dispatch_run_workflow(
 # ── 4. geo_get_run_summary ──────────────────────────────────────────────────
 def get_run_summary(
     run_id: str, *, registry: RunRegistry,
-) -> RunSummary | JointWorkflowSummary | ResearchExperimentSummary | ToolError:
+) -> RunSummary | JointWorkflowSummary | ResearchExperimentSummary | FixedInterfaceWorkflowSummary | ToolError:
     entry = registry.get(run_id)
     if entry is None:
         return ToolError(

@@ -79,6 +79,17 @@ def _attachment_coordinate(attachment: NetworkAttachment) -> SyntheticCoordinate
     return SyntheticCoordinate(x_m=coordinate.x_m, y_m=coordinate.y_m)
 
 
+def resolve_attachment_coordinate(attachment: NetworkAttachment) -> SyntheticCoordinate | None:
+    """Public wrapper around `_attachment_coordinate()` -- used by
+    `data_contracts.fixed_interface.resolve_fixed_integration_station()`
+    to report a fixed station's own `x_m`/`y_m` without duplicating this
+    geometry-table lookup (module docstring: "the SAME geometry source").
+    Behaviorally identical to the private function; exists only so a
+    caller outside this module has a stable, non-underscored name to
+    import."""
+    return _attachment_coordinate(attachment)
+
+
 def _rejected_route(
     route_id: str, site: SurfaceSite, attachment_id: str, route_kind: RouteKind,
     code: RouteRejectionCode, detail: str, geometry: list[Coordinate] | None = None,

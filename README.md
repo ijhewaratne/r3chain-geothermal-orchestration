@@ -281,6 +281,60 @@ workflow through the *same* CLI:
   beyond the specific sensitivity cases actually tested, and the declared 5000 h/a annualization
   horizon is never described as a full 8760-hour chronological calendar-year simulation.
 
+- **Drilling-Site Optimization with a Fixed District-Heating Interface** — **status: implemented**
+  (see `docs/decisions/ADR-003-fixed-interface-drilling-site-optimization.md` for the full
+  conceptual correction). v1, v2 and the research-experiment layer above all treat the DH network
+  **attachment point** as a free variable, jointly with the geothermal site/scenario — answering
+  "which network attachment should geothermal connect to?" This mode corrects the research
+  question: **given one predefined, fixed district-heating integration point, which geothermal
+  drilling site should be selected?** The geothermal well location is the sole spatial decision
+  variable; the DH integration point is fixed. Built entirely on REUSE of the unmodified v2 layer
+  (`network.site_routing.generate_site_routes()`, `workflow.joint_enumeration
+  .enumerate_compatible_alternatives()`, `workflow.joint_evaluation.evaluate_alternative()`,
+  `decision.joint_policy.decide()`) — the only new logic is
+  `data_contracts.fixed_interface.resolve_fixed_integration_station()`, which validates that a
+  `JointStudyPackage` declares **exactly one** `NetworkAttachment` (never several) and turns it
+  into an explicit `FixedHeatIntegrationStation` domain object, plus a thin
+  `workflow.fixed_interface_enumeration` wrapper that asserts every enumerated candidate shares
+  that one station's attachment id. Reachable identically from the CLI
+  (`fixed_interface_site_optimization.enabled=true` — see
+  `config/demo_assumptions_fixed_interface_site_optimization.json` and
+  `config/fixed_interface_site_optimization_synthetic.json`, checked FIRST in dispatch, its own
+  distinct top-level config key) and from `geo_run_workflow` (the SAME six-tool MCP server, a
+  discriminated `workflow_mode: fixed_interface_site_optimization` success shape, no seventh
+  tool). Publishes its own artifact bundle named after what it actually answers — a drilling-site
+  question, not a connection question — rather than reusing v2's own joint-alternative filenames:
+  `candidate_sites.json`/`.csv` (site, scenario, depth, distance to the fixed station),
+  `geothermal_results.json`, `candidate_network_feasibility.json`, `candidate_economics.json`,
+  `drilling_site_ranking.json`/`.csv`, `research_findings.md` (states the fixed DH integration
+  point explicitly, and that network-attachment optimization is disabled for this methodology),
+  `fixed_integration_station.json`, plus the standard `pydoublet_input.json`/`config_snapshot.json`/
+  `joint_study_snapshot.json`/`fixed_interface_result.json`/`audit.json`/`manifest.json` core set,
+  and survives an MCP server restart via the same persistent-registry rehydration path. Never
+  phrases its output as "best network attachment" or "best consumer junction" — every ranking
+  result and recommendation names a candidate **drilling site**. Every artifact carries the same
+  synthetic disclaimer v1/v2/research-experiment's own artifacts do, plus an explicit statement of
+  what this prototype does **not** yet claim: no real Wuppertal drilling recommendation, no
+  Fündigkeitsrisiko/geological-probability-of-success model, no full network operating-envelope
+  optimization, and no heat-pump-assisted integration mode — see ADR-003 for the full list and the
+  documented (not implemented) future extension points. The pre-existing v1/joint-optimization,
+  v2 and research-experiment modes above are completely untouched by this addition — every one of
+  their own configs, tests and artifact bundles remains exactly as documented above.
+
+```mermaid
+flowchart LR
+    A["Candidate drilling sites"] --> B["PyDoublet"]
+    B --> C["T_geo · flow · Q_geo"]
+    C --> D["Surface transmission to fixed station"]
+    D --> E["Heat exchanger boundary"]
+    E --> F["FIXED DH integration point"]
+    F --> G["pandapipes network"]
+    G --> H{"All required load cases feasible?"}
+    H -->|No| I["Reject candidate"]
+    H -->|Yes| J["System economics"]
+    J --> K["Rank drilling locations"]
+```
+
 Try it directly:
 
 ```bash
@@ -316,6 +370,15 @@ r3chain-geothermal-demo \
   --config config/research_experiment_synthetic.json \
   --provenance config/demo_source_provenance.json \
   --output-dir artifacts/research-experiment-demo
+
+# Fixed-DH-interface drilling-site optimization -- same --config resolution
+# rule as v2/research-experiment above (package_root = config_path.resolve()
+# .parent.parent), so this also works identically from any working directory.
+r3chain-geothermal-demo \
+  --input fixtures/pydoublet/repaired_result.json \
+  --config config/demo_assumptions_fixed_interface_site_optimization.json \
+  --provenance config/demo_source_provenance.json \
+  --output-dir artifacts/fixed-interface-site-optimization-demo
 ```
 
 ## Strict input-provenance validation

@@ -78,7 +78,15 @@ def registry():
 def test_capabilities_advertise_both_workflow_modes_as_implementation_capabilities(registry):
     canonical_config = json.loads(_CANONICAL_CONFIG_PATH.read_text())
     caps = tools.get_capabilities(fixed_config=canonical_config, registry=registry)
-    assert set(caps.supported_workflow_modes) == {"canonical", "joint_site_connection", "research_experiment"}
+    # Intentionally updated for the fixed-DH-interface drilling-site-
+    # optimization correction: a new, additive workflow mode was
+    # registered (mcp_server/tools.py's own dispatch_run_workflow()), so
+    # this exact-membership assertion grows to include it -- the same
+    # non-weakening update this set already received when
+    # research_experiment was added alongside joint_site_connection.
+    assert set(caps.supported_workflow_modes) == {
+        "canonical", "joint_site_connection", "research_experiment", "fixed_interface_site_optimization",
+    }
 
 
 def test_capabilities_joint_study_v2_enabled_reflects_the_actual_loaded_config(registry):
