@@ -59,7 +59,7 @@ def test_capabilities_enabled_flag_reflects_the_actual_loaded_config(registry):
 def test_dispatch_routes_to_fixed_interface_workflow_when_enabled(registry):
     result = tools.dispatch_run_workflow(_raw(), _provenance_input(), fixed_config=_config(), registry=registry, package_root=_ROOT)
     assert isinstance(result, FixedInterfaceWorkflowSummary)
-    assert result.fixed_dh_integration_point_id == "trunk_1"
+    assert result.fixed_dh_integration_point_id == "dh_integration_station_1"
 
 
 def test_dispatch_routes_to_canonical_workflow_when_not_enabled(registry):
@@ -84,7 +84,7 @@ def test_fixed_interface_artifact_is_retrievable_through_geo_get_artifact(regist
     )
     result = tools.get_artifact(run.run_id, "research_findings.md", registry=registry)
     assert not isinstance(result, ToolError)
-    assert "Fixed DH integration point" in result.content
+    assert "Fixed DH integration station" in result.content
 
 
 def test_registry_entry_carries_the_fixed_interface_run_type(registry):

@@ -36,7 +36,7 @@ def test_every_identity_shares_the_fixed_stations_attachment_id():
     routes = _routes(package)
     identities = enumerate_drilling_site_alternatives(package, routes, station)
     assert identities  # non-empty for this fixture
-    assert {i.attachment_id for i in identities} == {station.station_id} == {"trunk_1"}
+    assert {i.attachment_id for i in identities} == {station.network_attachment_id} == {"trunk_1"}
 
 
 # ── Test 3 (task spec): network entry does not move when the site changes ──
@@ -50,7 +50,7 @@ def test_swapping_the_site_never_changes_the_fixed_attachment_or_junction_ids():
     site_ids = sorted(by_site)
     first, second = by_site[site_ids[0]], by_site[site_ids[1]]
     assert first.surface_site_id != second.surface_site_id
-    assert first.attachment_id == second.attachment_id == station.station_id
+    assert first.attachment_id == second.attachment_id == station.network_attachment_id
 
 
 # ── Test 4 (task spec): no site x trunk_i cross-product ─────────────────────

@@ -282,21 +282,30 @@ workflow through the *same* CLI:
   horizon is never described as a full 8760-hour chronological calendar-year simulation.
 
 - **Drilling-Site Optimization with a Fixed District-Heating Interface** — **status: implemented**
-  (see `docs/decisions/ADR-003-fixed-interface-drilling-site-optimization.md` for the full
-  conceptual correction). v1, v2 and the research-experiment layer above all treat the DH network
-  **attachment point** as a free variable, jointly with the geothermal site/scenario — answering
-  "which network attachment should geothermal connect to?" This mode corrects the research
+  (see `docs/decisions/ADR-003-fixed-interface-drilling-site-optimization.md` for the fixed-interface
+  correction and `docs/decisions/ADR-004-site-decision-vs-geological-state.md` for the
+  site-vs-geological-scenario correction). v1, v2 and the research-experiment layer above all treat
+  the DH network **attachment point** as a free variable, jointly with the geothermal site/scenario —
+  answering "which network attachment should geothermal connect to?" This mode corrects the research
   question: **given one predefined, fixed district-heating integration point, which geothermal
   drilling site should be selected?** The geothermal well location is the sole spatial decision
-  variable; the DH integration point is fixed. Built entirely on REUSE of the unmodified v2 layer
-  (`network.site_routing.generate_site_routes()`, `workflow.joint_enumeration
+  variable; the DH integration point is fixed. It further distinguishes the DECISION (which site to
+  drill) from the STATE OF NATURE conditional on that decision (which geological outcome actually
+  occurs there): exactly one declared deterministic **reference case** per available site enters the
+  primary ranking (`fixed_interface_site_optimization.reference_scenario_by_site`, a `{site_id:
+  scenario_id}` mapping); every other resource scenario linked to a site is a **sensitivity case** —
+  evaluated through the identical pipeline but reported separately
+  (`site_sensitivity_results.csv`/`.json`) and never fed into the decision. Built entirely on REUSE of
+  the unmodified v2 layer (`network.site_routing.generate_site_routes()`, `workflow.joint_enumeration
   .enumerate_compatible_alternatives()`, `workflow.joint_evaluation.evaluate_alternative()`,
   `decision.joint_policy.decide()`) — the only new logic is
-  `data_contracts.fixed_interface.resolve_fixed_integration_station()`, which validates that a
-  `JointStudyPackage` declares **exactly one** `NetworkAttachment` (never several) and turns it
-  into an explicit `FixedHeatIntegrationStation` domain object, plus a thin
-  `workflow.fixed_interface_enumeration` wrapper that asserts every enumerated candidate shares
-  that one station's attachment id. Reachable identically from the CLI
+  `data_contracts.fixed_interface.resolve_fixed_integration_station()` (validates that a
+  `JointStudyPackage` declares **exactly one** `NetworkAttachment`, never several, and turns it into
+  an explicit `FixedHeatIntegrationStation` — whose `station_id` is a SEMANTIC display name, e.g.
+  `dh_integration_station_1`, deliberately distinct from `network_attachment_id`, the raw pandapipes
+  junction it is built from, so a reader never mistakes the fixed junction for an optimized result),
+  `resolve_site_case_assignment()` (validates the reference/sensitivity mapping), and a thin
+  `workflow.fixed_interface_enumeration` wrapper. Reachable identically from the CLI
   (`fixed_interface_site_optimization.enabled=true` — see
   `config/demo_assumptions_fixed_interface_site_optimization.json` and
   `config/fixed_interface_site_optimization_synthetic.json`, checked FIRST in dispatch, its own
@@ -306,18 +315,24 @@ workflow through the *same* CLI:
   question, not a connection question — rather than reusing v2's own joint-alternative filenames:
   `candidate_sites.json`/`.csv` (site, scenario, depth, distance to the fixed station),
   `geothermal_results.json`, `candidate_network_feasibility.json`, `candidate_economics.json`,
-  `drilling_site_ranking.json`/`.csv`, `research_findings.md` (states the fixed DH integration
-  point explicitly, and that network-attachment optimization is disabled for this methodology),
-  `fixed_integration_station.json`, plus the standard `pydoublet_input.json`/`config_snapshot.json`/
-  `joint_study_snapshot.json`/`fixed_interface_result.json`/`audit.json`/`manifest.json` core set,
+  `drilling_site_ranking.json`/`.csv` (**exactly one row per drilling site**, never per
+  site×scenario), `site_sensitivity_results.json`/`.csv`, `cost_breakdown.csv` (full CAPEX/OPEX
+  component decomposition; `pump_capex_eur` explicitly `not_modelled`, never fabricated),
+  `research_findings.md` (the 9-section structure: experiment boundary, fixed station, drilling
+  sites evaluated, reference case per site, technical feasibility, economic comparison, preferred
+  drilling site, sensitivity scenarios, limitations), `fixed_integration_station.json`, plus the
+  standard `pydoublet_input.json`/`config_snapshot.json`/`joint_study_snapshot.json`/
+  `fixed_interface_result.json`/`audit.json`/`manifest.json` core set,
   and survives an MCP server restart via the same persistent-registry rehydration path. Never
-  phrases its output as "best network attachment" or "best consumer junction" — every ranking
-  result and recommendation names a candidate **drilling site**. Every artifact carries the same
-  synthetic disclaimer v1/v2/research-experiment's own artifacts do, plus an explicit statement of
-  what this prototype does **not** yet claim: no real Wuppertal drilling recommendation, no
+  phrases its output as "best network attachment," "best consumer junction," "preferred scenario," or
+  "winning scenario" — every ranking result and recommendation names a candidate **drilling site**
+  and its own declared **reference case**. Every artifact carries the same synthetic disclaimer
+  v1/v2/research-experiment's own artifacts do, plus an explicit statement of what this prototype
+  does **not** yet claim: no real Wuppertal drilling recommendation, no
   Fündigkeitsrisiko/geological-probability-of-success model, no full network operating-envelope
-  optimization, and no heat-pump-assisted integration mode — see ADR-003 for the full list and the
-  documented (not implemented) future extension points. The pre-existing v1/joint-optimization,
+  optimization, no multi-load-state evaluation, and no heat-pump-assisted integration mode — see
+  ADR-003/ADR-004 for the full list and the documented (not implemented) future extension points.
+  The pre-existing v1/joint-optimization,
   v2 and research-experiment modes above are completely untouched by this addition — every one of
   their own configs, tests and artifact bundles remains exactly as documented above.
 

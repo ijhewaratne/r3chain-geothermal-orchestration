@@ -36,7 +36,7 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from .joint_study import AttachmentEligibilityStatus, JointStudyPackage, NetworkAttachment
+from .joint_study import AttachmentEligibilityStatus, GeothermalResourceScenario, JointStudyPackage, NetworkAttachment, SiteAvailabilityStatus
 
 _MODEL_CONFIG = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
@@ -64,6 +64,23 @@ class FixedInterfaceErrorCode(str, Enum):
     """The attachment's `supply_junction_id` has no known position in the
     synthetic network's own geometry tables (network.geometry) -- never a
     fabricated coordinate."""
+    SITE_REFERENCE_CASE_UNKNOWN_SITE = "SITE_REFERENCE_CASE_UNKNOWN_SITE"
+    """`reference_scenario_by_site` names a `site_id` that is not one of
+    `package.sites`'s own declared ids -- a config typo/drift must fail
+    loudly, never be silently ignored."""
+    SITE_REFERENCE_CASE_MISSING = "SITE_REFERENCE_CASE_MISSING"
+    """An AVAILABLE site (`SiteAvailabilityStatus.AVAILABLE`) has no entry
+    in `reference_scenario_by_site` -- every available candidate drilling
+    site must have exactly one declared deterministic reference case for
+    the primary ranking (task's own correction: the geological outcome is
+    not a decision, but a declared reference case must still exist for
+    each site to be ranked against)."""
+    SITE_REFERENCE_CASE_INVALID = "SITE_REFERENCE_CASE_INVALID"
+    """`reference_scenario_by_site[site_id]` names a `scenario_id` that
+    either does not exist in `package.resource_scenarios` at all, or
+    exists but belongs to a DIFFERENT site -- a reference case must be one
+    of that site's own linked scenarios, never borrowed from another
+    site."""
 
 
 class FixedInterfaceValidationError(BaseModel):
@@ -94,10 +111,22 @@ class FixedHeatIntegrationStation(BaseModel):
     model_config = _MODEL_CONFIG
 
     station_id: str
-    """Equal to the underlying `NetworkAttachment.attachment_id` -- the
-    same identifier every `AlternativeIdentity.attachment_id` produced by
-    this methodology will carry (the invariant this whole module exists to
-    make explicit and testable)."""
+    """A SEMANTIC display identifier for the fixed integration station
+    (e.g. `"dh_integration_station_1"`) -- deliberately DISTINCT from
+    `network_attachment_id` below. Conflating the two invites exactly the
+    misreading this field's own separation prevents: "trunk_1 was
+    selected by the optimization." It was not selected; it is this fixed
+    station's own underlying pandapipes attachment, named separately so a
+    reader never has to infer that a raw junction id is a fixed boundary
+    condition rather than an optimized result."""
+    network_attachment_id: str
+    """The underlying `NetworkAttachment.attachment_id` this station is
+    built from (e.g. `"trunk_1"`) -- the identifier every
+    `AlternativeIdentity.attachment_id` produced by this methodology
+    actually carries (the invariant this whole module exists to make
+    explicit and testable, checked against THIS field, not `station_id`,
+    by `workflow.fixed_interface_enumeration
+    .enumerate_drilling_site_alternatives()`)."""
     name: str
     network_entry_supply_junction_id: str
     network_entry_return_junction_id: str
@@ -135,6 +164,7 @@ def resolve_fixed_integration_station(
     *,
     heat_exchanger_config_reference: str,
     max_thermal_power_mw: float | None = None,
+    station_display_id: str | None = None,
 ) -> FixedHeatIntegrationStation | FixedInterfaceValidationError:
     """The one function that turns a `JointStudyPackage` into an explicit
     `FixedHeatIntegrationStation`, enforcing every invariant this
@@ -149,7 +179,14 @@ def resolve_fixed_integration_station(
     A package that declares MULTIPLE attachments (e.g. the existing
     `config/joint_study_synthetic_v2.json`, with `trunk_1..trunk_4`) is
     correctly REJECTED here: it belongs to the v2 joint methodology, not
-    this one -- the two are deliberately never interchangeable."""
+    this one -- the two are deliberately never interchangeable.
+
+    `station_display_id` names the station SEMANTICALLY, separately from
+    the underlying `NetworkAttachment.attachment_id` (`FixedHeatIntegrationStation`'s
+    own docstring) -- `None` (the default) falls back to
+    `f"dh_integration_station_{attachment_id}"` rather than reusing the
+    raw attachment id, so a caller that forgets to set it still gets a
+    display id that is visibly distinct from a pandapipes junction name."""
     if not package.network_attachments:
         return FixedInterfaceValidationError(
             error_code=FixedInterfaceErrorCode.STATION_MISSING,
@@ -194,9 +231,11 @@ def resolve_fixed_integration_station(
             ),
         )
     x_m, y_m = resolved
+    display_id = station_display_id or f"dh_integration_station_{attachment.attachment_id}"
     return FixedHeatIntegrationStation(
-        station_id=attachment.attachment_id,
-        name=f"Fixed DH integration station ({attachment.attachment_id})",
+        station_id=display_id,
+        network_attachment_id=attachment.attachment_id,
+        name=f"Fixed DH integration station ({display_id})",
         network_entry_supply_junction_id=attachment.supply_junction_id,
         network_entry_return_junction_id=attachment.return_junction_id,
         x_m=x_m, y_m=y_m,
@@ -205,3 +244,71 @@ def resolve_fixed_integration_station(
         max_thermal_power_mw=max_thermal_power_mw,
         source_reference=attachment.source_reference,
     )
+
+
+class SiteCaseAssignment(BaseModel):
+    """Explicitly separates the DECISION (which drilling site) from the
+    STATE/OUTCOME conditional on that decision (which geothermal scenario
+    actually occurs there) -- docs/decisions/ADR-004-site-decision-vs-geological-state.md.
+
+    `reference_scenario_id_by_site` names, for every AVAILABLE site,
+    EXACTLY ONE of that site's own linked `GeothermalResourceScenario`s as
+    the declared deterministic reference case used for the PRIMARY
+    site-level ranking. Every other scenario linked to a site is, by
+    construction (not by a separate stored list), a SENSITIVITY case --
+    evaluated through the identical unchanged pipeline, but reported
+    separately and never fed into the primary ranking decision
+    (`workflow.fixed_interface_workflow.run_fixed_interface_site_optimization()`).
+
+    This assignment is declared in CONFIGURATION (this mode's own
+    `fixed_interface_site_optimization.reference_scenario_by_site` key),
+    never inferred from scenario naming (no "golden"/"best" string
+    matching) and never added as a field on the shared, UNTOUCHED
+    `GeothermalResourceScenario`/`JointStudyPackage` contract that v1/v2/
+    research_experiment also use."""
+
+    model_config = _MODEL_CONFIG
+
+    reference_scenario_id_by_site: dict[str, str]
+
+    def is_reference_case(self, site_id: str, scenario_id: str) -> bool:
+        return self.reference_scenario_id_by_site.get(site_id) == scenario_id
+
+
+def resolve_site_case_assignment(
+    package: JointStudyPackage, reference_scenario_by_site: dict[str, str],
+) -> SiteCaseAssignment | FixedInterfaceValidationError:
+    """Validates `reference_scenario_by_site` (this mode's own config
+    section, read verbatim) against the package: every AVAILABLE site
+    must have exactly one entry, naming one of ITS OWN linked scenarios
+    (never another site's) -- and every mapping key must itself name a
+    real declared site. Never raises."""
+    site_ids = {s.site_id for s in package.sites}
+    available_site_ids = {s.site_id for s in package.sites if s.availability_status == SiteAvailabilityStatus.AVAILABLE}
+    scenarios_by_id: dict[str, GeothermalResourceScenario] = {s.scenario_id: s for s in package.resource_scenarios}
+
+    for site_id in reference_scenario_by_site:
+        if site_id not in site_ids:
+            return FixedInterfaceValidationError(
+                error_code=FixedInterfaceErrorCode.SITE_REFERENCE_CASE_UNKNOWN_SITE,
+                message=f"reference_scenario_by_site names site_id {site_id!r}, which is not a declared package site",
+            )
+
+    for site_id in sorted(available_site_ids):
+        scenario_id = reference_scenario_by_site.get(site_id)
+        if scenario_id is None:
+            return FixedInterfaceValidationError(
+                error_code=FixedInterfaceErrorCode.SITE_REFERENCE_CASE_MISSING,
+                message=f"available site {site_id!r} has no declared reference_scenario_by_site entry",
+            )
+        scenario = scenarios_by_id.get(scenario_id)
+        if scenario is None or scenario.site_id != site_id:
+            return FixedInterfaceValidationError(
+                error_code=FixedInterfaceErrorCode.SITE_REFERENCE_CASE_INVALID,
+                message=(
+                    f"reference_scenario_by_site[{site_id!r}]={scenario_id!r} does not name a scenario "
+                    f"that belongs to site {site_id!r}"
+                ),
+            )
+
+    return SiteCaseAssignment(reference_scenario_id_by_site=dict(reference_scenario_by_site))

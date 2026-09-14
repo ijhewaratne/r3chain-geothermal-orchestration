@@ -496,7 +496,7 @@ def _run_fixed_interface_site_optimization_cli(
         preferred = next(
             a for a in result.alternatives if a.identity.alternative_id == result.decision.preferred_alternative_id
         )
-        print(f"preferred drilling site: {preferred.identity.surface_site_id} (scenario {preferred.identity.resource_scenario_id})")
+        print(f"preferred drilling site: {preferred.identity.surface_site_id} (reference case {preferred.identity.resource_scenario_id})")
     elif result.decision.pareto_shortlist_alternative_ids:
         print(f"Pareto shortlist ({len(result.decision.pareto_shortlist_alternative_ids)} non-dominated candidate sites):")
         for alt_id in result.decision.pareto_shortlist_alternative_ids:

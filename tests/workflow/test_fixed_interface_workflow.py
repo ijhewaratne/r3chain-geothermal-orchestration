@@ -32,7 +32,7 @@ _KNOWN_REPAIRED_COMMIT = "0d649c3e6930d342dac03654d57776e134c2d0b9"
 _EXPECTED_COUNTS = {
     "site_count": 4, "resource_scenario_count": 4, "generated_route_count": 4, "accepted_route_count": 3,
     "possible_alternative_count": 16, "compatible_alternative_count": 4, "evaluated_alternative_count": 4,
-    "feasible_alternative_count": 3,
+    "feasible_alternative_count": 3, "reference_case_count": 3, "sensitivity_case_count": 1,
 }
 
 
@@ -108,11 +108,18 @@ def test_repeated_runs_produce_identical_run_id_ranking_and_metrics():
     assert econ_1 == econ_2
 
 
-# ── Test 1 (task spec): fixed network-entry invariant, end to end ───────────
+# ── Test E (site/scenario spec) / Test 1 (fixed-interface spec): fixed
+# network-entry invariant, end to end -- holds for BOTH reference and
+# sensitivity alternatives, since attachment fixing and reference/
+# sensitivity classification are independent corrections. ──
 def test_every_alternative_shares_the_same_fixed_network_entry():
     result = _run()
     attachment_ids = {a.identity.attachment_id for a in result.alternatives}
-    assert attachment_ids == {result.fixed_integration_station.station_id} == {"trunk_1"}
+    assert attachment_ids == {result.fixed_integration_station.network_attachment_id} == {"trunk_1"}
+    # station_id is a SEPARATE semantic display name, deliberately not a
+    # raw pandapipes junction id -- never conflate the two.
+    assert result.fixed_integration_station.station_id == "dh_integration_station_1"
+    assert result.fixed_integration_station.station_id != result.fixed_integration_station.network_attachment_id
 
 
 # ── Test 2 (task spec): drilling location changes transmission distance ─────
@@ -163,6 +170,98 @@ def test_ranking_never_calls_a_result_the_best_network_attachment():
     assert preferred.identity.surface_site_id == "site_alpha"
 
 
+# ── Test B (site/scenario spec): scenario is not an independently
+# selectable decision variable -- the primary ranking/decision must never
+# name a sensitivity-case alternative as competing with its own site's
+# reference case. ────────────────────────────────────────────────────────
+def test_primary_ranking_never_includes_a_sensitivity_case():
+    result = _run()
+    decided_alternative_ids = set(result.decision.pareto_shortlist_alternative_ids) | {
+        aid for group in result.decision.ranked_alternative_groups for aid in group
+    }
+    if result.decision.preferred_alternative_id:
+        decided_alternative_ids.add(result.decision.preferred_alternative_id)
+    sensitivity_ids = {
+        a.identity.alternative_id for a in result.alternatives
+        if not result.case_assignment.is_reference_case(a.identity.surface_site_id, a.identity.resource_scenario_id)
+    }
+    assert sensitivity_ids  # this fixture genuinely has at least one sensitivity case
+    assert decided_alternative_ids.isdisjoint(sensitivity_ids)
+    # site_alpha has TWO scenarios linked to it (golden + reduced_flow) --
+    # exactly one (golden) is the reference case; the model-level
+    # invariant on FixedInterfaceSiteOptimizationResult itself already
+    # enforces this (see its own _validate_contract_invariants), this
+    # assertion re-checks it from the outside.
+    sensitivity_scenario_ids = {
+        a.identity.resource_scenario_id for a in result.alternatives
+        if a.identity.alternative_id in sensitivity_ids
+    }
+    assert "scenario_alpha_reduced_flow" in sensitivity_scenario_ids
+
+
+# ── Test D (site/scenario spec): sensitivity cases never alter the
+# primary ranking -- verified by re-running with an EXTRA declared
+# sensitivity scenario added to a site and confirming the reference-only
+# decision is byte-identical. ───────────────────────────────────────────
+def test_adding_a_sensitivity_scenario_leaves_the_primary_ranking_unchanged():
+    package_path = _ROOT / "config" / "fixed_interface_site_optimization_synthetic.json"
+    package_raw = json.loads(package_path.read_text())
+    extra_scenario = dict(package_raw["resource_scenarios"][1])  # scenario_alpha_reduced_flow, deep-copyable dict
+    extra_scenario["scenario_id"] = "scenario_alpha_extra_sensitivity_case"
+    package_raw = {**package_raw, "resource_scenarios": [*package_raw["resource_scenarios"], extra_scenario]}
+
+    result_baseline = _run()
+    # Re-run using an in-memory-modified package by pointing package_root at
+    # a temp dir with the extra scenario injected, mirroring how every other
+    # stopping-failure test in this module builds a standalone package file.
+    import shutil
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        tmp_root = Path(td)
+        (tmp_root / "config").mkdir()
+        (tmp_root / "config" / "fixed_interface_site_optimization_synthetic.json").write_text(json.dumps(package_raw))
+        shutil.copy(_CANONICAL_CONFIG_PATH, tmp_root / "config" / _CANONICAL_CONFIG_PATH.name)
+        config = _config()
+        config["fixed_interface_site_optimization"]["package_path"] = "config/fixed_interface_site_optimization_synthetic.json"
+        with_extra = run_fixed_interface_site_optimization(
+            _raw(), config, source_provenance=_provenance(), package_root=tmp_root,
+        )
+    assert isinstance(with_extra, FixedInterfaceSiteOptimizationResult)
+    assert with_extra.counts.sensitivity_case_count == result_baseline.counts.sensitivity_case_count + 1
+    assert with_extra.counts.reference_case_count == result_baseline.counts.reference_case_count
+    assert with_extra.decision.ranked_alternative_groups == result_baseline.decision.ranked_alternative_groups
+    assert with_extra.decision.preferred_alternative_id == result_baseline.decision.preferred_alternative_id
+
+
+# ── Test H (site/scenario spec): drilling depth is metadata only and does
+# NOT currently drive drilling CAPEX. `economics/joint_costing.py
+# ::compute_alternative_economics()` derives `capex_doublet_eur` SOLELY
+# from `scenario.economic_inputs.doublet_capex_eur` (grepped: no cost
+# function anywhere reads `geological_metadata`/`target_depth_m`) -- this
+# is checked directly against the real computed result, not merely
+# asserted from a code comment. ──────────────────────────────────────────
+def test_target_depth_does_not_currently_drive_drilling_capex():
+    result = _run()
+    scenarios_by_id = {s.scenario_id: s for s in result.package.resource_scenarios}
+    checked_any = False
+    for alt in result.alternatives:
+        if alt.economics is None:
+            continue
+        scenario = scenarios_by_id[alt.identity.resource_scenario_id]
+        assert alt.economics.capex_doublet_eur == scenario.economic_inputs.doublet_capex_eur
+        checked_any = True
+    assert checked_any
+    # site_alpha carries TWO scenarios with genuinely different declared
+    # depths (2200 m vs 2600 m); their CAPEX differs (8.0M vs 9.2M EUR)
+    # only because of a declared doublet_capex_multiplier baked into
+    # economic_inputs.doublet_capex_eur, never because of depth --
+    # capex_doublet_eur's own recomputation above never reads depth at all.
+    alpha_golden = scenarios_by_id["scenario_alpha_golden"]
+    alpha_reduced = scenarios_by_id["scenario_alpha_reduced_flow"]
+    assert alpha_golden.geological_metadata.target_depth_m != alpha_reduced.geological_metadata.target_depth_m
+    assert alpha_golden.economic_inputs.doublet_capex_eur != alpha_reduced.economic_inputs.doublet_capex_eur
+
+
 # ── stopping failures ────────────────────────────────────────────────────────
 def test_missing_package_path_key_fails_loudly_not_with_a_crash():
     config = _config()
@@ -200,7 +299,8 @@ _EXPECTED_ARTIFACT_FILES = {
     "pydoublet_input.json", "config_snapshot.json", "joint_study_snapshot.json", "fixed_interface_result.json",
     "fixed_integration_station.json", "candidate_sites.json", "candidate_sites.csv", "geothermal_results.json",
     "candidate_network_feasibility.json", "candidate_economics.json", "drilling_site_ranking.json",
-    "drilling_site_ranking.csv", "research_findings.md", "audit.json",
+    "drilling_site_ranking.csv", "site_sensitivity_results.json", "site_sensitivity_results.csv",
+    "cost_breakdown.csv", "research_findings.md", "audit.json",
 }
 
 
@@ -243,21 +343,73 @@ def test_research_findings_states_the_fixed_point_and_disables_attachment_optimi
     package_raw = json.loads(_PACKAGE_PATH.read_text())
     write_fixed_interface_site_optimization_artifacts(result, _raw(), _config(), package_raw, tmp_path)
     text = (tmp_path / "research_findings.md").read_text()
-    assert "Fixed DH integration point:** `trunk_1`" in text
-    assert "Network attachment optimization:** disabled for this methodology" in text
+    assert "identified here as `dh_integration_station_1`" in text
+    assert "These junctions are not optimized" in text
+    assert "Only the geothermal drilling-site location varies" in text
     assert "SYNTHETIC" in text
     assert "Fündigkeitsrisiko" in text
+    assert "preferred scenario" not in text.lower()
+    assert "winning scenario" not in text.lower()
+    assert "best geothermal scenario" not in text.lower()
+    assert "selected scenario" not in text.lower()
 
 
-def test_drilling_site_ranking_csv_has_one_row_per_evaluated_alternative(tmp_path):
+# ── Test A / §27 (site/scenario spec): drilling_site_ranking.csv must
+# mean what its name says -- one row per DRILLING SITE, never per
+# site-scenario combination. ────────────────────────────────────────────
+def test_drilling_site_ranking_csv_has_exactly_one_row_per_declared_site(tmp_path):
     import csv
     result = _run()
     package_raw = json.loads(_PACKAGE_PATH.read_text())
     write_fixed_interface_site_optimization_artifacts(result, _raw(), _config(), package_raw, tmp_path)
     with (tmp_path / "drilling_site_ranking.csv").open(newline="") as f:
         rows = list(csv.DictReader(f))
-    assert len(rows) == len(result.alternatives)
-    assert {row["network_entry_attachment_id"] for row in rows} == {"trunk_1"}
+    assert len(rows) == len(result.package.sites) == 4
+    # NOTE: len(rows) happens to equal len(result.alternatives) (4) in this
+    # exact fixture (4 sites, 3 reference + 1 sensitivity alternative) --
+    # that is coincidental to this fixture's own scenario counts, not the
+    # invariant under test. The real invariant is site_id uniqueness
+    # (never a second row for the same site's own sensitivity scenario):
+    assert len({row["site_id"] for row in rows}) == len(rows)
+    assert {row["site_id"] for row in rows} == {s.site_id for s in result.package.sites}
+    # Every reference case's row carries the reused fixed attachment id --
+    # never a per-row-varying attachment (there is no such column here at
+    # all; the invariant is checked structurally via the station itself).
+    assert result.fixed_integration_station.network_attachment_id == "trunk_1"
+
+
+# ── Test F (site/scenario spec): static site data survives a downstream
+# rejection -- site_beta's row keeps its depth/distance even though its
+# own reference case is HX-infeasible. ──────────────────────────────────
+def test_infeasible_reference_case_still_retains_static_site_metadata(tmp_path):
+    import csv
+    result = _run()
+    package_raw = json.loads(_PACKAGE_PATH.read_text())
+    write_fixed_interface_site_optimization_artifacts(result, _raw(), _config(), package_raw, tmp_path)
+    with (tmp_path / "drilling_site_ranking.csv").open(newline="") as f:
+        rows = {row["site_id"]: row for row in csv.DictReader(f)}
+    beta_row = rows["site_beta"]
+    assert beta_row["overall_feasible"] == "False"
+    assert beta_row["target_depth_m"] != ""
+    assert float(beta_row["distance_to_fixed_station_m"]) > 0
+    assert beta_row["geothermal_wellhead_temperature_c"] != ""
+    assert beta_row["failure_code"] == "HX_SUPPLY_TEMPERATURE_INFEASIBLE"
+
+
+# ── Test G (site/scenario spec): an infeasible reference case's row has
+# no populated cost columns. ────────────────────────────────────────────
+def test_infeasible_reference_case_has_no_populated_cost_columns(tmp_path):
+    import csv
+    result = _run()
+    package_raw = json.loads(_PACKAGE_PATH.read_text())
+    write_fixed_interface_site_optimization_artifacts(result, _raw(), _config(), package_raw, tmp_path)
+    with (tmp_path / "drilling_site_ranking.csv").open(newline="") as f:
+        rows = {row["site_id"]: row for row in csv.DictReader(f)}
+    beta_row = rows["site_beta"]
+    for column in ("drilling_capex_eur", "surface_connection_capex_eur", "hx_capex_eur",
+                   "annualised_total_cost_eur_per_a", "indicative_lcoh_eur_per_mwh", "rank"):
+        assert beta_row[column] == ""
+    assert beta_row["pump_capex_eur"] == "not_modelled"  # never fabricated, always explicit
 
 
 def test_candidate_sites_csv_lists_every_declared_site_with_a_depth_and_distance(tmp_path):

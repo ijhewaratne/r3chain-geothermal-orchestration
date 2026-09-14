@@ -355,6 +355,13 @@
     "enabled": true,
     "package_path": "config/fixed_interface_site_optimization_synthetic.json",
     "heat_exchanger_config_reference": "coupling_assumptions",
-    "max_thermal_power_mw": null
+    "max_thermal_power_mw": null,
+    "station_display_id": "dh_integration_station_1",
+    "reference_scenario_by_site_note": "The geothermal outcome at a drilling site is a state of nature, not a decision -- exactly one declared deterministic reference case is named per available site for the primary ranking; every other scenario linked to that site is a sensitivity case, evaluated but never ranked (docs/decisions/ADR-004-site-decision-vs-geological-state.md).",
+    "reference_scenario_by_site": {
+      "site_alpha": "scenario_alpha_golden",
+      "site_beta": "scenario_beta_low_temperature",
+      "site_gamma": "scenario_gamma_higher_flow"
+    }
   }
 }
